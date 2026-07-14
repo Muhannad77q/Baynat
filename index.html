@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Baynat AI Notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Notes workspace">
+        <div class="brand-row">
+          <div class="brand-mark">B</div>
+          <div>
+            <p class="eyebrow">Baynat</p>
+            <h1>AI Notes</h1>
+          </div>
+        </div>
+
+        <button class="primary-action" id="newNoteBtn" type="button">
+          <span>+</span>
+          New note
+        </button>
+
+        <label class="search-box">
+          <span>Search notes</span>
+          <input id="searchInput" type="search" placeholder="Ideas, tags, projects..." autocomplete="off" />
+        </label>
+
+        <div class="filter-stack" aria-label="Note filters">
+          <button class="filter active" data-filter="all" type="button">All</button>
+          <button class="filter" data-filter="pinned" type="button">Pinned</button>
+          <button class="filter" data-filter="favorites" type="button">Favorites</button>
+          <button class="filter" data-filter="todo" type="button">Tasks</button>
+        </div>
+
+        <section class="note-list-section">
+          <div class="section-heading">
+            <h2>Library</h2>
+            <span id="noteCount">0 notes</span>
+          </div>
+          <div class="note-list" id="noteList" aria-live="polite"></div>
+        </section>
+      </aside>
+
+      <section class="editor-panel" aria-label="Note editor">
+        <header class="editor-toolbar">
+          <div class="status-pill" id="saveStatus">Saved locally</div>
+          <div class="toolbar-actions">
+            <button class="ghost-button" id="pinBtn" type="button">Pin</button>
+            <button class="ghost-button" id="favoriteBtn" type="button">Favorite</button>
+            <button class="danger-button" id="deleteBtn" type="button">Delete</button>
+          </div>
+        </header>
+
+        <div class="editor-card">
+          <input id="noteTitle" class="title-input" placeholder="Untitled note" autocomplete="off" />
+          <textarea
+            id="noteBody"
+            class="body-input"
+            placeholder="Start typing. Press Ctrl+/ for shortcuts or ask the AI to brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
+          ></textarea>
+
+          <div class="metadata-row">
+            <label>
+              Tags
+              <input id="tagInput" placeholder="ai, research, school" autocomplete="off" />
+            </label>
+            <label>
+              Mood
+              <select id="moodInput">
+                <option value="focused">Focused</option>
+                <option value="creative">Creative</option>
+                <option value="calm">Calm</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <aside class="ai-panel" aria-label="AI assistant">
+        <section class="assistant-card">
+          <div class="assistant-header">
+            <div>
+              <p class="eyebrow">Copilot</p>
+              <h2>Ask your notes</h2>
+            </div>
+            <div class="thinking-orb" id="thinkingOrb" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+
+          <form id="aiForm" class="ai-form">
+            <input
+              id="aiPrompt"
+              placeholder='Try "fix typos", "give me ideas", "summarize", or "delete everything"'
+              autocomplete="off"
+            />
+            <button type="submit">Run</button>
+          </form>
+
+          <div class="quick-actions" aria-label="AI quick actions">
+            <button data-prompt="Give me ideas for this note" type="button">Ideas</button>
+            <button data-prompt="Fix typos in this note" type="button">Fix typos</button>
+            <button data-prompt="Summarize this note" type="button">Summary</button>
+            <button data-prompt="Extract action items" type="button">Tasks</button>
+            <button data-prompt="Suggest tags" type="button">Tags</button>
+          </div>
+
+          <div class="ai-response" id="aiResponse" aria-live="polite">
+            <p class="muted">AI suggestions and executed actions appear here.</p>
+          </div>
+        </section>
+
+        <section class="insight-card">
+          <div class="section-heading">
+            <h2>Workspace pulse</h2>
+            <span id="wordCount">0 words</span>
+          </div>
+          <div class="metrics-grid">
+            <div>
+              <strong id="taskCount">0</strong>
+              <span>Tasks</span>
+            </div>
+            <div>
+              <strong id="tagCount">0</strong>
+              <span>Tags</span>
+            </div>
+          </div>
+          <div class="shortcuts">
+            <h3>Shortcuts</h3>
+            <p><kbd>Ctrl</kbd> + <kbd>N</kbd> new note</p>
+            <p><kbd>Ctrl</kbd> + <kbd>K</kbd> search</p>
+            <p><kbd>Ctrl</kbd> + <kbd>Enter</kbd> ask AI</p>
+            <p><kbd>Ctrl</kbd> + <kbd>/</kbd> command help</p>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
