@@ -1,9 +1,9 @@
-const STORAGE_KEY = "baynat-ai-notes:v1";
+const STORAGE_KEY = "notari-ai-notes:v1";
 
 const seedNotes = [
   {
     id: "welcome-note",
-    title: "Welcome to Baynat AI Notes",
+    title: "Welcome to Notari AI Notes",
     body:
       "Capture ideas, clean up typos, summarize long notes, extract action items, and ask the assistant to organize your workspace.\n\nTry typing: fix typos, give me ideas, summarize this, suggest tags, or delete everything.",
     tags: ["ai", "welcome"],
