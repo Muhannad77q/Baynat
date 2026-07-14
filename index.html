@@ -63,11 +63,12 @@
         </header>
 
         <div class="editor-card">
-          <input id="noteTitle" class="title-input" placeholder="Untitled note" autocomplete="off" />
+          <input id="noteTitle" class="title-input" placeholder="Untitled note" autocomplete="off" dir="auto" />
           <textarea
             id="noteBody"
             class="body-input"
-            placeholder="Start typing. Press Ctrl+/ for shortcuts or ask the AI to brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
+            dir="auto"
+            placeholder="Start typing in any language. Ask AI to write, brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
           ></textarea>
 
           <div class="metadata-row">
@@ -105,13 +106,20 @@
           <form id="aiForm" class="ai-form">
             <input
               id="aiPrompt"
-              placeholder='Try "fix typos", "give me ideas", "summarize", or "delete everything"'
+              dir="auto"
+              placeholder='Try "write a paragraph about my idea", "اكتب خطة", "fix typos", or "delete everything"'
               autocomplete="off"
             />
             <button type="submit">Run</button>
           </form>
+          <div class="loading-stream" id="loadingStream" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
 
           <div class="quick-actions" aria-label="AI quick actions">
+            <button data-prompt="Write a strong opening paragraph for this note" type="button">Write</button>
             <button data-prompt="Give me ideas for this note" type="button">Ideas</button>
             <button data-prompt="Fix typos in this note" type="button">Fix typos</button>
             <button data-prompt="Summarize this note" type="button">Summary</button>

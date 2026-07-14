@@ -4,6 +4,8 @@ import {
   correctTypos,
   createNote,
   extractActionItems,
+  generateDraft,
+  getWordCount,
   parseAiIntent,
   runAiCommand,
   suggestTags,
@@ -16,6 +18,8 @@ test("parses direct AI actions", () => {
   assert.equal(parseAiIntent("fix typos"), "fixTypos");
   assert.equal(parseAiIntent("Ideas"), "ideas");
   assert.equal(parseAiIntent("Suggest tags"), "tags");
+  assert.equal(parseAiIntent("write a paragraph about study goals"), "write");
+  assert.equal(parseAiIntent("اكتب خطة عن الدراسة"), "write");
   assert.equal(parseAiIntent("show shortcuts"), "shortcuts");
 });
 
@@ -61,4 +65,24 @@ test("suggests useful tags from note content", () => {
   const tags = suggestTags(note);
   assert.deepEqual(tags.slice(0, 4), ["ai", "tasks", "design", "content"]);
   assert.equal(tags.includes("the"), false);
+});
+
+test("writes draft content directly into the active note", () => {
+  const note = createNote({ id: "draft", title: "Study goals", body: "Existing thought." });
+  const result = runAiCommand({
+    prompt: "write a paragraph about study goals",
+    note,
+    notes: [note],
+  });
+
+  assert.equal(result.action, "updateNote");
+  assert.match(result.note.body, /Existing thought\./);
+  assert.match(result.note.body, /Here is a strong draft about study goals/i);
+});
+
+test("supports Arabic draft prompts and unicode word counts", () => {
+  const draft = generateDraft("اكتب خطة عن الدراسة", createNote({ title: "الدراسة" }));
+
+  assert.match(draft, /هذه مسودة واضحة/);
+  assert.equal(getWordCount("مرحبا بالعالم hello world"), 4);
 });

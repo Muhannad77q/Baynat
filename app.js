@@ -109,7 +109,7 @@ export function normalizeTags(tags) {
 }
 
 export function getWordCount(text) {
-  return (text.trim().match(/\b[\w'-]+\b/g) || []).length;
+  return (text.trim().match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
 }
 
 export function correctTypos(text) {
@@ -186,6 +186,49 @@ export function generateIdeas(note) {
   ];
 }
 
+export function generateDraft(prompt, note = createNote()) {
+  const topic = extractDraftTopic(prompt) || note.title || "your idea";
+  const language = detectPromptLanguage(prompt);
+
+  if (language === "ar") {
+    return [
+      `## ${topic}`,
+      `هذه مسودة واضحة عن ${topic}.`,
+      `الفكرة الأساسية هي تحويل الملاحظة إلى شيء عملي ومفيد، مع توضيح الهدف والخطوة التالية.`,
+      `- لماذا يهم: يساعدك على ترتيب أفكارك بسرعة.`,
+      `- الخطوة التالية: أضف مثالاً أو مهمة واحدة يمكن تنفيذها الآن.`,
+    ].join("\n");
+  }
+
+  if (language === "es") {
+    return [
+      `## ${capitalize(topic)}`,
+      `Este es un borrador claro sobre ${topic}.`,
+      `La idea principal es convertir la nota en algo útil, ordenado y fácil de continuar.`,
+      `- Por qué importa: aclara el objetivo.`,
+      `- Siguiente paso: añade un ejemplo o una tarea concreta.`,
+    ].join("\n");
+  }
+
+  if (language === "fr") {
+    return [
+      `## ${capitalize(topic)}`,
+      `Voici un brouillon clair sur ${topic}.`,
+      `L'idée principale est de transformer cette note en contenu utile, structuré et facile à améliorer.`,
+      `- Pourquoi c'est important : cela clarifie l'objectif.`,
+      `- Prochaine étape : ajoute un exemple ou une action précise.`,
+    ].join("\n");
+  }
+
+  return [
+    `## ${capitalize(topic)}`,
+    `Here is a strong draft about ${topic}.`,
+    `The main idea is to turn this note into something clear, useful, and easy to build on.`,
+    `- Why it matters: it gives the note a clear purpose.`,
+    `- Next step: add one example, one decision, or one action you can take now.`,
+  ].join("\n");
+}
+
 export function parseAiIntent(prompt) {
   const normalized = prompt.trim().toLowerCase();
   if (!normalized) return "empty";
@@ -200,6 +243,7 @@ export function parseAiIntent(prompt) {
   if (/\b(tags?|organize|categorize)\b/.test(normalized)) return "tags";
   if (/\b(ideas?|brainstorm|inspire|suggestions?)\b/.test(normalized)) return "ideas";
   if (/\b(improve|rewrite|make better|polish)\b/.test(normalized)) return "improve";
+  if (isWritePrompt(prompt)) return "write";
   if (/\b(shortcuts?|help|commands?)\b/.test(normalized)) return "shortcuts";
   if (/\b(search|find|look for)\b/.test(normalized)) return "search";
   return "chat";
@@ -245,6 +289,17 @@ export function runAiCommand({ prompt, note, notes, lastDeleted = null }) {
         title: "New note created",
         lines: ["Opened a blank note so you can keep writing."],
       };
+    case "write": {
+      const draft = generateDraft(prompt, note);
+      const nextBody = note.body.trim() ? `${note.body.trim()}\n\n${draft}` : draft;
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: nextBody, updatedAt: Date.now() },
+        title: "Draft written",
+        lines: ["Added new writing directly into the note.", "Works with multilingual prompts and right-to-left text."],
+      };
+    }
     case "fixTypos": {
       const fixedBody = correctTypos(note.body);
       return {
@@ -334,7 +389,7 @@ export function runAiCommand({ prompt, note, notes, lastDeleted = null }) {
         intent,
         action: "respond",
         title: "What should I do?",
-        lines: ["Try: give me ideas, fix typos, summarize, suggest tags, create a note, delete current note, or delete everything."],
+        lines: ["Try: write a paragraph, اكتب خطة, give me ideas, fix typos, summarize, suggest tags, create a note, or delete everything."],
       };
     default:
       return {
@@ -367,6 +422,7 @@ function initApp() {
     aiForm: document.querySelector("#aiForm"),
     aiPrompt: document.querySelector("#aiPrompt"),
     aiResponse: document.querySelector("#aiResponse"),
+    loadingStream: document.querySelector("#loadingStream"),
     quickActions: document.querySelector(".quick-actions"),
     wordCount: document.querySelector("#wordCount"),
     taskCount: document.querySelector("#taskCount"),
@@ -398,6 +454,7 @@ function bindEvents() {
 
   refs.noteTitle.addEventListener("input", () => updateActiveNote({ title: refs.noteTitle.value || "Untitled note" }));
   refs.noteBody.addEventListener("input", () => updateActiveNote({ body: refs.noteBody.value }));
+  refs.aiPrompt.addEventListener("input", () => setInputDirection(refs.aiPrompt, refs.aiPrompt.value));
   refs.tagInput.addEventListener("change", () => updateActiveNote({ tags: normalizeTags(refs.tagInput.value) }));
   refs.moodInput.addEventListener("change", () => updateActiveNote({ mood: refs.moodInput.value }));
   refs.pinBtn.addEventListener("click", () => toggleActive("pinned"));
@@ -510,14 +567,17 @@ function runAssistant(prompt) {
   if (!note) return;
 
   refs.body.classList.add("thinking");
-  refs.aiResponse.replaceChildren(renderText("Thinking through your notes..."));
+  refs.aiForm.querySelector("button").disabled = true;
+  refs.aiResponse.replaceChildren(renderThinking());
 
   window.setTimeout(() => {
     const result = runAiCommand({ prompt, note, notes: state.notes, lastDeleted: state.lastDeleted });
     applyAiResult(result);
     refs.aiPrompt.value = "";
+    setInputDirection(refs.aiPrompt, "");
+    refs.aiForm.querySelector("button").disabled = false;
     refs.body.classList.remove("thinking");
-  }, 520);
+  }, 760);
 }
 
 function applyAiResult(result) {
@@ -599,6 +659,8 @@ function renderEditor() {
 
   refs.noteTitle.value = note.title;
   refs.noteBody.value = note.body;
+  setInputDirection(refs.noteTitle, note.title);
+  setInputDirection(refs.noteBody, note.body);
   refs.tagInput.value = note.tags.join(", ");
   refs.moodInput.value = note.mood;
   refs.pinBtn.textContent = note.pinned ? "Unpin" : "Pin";
@@ -637,6 +699,21 @@ function renderText(text) {
   return paragraph;
 }
 
+function renderThinking() {
+  const card = document.createElement("div");
+  card.className = "thinking-card";
+  const label = document.createElement("p");
+  label.textContent = "AI is thinking and writing smoothly...";
+  card.append(label);
+
+  for (let index = 0; index < 3; index += 1) {
+    const line = document.createElement("span");
+    card.append(line);
+  }
+
+  return card;
+}
+
 function filteredNotes() {
   const search = state.search.trim().toLowerCase();
   return [...state.notes]
@@ -659,12 +736,37 @@ function showToast(message) {
 
 function topKeywords(text) {
   const counts = new Map();
-  const words = (text.toLowerCase().match(/\b[a-z][a-z0-9'-]{2,}\b/g) || []).filter((word) => !stopWords.has(word));
+  const words = (text.toLowerCase().match(/[\p{L}][\p{L}\p{N}'’-]{2,}/gu) || []).filter((word) => !stopWords.has(word));
   words.forEach((word) => counts.set(word, (counts.get(word) || 0) + 1));
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([word]) => word)
     .slice(0, 8);
+}
+
+function isWritePrompt(prompt) {
+  return /(^|\s)(write|draft|compose|generate|make)\b/i.test(prompt)
+    || /(اكتب|اكتبي|اكتبلي|صغ|أنشئ|انشئ)/u.test(prompt)
+    || /(escribe|redacta|genera|écris|ecris|rédige|redige|escreva|schreib|schreibe|yaz|लिख|لکھ|بنویس|写|撰写|書いて|書く|써|작성)/iu.test(prompt);
+}
+
+function extractDraftTopic(prompt) {
+  return prompt
+    .replace(/^(please\s+)?(write|draft|compose|generate|make)\s+(a|an|the|me|for me)?\s*/i, "")
+    .replace(/^(اكتب|اكتبي|اكتبلي|صغ|أنشئ|انشئ)\s*/u, "")
+    .replace(/^(escribe|redacta|genera|écris|ecris|rédige|redige|escreva|schreib|schreibe|yaz)\s*/iu, "")
+    .replace(/^(लिख|لکھ|بنویس|写|撰写|書いて|書く|써|작성)\s*/iu, "")
+    .replace(/^(paragraph|note|draft|story|plan|text|content|email|letter|essay|poem)\s+(about|for|on)?\s*/i, "")
+    .replace(/^(فقرة|ملاحظة|خطة|رسالة|نص)\s*(عن|حول)?\s*/u, "")
+    .replace(/[.!?؟]+$/u, "")
+    .trim();
+}
+
+function detectPromptLanguage(prompt) {
+  if (/[\u0600-\u06ff]/u.test(prompt)) return "ar";
+  if (/\b(escribe|redacta|genera|sobre|para)\b|[¿¡]/iu.test(prompt)) return "es";
+  if (/\b(écris|ecris|rédige|redige|sur|pour)\b/iu.test(prompt)) return "fr";
+  return "en";
 }
 
 function inferTitleFromPrompt(prompt) {
@@ -679,6 +781,14 @@ function generateId() {
 
 function capitalize(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function setInputDirection(element, value) {
+  element.dir = getTextDirection(value);
+}
+
+function getTextDirection(value) {
+  return /[\u0591-\u07ff\uFB1D-\uFDFD\uFE70-\uFEFC]/u.test(value) ? "rtl" : "auto";
 }
 
 if (typeof window !== "undefined") {
