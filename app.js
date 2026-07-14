@@ -787,8 +787,10 @@ function setInputDirection(element, value) {
   element.dir = getTextDirection(value);
 }
 
-function getTextDirection(value) {
-  return /[\u0591-\u07ff\uFB1D-\uFDFD\uFE70-\uFEFC]/u.test(value) ? "rtl" : "auto";
+export function getTextDirection(value) {
+  const firstStrong = value.match(/[\p{L}]/u)?.[0] || "";
+  if (!firstStrong) return "auto";
+  return /[\u0591-\u07ff\uFB1D-\uFDFD\uFE70-\uFEFC]/u.test(firstStrong) ? "rtl" : "ltr";
 }
 
 if (typeof window !== "undefined") {

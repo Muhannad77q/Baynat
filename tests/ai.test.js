@@ -5,6 +5,7 @@ import {
   createNote,
   extractActionItems,
   generateDraft,
+  getTextDirection,
   getWordCount,
   parseAiIntent,
   runAiCommand,
@@ -85,4 +86,10 @@ test("supports Arabic draft prompts and unicode word counts", () => {
 
   assert.match(draft, /هذه مسودة واضحة/);
   assert.equal(getWordCount("مرحبا بالعالم hello world"), 4);
+});
+
+test("sets direction from the first strong character", () => {
+  assert.equal(getTextDirection("English first\nثم العربية"), "ltr");
+  assert.equal(getTextDirection("العربية أولا\nthen English"), "rtl");
+  assert.equal(getTextDirection("1234"), "auto");
 });

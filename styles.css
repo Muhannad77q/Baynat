@@ -369,6 +369,7 @@ select:focus {
   outline: none;
   background: transparent;
   color: var(--text);
+  unicode-bidi: plaintext;
 }
 
 .title-input {
