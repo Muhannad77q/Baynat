@@ -13,6 +13,9 @@ test("parses direct AI actions", () => {
   assert.equal(parseAiIntent("delete everything"), "deleteAll");
   assert.equal(parseAiIntent("clear this note"), "clearCurrent");
   assert.equal(parseAiIntent("make a new note about product ideas"), "createNote");
+  assert.equal(parseAiIntent("fix typos"), "fixTypos");
+  assert.equal(parseAiIntent("Ideas"), "ideas");
+  assert.equal(parseAiIntent("Suggest tags"), "tags");
   assert.equal(parseAiIntent("show shortcuts"), "shortcuts");
 });
 
@@ -52,8 +55,10 @@ test("undo restores deleted note snapshot", () => {
 test("suggests useful tags from note content", () => {
   const note = createNote({
     title: "AI launch tasks",
-    body: "Need to review AI assistant prompts and create launch checklist.",
+    body: "Need to review AI assistant prompts and create aesthetic launch copy.",
   });
 
-  assert.deepEqual(suggestTags(note).slice(0, 2), ["ai", "tasks"]);
+  const tags = suggestTags(note);
+  assert.deepEqual(tags.slice(0, 4), ["ai", "tasks", "design", "content"]);
+  assert.equal(tags.includes("the"), false);
 });

@@ -61,10 +61,19 @@ const stopWords = new Set([
   "note",
   "notes",
   "that",
+  "the",
   "this",
   "with",
   "would",
   "your",
+  "need",
+  "should",
+  "must",
+  "send",
+  "review",
+  "full",
+  "power",
+  "app",
 ]);
 
 let state = {
@@ -144,16 +153,25 @@ export function extractActionItems(text) {
 
 export function suggestTags(note) {
   const combined = `${note.title} ${note.body}`;
-  const tags = topKeywords(combined).slice(0, 5);
-
-  if (extractActionItems(note.body).length) {
-    tags.unshift("tasks");
-  }
+  const tags = [];
 
   if (/\b(ai|assistant|prompt|automation)\b/i.test(combined)) {
-    tags.unshift("ai");
+    tags.push("ai");
   }
 
+  if (extractActionItems(note.body).length) {
+    tags.push("tasks");
+  }
+
+  if (/\b(aesthetic|design|animation|ui|website|interface)\b/i.test(combined)) {
+    tags.push("design");
+  }
+
+  if (/\b(launch|demo|copy|homepage|content)\b/i.test(combined)) {
+    tags.push("content");
+  }
+
+  tags.push(...topKeywords(combined).slice(0, 6));
   return [...new Set(tags)].slice(0, 6);
 }
 
@@ -176,13 +194,13 @@ export function parseAiIntent(prompt) {
   if (/\b(delete|remove|erase)\b.*\b(current|this note|note)\b/.test(normalized)) return "deleteCurrent";
   if (/\b(clear|empty)\b.*\b(current|this note|body|page)\b/.test(normalized)) return "clearCurrent";
   if (/\b(new|create|make)\b.*\b(note|page)\b/.test(normalized)) return "createNote";
-  if (/\b(fix|correct|clean).*\b(typo|spelling|grammar|writing)\b/.test(normalized)) return "fixTypos";
+  if (/\b(fix|correct|clean).*\b(typos?|spelling|grammar|writing)\b/.test(normalized)) return "fixTypos";
   if (/\b(summarize|summary|shorten|tl;dr)\b/.test(normalized)) return "summarize";
   if (/\b(action items|tasks|todo|to-do|checklist)\b/.test(normalized)) return "tasks";
-  if (/\b(tag|organize|categorize)\b/.test(normalized)) return "tags";
-  if (/\b(idea|brainstorm|inspire|suggestion)\b/.test(normalized)) return "ideas";
+  if (/\b(tags?|organize|categorize)\b/.test(normalized)) return "tags";
+  if (/\b(ideas?|brainstorm|inspire|suggestions?)\b/.test(normalized)) return "ideas";
   if (/\b(improve|rewrite|make better|polish)\b/.test(normalized)) return "improve";
-  if (/\b(shortcut|help|command)\b/.test(normalized)) return "shortcuts";
+  if (/\b(shortcuts?|help|commands?)\b/.test(normalized)) return "shortcuts";
   if (/\b(search|find|look for)\b/.test(normalized)) return "search";
   return "chat";
 }
