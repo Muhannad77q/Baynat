@@ -21,6 +21,7 @@ test("parses direct AI actions", () => {
   assert.equal(parseAiIntent("Suggest tags"), "tags");
   assert.equal(parseAiIntent("write a paragraph about study goals"), "write");
   assert.equal(parseAiIntent("اكتب خطة عن الدراسة"), "write");
+  assert.equal(parseAiIntent("إكتب خُطّة عن الدراسة"), "write");
   assert.equal(parseAiIntent("show shortcuts"), "shortcuts");
 });
 

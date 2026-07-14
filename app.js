@@ -745,15 +745,17 @@ function topKeywords(text) {
 }
 
 function isWritePrompt(prompt) {
-  return /(^|\s)(write|draft|compose|generate|make)\b/i.test(prompt)
-    || /(اكتب|اكتبي|اكتبلي|صغ|أنشئ|انشئ)/u.test(prompt)
-    || /(escribe|redacta|genera|écris|ecris|rédige|redige|escreva|schreib|schreibe|yaz|लिख|لکھ|بنویس|写|撰写|書いて|書く|써|작성)/iu.test(prompt);
+  const comparable = normalizePromptForMatching(prompt);
+  return /(^|\s)(write|draft|compose|generate|make)\b/i.test(comparable)
+    || /([اأإآ]كتب|اكتبي|اكتبلي|صغ|[اأإآ]نشئ|انشئ)/u.test(comparable)
+    || /(escribe|redacta|genera|écris|ecris|rédige|redige|escreva|schreib|schreibe|yaz|लिख|لکھ|بنویس|写|撰写|書いて|書く|써|작성)/iu.test(comparable);
 }
 
 function extractDraftTopic(prompt) {
-  return prompt
+  const comparable = normalizePromptForMatching(prompt);
+  return comparable
     .replace(/^(please\s+)?(write|draft|compose|generate|make)\s+(a|an|the|me|for me)?\s*/i, "")
-    .replace(/^(اكتب|اكتبي|اكتبلي|صغ|أنشئ|انشئ)\s*/u, "")
+    .replace(/^([اأإآ]كتب|اكتبي|اكتبلي|صغ|[اأإآ]نشئ|انشئ)\s*/u, "")
     .replace(/^(escribe|redacta|genera|écris|ecris|rédige|redige|escreva|schreib|schreibe|yaz)\s*/iu, "")
     .replace(/^(लिख|لکھ|بنویس|写|撰写|書いて|書く|써|작성)\s*/iu, "")
     .replace(/^(paragraph|note|draft|story|plan|text|content|email|letter|essay|poem)\s+(about|for|on)?\s*/i, "")
@@ -767,6 +769,10 @@ function detectPromptLanguage(prompt) {
   if (/\b(escribe|redacta|genera|sobre|para)\b|[¿¡]/iu.test(prompt)) return "es";
   if (/\b(écris|ecris|rédige|redige|sur|pour)\b/iu.test(prompt)) return "fr";
   return "en";
+}
+
+function normalizePromptForMatching(prompt) {
+  return prompt.normalize("NFKC").replace(/[\u064B-\u065F\u0670]/gu, "");
 }
 
 function inferTitleFromPrompt(prompt) {
