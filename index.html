@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Baynat AI Notes</title>
+    <title>Notari AI Notes</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -19,9 +19,9 @@
     <main class="app-shell">
       <aside class="sidebar" aria-label="Notes workspace">
         <div class="brand-row">
-          <div class="brand-mark">B</div>
+          <div class="brand-mark">N</div>
           <div>
-            <p class="eyebrow">Baynat</p>
+            <p class="eyebrow">Notari</p>
             <h1>AI Notes</h1>
           </div>
         </div>
@@ -63,11 +63,12 @@
         </header>
 
         <div class="editor-card">
-          <input id="noteTitle" class="title-input" placeholder="Untitled note" autocomplete="off" />
+          <input id="noteTitle" class="title-input" placeholder="Untitled note" autocomplete="off" dir="auto" />
           <textarea
             id="noteBody"
             class="body-input"
-            placeholder="Start typing. Press Ctrl+/ for shortcuts or ask the AI to brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
+            dir="auto"
+            placeholder="Start typing in any language. Ask AI to write, brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
           ></textarea>
 
           <div class="metadata-row">
@@ -105,13 +106,20 @@
           <form id="aiForm" class="ai-form">
             <input
               id="aiPrompt"
-              placeholder='Try "fix typos", "give me ideas", "summarize", or "delete everything"'
+              dir="auto"
+              placeholder='Try "write a paragraph about my idea", "اكتب خطة", "fix typos", or "delete everything"'
               autocomplete="off"
             />
             <button type="submit">Run</button>
           </form>
+          <div class="loading-stream" id="loadingStream" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
 
           <div class="quick-actions" aria-label="AI quick actions">
+            <button data-prompt="Write a strong opening paragraph for this note" type="button">Write</button>
             <button data-prompt="Give me ideas for this note" type="button">Ideas</button>
             <button data-prompt="Fix typos in this note" type="button">Fix typos</button>
             <button data-prompt="Summarize this note" type="button">Summary</button>
@@ -151,6 +159,6 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=4"></script>
   </body>
 </html>
