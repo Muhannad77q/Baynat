@@ -3,23 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Notari AI Notes</title>
+    <title>Notari — AI Notes</title>
+    <meta name="description" content="Notari is a professional AI notes workspace for writing, organizing, and editing ideas." />
+    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css?v=14" />
   </head>
   <body>
-    <div class="ambient ambient-one"></div>
-    <div class="ambient ambient-two"></div>
-
     <main class="app-shell">
       <aside class="sidebar" aria-label="Notes workspace">
         <div class="brand-row">
-          <div class="brand-mark">N</div>
+          <div class="brand-mark" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Notari logo">
+              <defs>
+                <linearGradient id="notari-fill" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#f4ecd8" />
+                  <stop offset="1" stop-color="#b8a5ff" />
+                </linearGradient>
+                <linearGradient id="notari-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#1c1a24" />
+                  <stop offset="1" stop-color="#0d0c12" />
+                </linearGradient>
+              </defs>
+              <rect x="0" y="0" width="64" height="64" rx="16" fill="url(#notari-bg)" />
+              <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="none" stroke="rgba(255,255,255,0.08)" />
+              <g fill="url(#notari-fill)">
+                <rect x="15" y="15" width="6" height="34" rx="1.6" />
+                <rect x="43" y="15" width="6" height="34" rx="1.6" />
+                <path d="M21 15 L27 15 L49 46 L49 49 L43 49 L21 18 Z" />
+              </g>
+              <circle cx="52.5" cy="46.5" r="2.6" fill="#e8d5a8" />
+            </svg>
+          </div>
           <div>
             <p class="eyebrow">Notari</p>
             <h1>AI Notes</h1>
@@ -27,13 +44,13 @@
         </div>
 
         <button class="primary-action" id="newNoteBtn" type="button">
-          <span>+</span>
+          <span aria-hidden="true">+</span>
           New note
         </button>
 
         <label class="search-box">
           <span>Search notes</span>
-          <input id="searchInput" type="search" placeholder="Ideas, tags, projects..." autocomplete="off" />
+          <input id="searchInput" type="search" placeholder="Ideas, tags, projects…" autocomplete="off" />
         </label>
 
         <div class="filter-stack" aria-label="Note filters">
@@ -68,7 +85,7 @@
             id="noteBody"
             class="body-input"
             dir="auto"
-            placeholder="Start typing in any language. Ask AI to write, brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
+            placeholder="Start typing in any language. Ask AI to write, translate, continue, shorten, outline, rewrite, answer, tag, or delete everything."
           ></textarea>
 
           <div class="metadata-row">
@@ -96,39 +113,36 @@
               <p class="eyebrow">Copilot</p>
               <h2>Ask your notes</h2>
             </div>
-            <div class="thinking-orb" id="thinkingOrb" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
+            <div class="thinking-orb" id="thinkingOrb" aria-hidden="true"></div>
           </div>
 
           <form id="aiForm" class="ai-form">
             <input
               id="aiPrompt"
               dir="auto"
-              placeholder='Try "write a paragraph about my idea", "اكتب خطة", "fix typos", or "delete everything"'
+              placeholder='Try "translate to Spanish", "continue this note", "make it formal", or "delete everything"'
               autocomplete="off"
             />
             <button type="submit">Run</button>
           </form>
-          <div class="loading-stream" id="loadingStream" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
 
           <div class="quick-actions" aria-label="AI quick actions">
             <button data-prompt="Write a strong opening paragraph for this note" type="button">Write</button>
+            <button data-prompt="Continue this note" type="button">Continue</button>
+            <button data-prompt="Translate this note to Spanish" type="button">Translate</button>
+            <button data-prompt="Rewrite this in a formal tone" type="button">Rewrite</button>
+            <button data-prompt="Make this shorter" type="button">Shorten</button>
+            <button data-prompt="Turn this into an outline" type="button">Outline</button>
+            <button data-prompt="Convert this to a bullet list" type="button">List</button>
+            <button data-prompt="Suggest a title for this note" type="button">Title</button>
             <button data-prompt="Give me ideas for this note" type="button">Ideas</button>
             <button data-prompt="Fix typos in this note" type="button">Fix typos</button>
             <button data-prompt="Summarize this note" type="button">Summary</button>
-            <button data-prompt="Extract action items" type="button">Tasks</button>
             <button data-prompt="Suggest tags" type="button">Tags</button>
           </div>
 
           <div class="ai-response" id="aiResponse" aria-live="polite">
-            <p class="muted">AI suggestions and executed actions appear here.</p>
+            <p class="muted">Ask Notari to write, translate to any language, continue, shorten, outline, rewrite in a new tone, answer a question, extract tasks, or take actions like “delete everything.”</p>
           </div>
         </section>
 
@@ -159,6 +173,6 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=4"></script>
+    <script type="module" src="./app.js?v=14"></script>
   </body>
 </html>
