@@ -575,7 +575,7 @@ async function runAssistant(prompt) {
 
   try {
     showThinkingIndicator("Notari is thinking");
-    await sleep(660);
+    await sleep(900);
 
     const result = runAiCommand({
       prompt,
@@ -623,6 +623,7 @@ function applyStateChange(result) {
 
 async function streamWriteIntoNote(currentNote, result) {
   showThinkingIndicator("Notari is writing");
+  await sleep(420);
 
   const target = result.note;
   const startBody = currentNote.body;
