@@ -350,16 +350,51 @@ export async function translateViaApi(text, sourceLang, targetLang, { fetchImpl 
   if (!text || !text.trim()) return "";
   if (!fetchImpl) throw new Error("fetch is not available");
   if (sourceLang === targetLang) return text;
+  let primaryError;
+  try {
+    return await translateWithGoogle(text, sourceLang, targetLang, fetchImpl);
+  } catch (error) {
+    primaryError = error;
+  }
+  try {
+    return await translateWithMyMemory(text, sourceLang, targetLang, fetchImpl);
+  } catch {
+    throw primaryError;
+  }
+}
+
+async function translateWithGoogle(text, sourceLang, targetLang, fetchImpl) {
+  const chunks = splitForTranslate(text, 2800);
+  const results = [];
+  for (const chunk of chunks) {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sourceLang)}&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(chunk)}`;
+    const response = await fetchImpl(url);
+    if (!response.ok) throw new Error(`Google translate returned ${response.status}`);
+    const data = await response.json();
+    if (!Array.isArray(data) || !Array.isArray(data[0])) {
+      throw new Error("Google translate returned malformed response");
+    }
+    const translated = data[0]
+      .filter((row) => Array.isArray(row) && typeof row[0] === "string")
+      .map((row) => row[0])
+      .join("");
+    if (!translated) throw new Error("Google translate returned empty translation");
+    results.push(translated);
+  }
+  return results.join("\n\n");
+}
+
+async function translateWithMyMemory(text, sourceLang, targetLang, fetchImpl) {
   const chunks = splitForTranslate(text, 450);
   const results = [];
   for (const chunk of chunks) {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${encodeURIComponent(sourceLang)}|${encodeURIComponent(targetLang)}`;
     const response = await fetchImpl(url);
-    if (!response.ok) throw new Error(`Translate service returned ${response.status}`);
+    if (!response.ok) throw new Error(`MyMemory returned ${response.status}`);
     const data = await response.json();
     const translated = data?.responseData?.translatedText;
     if (typeof translated !== "string" || /INVALID TARGET LANGUAGE|PLEASE SELECT|MYMEMORY WARNING/i.test(translated)) {
-      throw new Error("Translate service could not process this language pair");
+      throw new Error("MyMemory could not process this language pair");
     }
     results.push(translated);
   }

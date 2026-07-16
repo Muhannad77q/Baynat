@@ -185,10 +185,27 @@ test("detects dominant language of note body text", () => {
   assert.equal(detectDominantLanguage("Привет мир"), "ru");
 });
 
-test("translateViaApi hits MyMemory-style endpoint and returns translated text", async () => {
+test("translateViaApi prefers Google Translate and returns joined text", async () => {
   const seen = [];
   const fakeFetch = async (url) => {
     seen.push(url);
+    return {
+      ok: true,
+      json: async () => [[["Hola mundo", "Hello world", null, null, 10]], null, "en", null, null, null, null, []],
+    };
+  };
+  const output = await translateViaApi("Hello world", "en", "es", { fetchImpl: fakeFetch });
+  assert.equal(output, "Hola mundo");
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /translate\.googleapis\.com/);
+  assert.match(seen[0], /sl=en&tl=es/);
+});
+
+test("translateViaApi falls back to MyMemory when Google fails", async () => {
+  const seen = [];
+  const fakeFetch = async (url) => {
+    seen.push(url);
+    if (url.includes("googleapis")) return { ok: false, json: async () => ({}) };
     return {
       ok: true,
       json: async () => ({ responseData: { translatedText: "Hola mundo" } }),
@@ -196,16 +213,20 @@ test("translateViaApi hits MyMemory-style endpoint and returns translated text",
   };
   const output = await translateViaApi("Hello world", "en", "es", { fetchImpl: fakeFetch });
   assert.equal(output, "Hola mundo");
-  assert.equal(seen.length, 1);
-  assert.match(seen[0], /api\.mymemory\.translated\.net/);
-  assert.match(seen[0], /langpair=en\|es/);
+  assert.equal(seen.length, 2);
+  assert.match(seen[0], /translate\.googleapis\.com/);
+  assert.match(seen[1], /mymemory\.translated\.net/);
+  assert.match(seen[1], /langpair=en\|es/);
 });
 
 test("translateViaApi rejects unsupported language pairs cleanly", async () => {
-  const fakeFetch = async () => ({
-    ok: true,
-    json: async () => ({ responseData: { translatedText: "PLEASE SELECT TWO DISTINCT LANGUAGES" } }),
-  });
+  const fakeFetch = async (url) => {
+    if (url.includes("googleapis")) throw new Error("google unavailable");
+    return {
+      ok: true,
+      json: async () => ({ responseData: { translatedText: "PLEASE SELECT TWO DISTINCT LANGUAGES" } }),
+    };
+  };
   await assert.rejects(() => translateViaApi("Hello", "en", "en-fake", { fetchImpl: fakeFetch }));
 });
 
