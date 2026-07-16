@@ -9,7 +9,9 @@ import {
   getWordCount,
   parseAiIntent,
   runAiCommand,
+  streamDelay,
   suggestTags,
+  tokenizeForStream,
 } from "../app.js";
 
 test("parses direct AI actions", () => {
@@ -93,4 +95,22 @@ test("sets direction from the first strong character", () => {
   assert.equal(getTextDirection("English first\nثم العربية"), "ltr");
   assert.equal(getTextDirection("العربية أولا\nthen English"), "rtl");
   assert.equal(getTextDirection("1234"), "auto");
+});
+
+test("tokenizes text into streamable chunks across scripts", () => {
+  assert.deepEqual(tokenizeForStream("Hola 你好"), ["Hola", " ", "你好"]);
+  assert.deepEqual(tokenizeForStream("Yes! Now."), ["Yes", "!", " ", "Now", "."]);
+  assert.deepEqual(tokenizeForStream("مرحبا"), ["مرحبا"]);
+  assert.deepEqual(tokenizeForStream(""), []);
+});
+
+test("stream delay slows for punctuation and newlines", () => {
+  const wordDelay = streamDelay("hello");
+  const punctuationDelay = streamDelay(".");
+  const newlineDelay = streamDelay("\n");
+  const spaceDelay = streamDelay(" ");
+
+  assert.ok(punctuationDelay > wordDelay, "punctuation should pause longer than a word");
+  assert.ok(newlineDelay > wordDelay, "newline should pause longer than a word");
+  assert.ok(spaceDelay < wordDelay, "single space should be fast");
 });

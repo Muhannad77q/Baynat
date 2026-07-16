@@ -87,6 +87,7 @@ let state = {
 let refs = {};
 let saveTimer;
 let toastTimer;
+let isStreaming = false;
 
 export function createNote(overrides = {}) {
   const now = Date.now();
@@ -422,7 +423,6 @@ function initApp() {
     aiForm: document.querySelector("#aiForm"),
     aiPrompt: document.querySelector("#aiPrompt"),
     aiResponse: document.querySelector("#aiResponse"),
-    loadingStream: document.querySelector("#loadingStream"),
     quickActions: document.querySelector(".quick-actions"),
     wordCount: document.querySelector("#wordCount"),
     taskCount: document.querySelector("#taskCount"),
@@ -562,49 +562,110 @@ function deleteActiveNote() {
   showToast("Note deleted. Type undo in AI to restore.");
 }
 
-function runAssistant(prompt) {
-  const note = activeNote();
-  if (!note) return;
+async function runAssistant(prompt) {
+  if (isStreaming) return;
+  const currentNote = activeNote();
+  if (!currentNote) return;
 
+  isStreaming = true;
   refs.body.classList.add("thinking");
   refs.aiForm.querySelector("button").disabled = true;
-  refs.aiResponse.replaceChildren(renderThinking());
+  refs.aiPrompt.value = "";
+  setInputDirection(refs.aiPrompt, "");
 
-  window.setTimeout(() => {
-    const result = runAiCommand({ prompt, note, notes: state.notes, lastDeleted: state.lastDeleted });
-    applyAiResult(result);
-    refs.aiPrompt.value = "";
-    setInputDirection(refs.aiPrompt, "");
+  try {
+    showThinkingIndicator("Notari is thinking");
+    await sleep(660);
+
+    const result = runAiCommand({
+      prompt,
+      note: currentNote,
+      notes: state.notes,
+      lastDeleted: state.lastDeleted,
+    });
+
+    if (result.action === "updateNote" && result.intent === "write") {
+      await streamWriteIntoNote(currentNote, result);
+    } else {
+      applyStateChange(result);
+    }
+
+    await streamAssistantResponse(result);
+    showToast(result.title);
+  } finally {
     refs.aiForm.querySelector("button").disabled = false;
     refs.body.classList.remove("thinking");
-  }, 760);
+    isStreaming = false;
+  }
 }
 
-function applyAiResult(result) {
+function applyStateChange(result) {
   if (result.action === "replaceAll") {
     state.notes = result.notes.map(createNote);
     state.activeId = state.notes[0]?.id || null;
     state.lastDeleted = result.lastDeleted ?? null;
     persistNotes();
     render();
-  }
-
-  if (result.action === "updateNote") {
-    state.notes = state.notes.map((note) => note.id === result.note.id ? createNote(result.note) : note);
+  } else if (result.action === "updateNote") {
+    state.notes = state.notes.map((note) =>
+      note.id === result.note.id ? createNote(result.note) : note
+    );
     state.activeId = result.note.id;
     persistNotes();
     render();
-  }
-
-  if (result.action === "addNote") {
+  } else if (result.action === "addNote") {
     state.notes = [createNote(result.note), ...state.notes];
     state.activeId = result.note.id;
     persistNotes();
     render();
   }
+}
 
-  renderAssistantResult(result);
-  showToast(result.title);
+async function streamWriteIntoNote(currentNote, result) {
+  showThinkingIndicator("Notari is writing");
+
+  const target = result.note;
+  const startBody = currentNote.body;
+  const finalBody = target.body;
+  const appended = finalBody.startsWith(startBody) ? finalBody.slice(startBody.length) : finalBody;
+
+  state.notes = state.notes.map((note) =>
+    note.id === target.id ? createNote({ ...target, body: startBody }) : note
+  );
+  state.activeId = target.id;
+  render();
+
+  refs.noteBody.focus();
+  let workingBody = startBody;
+  refs.noteBody.value = workingBody;
+  refs.noteBody.setSelectionRange(workingBody.length, workingBody.length);
+  setInputDirection(refs.noteBody, workingBody);
+
+  const tokens = tokenizeForStream(appended);
+  let step = 0;
+  for (const token of tokens) {
+    workingBody += token;
+    refs.noteBody.value = workingBody;
+    refs.noteBody.scrollTop = refs.noteBody.scrollHeight;
+    step += 1;
+    if (step % 5 === 0 || /\s/.test(token)) {
+      setInputDirection(refs.noteBody, workingBody);
+      state.notes = state.notes.map((note) =>
+        note.id === target.id ? { ...note, body: workingBody, updatedAt: Date.now() } : note
+      );
+      renderList();
+      renderMetrics();
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(streamDelay(token));
+  }
+
+  state.notes = state.notes.map((note) =>
+    note.id === target.id ? { ...note, body: workingBody, updatedAt: Date.now() } : note
+  );
+  setInputDirection(refs.noteBody, workingBody);
+  persistNotes();
+  render();
 }
 
 function render() {
@@ -676,42 +737,63 @@ function renderMetrics() {
   refs.tagCount.textContent = allTags.size;
 }
 
-function renderAssistantResult(result) {
-  const fragment = document.createDocumentFragment();
+async function streamAssistantResponse(result) {
+  const container = document.createDocumentFragment();
   const title = document.createElement("h3");
   title.textContent = result.title;
+  container.append(title);
   const list = document.createElement("ul");
+  container.append(list);
+  refs.aiResponse.replaceChildren(container);
 
-  result.lines.forEach((line) => {
+  for (const line of result.lines) {
     const item = document.createElement("li");
-    item.textContent = line;
+    const cursor = document.createElement("span");
+    cursor.className = "stream-cursor";
+    item.append(cursor);
     list.append(item);
-  });
 
-  fragment.append(title, list);
-  refs.aiResponse.replaceChildren(fragment);
-}
+    const tokens = tokenizeForStream(line);
+    for (const token of tokens) {
+      const textNode = document.createTextNode(token);
+      item.insertBefore(textNode, cursor);
+      refs.aiResponse.scrollTop = refs.aiResponse.scrollHeight;
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(streamDelay(token));
+    }
 
-function renderText(text) {
-  const paragraph = document.createElement("p");
-  paragraph.className = "muted";
-  paragraph.textContent = text;
-  return paragraph;
-}
-
-function renderThinking() {
-  const card = document.createElement("div");
-  card.className = "thinking-card";
-  const label = document.createElement("p");
-  label.textContent = "AI is thinking and writing smoothly...";
-  card.append(label);
-
-  for (let index = 0; index < 3; index += 1) {
-    const line = document.createElement("span");
-    card.append(line);
+    cursor.remove();
   }
+}
 
-  return card;
+function showThinkingIndicator(label = "Notari is thinking") {
+  const wrap = document.createElement("div");
+  wrap.className = "thinking-indicator";
+  wrap.append(label);
+  const dots = document.createElement("span");
+  dots.className = "dots";
+  for (let i = 0; i < 3; i += 1) {
+    dots.append(document.createElement("span"));
+  }
+  wrap.append(dots);
+  refs.aiResponse.replaceChildren(wrap);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function tokenizeForStream(text) {
+  return text.match(/\p{L}+|\p{N}+|\s+|[^\s\p{L}\p{N}]+/gu) || [];
+}
+
+export function streamDelay(token) {
+  if (!token) return 0;
+  if (/\n/.test(token)) return 95;
+  if (/^\s+$/.test(token)) return 12;
+  if (/[.!?،؟。]/.test(token)) return 120;
+  if (/^[,;:]$/.test(token)) return 70;
+  return 20 + Math.random() * 22;
 }
 
 function filteredNotes() {
