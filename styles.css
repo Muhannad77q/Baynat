@@ -76,6 +76,154 @@ button {
   background: radial-gradient(circle at center, rgba(232, 213, 168, 0.35), transparent 60%);
 }
 
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(1600px 1100px at 50% 45%, rgba(184, 165, 255, 0.28), transparent 60%),
+    radial-gradient(900px 700px at 50% 55%, rgba(232, 213, 168, 0.14), transparent 60%),
+    #0a0810;
+  pointer-events: none;
+  animation: splashOut 900ms cubic-bezier(0.16, 1, 0.3, 1) 2400ms forwards;
+  will-change: opacity, transform, filter;
+}
+
+.splash::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(600px 400px at 50% 50%, rgba(184, 165, 255, 0.14), transparent 60%);
+  animation: splashPulse 3000ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+.splash-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.6rem;
+  text-align: center;
+  z-index: 1;
+}
+
+.splash-mark {
+  width: 7rem;
+  height: 7rem;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow:
+    0 40px 120px -30px rgba(184, 165, 255, 0.7),
+    0 0 60px 0 rgba(184, 165, 255, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  animation: splashMark 900ms cubic-bezier(0.34, 1.56, 0.64, 1) 150ms both;
+}
+
+.splash-mark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.splash-word {
+  font-family: var(--font-display);
+  font-size: clamp(3.4rem, 8vw, 5.2rem);
+  font-weight: 400;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+  line-height: 1;
+  animation: splashWord 900ms cubic-bezier(0.16, 1, 0.3, 1) 500ms both;
+  background: linear-gradient(180deg, #f4ecd8 0%, #d5c9ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: 0 0 40px rgba(184, 165, 255, 0.35);
+}
+
+.splash-tag {
+  color: var(--warm);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.62em;
+  text-transform: uppercase;
+  animation: splashTag 900ms cubic-bezier(0.16, 1, 0.3, 1) 850ms both;
+  filter: drop-shadow(0 0 12px rgba(232, 213, 168, 0.3));
+}
+
+@keyframes splashPulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes splashOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+    filter: blur(20px);
+    pointer-events: none;
+    visibility: hidden;
+  }
+}
+
+@keyframes splashMark {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-14deg);
+    filter: blur(14px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.1) rotate(2deg);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes splashWord {
+  0% {
+    opacity: 0;
+    letter-spacing: 1.2em;
+    transform: translateY(0.6rem);
+    filter: blur(14px);
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: -0.01em;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes splashTag {
+  0% {
+    opacity: 0;
+    letter-spacing: 1.5em;
+    transform: translateY(0.4rem);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: 0.6em;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
 .app-shell {
   position: relative;
   display: grid;
@@ -786,145 +934,183 @@ kbd {
 }
 
 @keyframes fadeSlideUp {
-  from {
+  0% {
+    opacity: 0;
+    transform: translateY(2.4rem) scale(0.98);
+    filter: blur(14px);
+  }
+  60% {
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes fadeScaleIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) rotate(-6deg);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.06) rotate(1deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes ambientBreathe {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) translateY(3rem);
+    filter: blur(160px);
+  }
+  60% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(1) translateY(0);
+    filter: blur(80px);
+  }
+}
+
+@keyframes shimmerReveal {
+  0% {
     opacity: 0;
     transform: translateY(1.2rem);
-    filter: blur(6px);
+    filter: blur(4px);
   }
-  to {
+  100% {
     opacity: 1;
     transform: translateY(0);
     filter: blur(0);
   }
 }
 
-@keyframes fadeScaleIn {
-  from {
+@keyframes brandTextReveal {
+  0% {
     opacity: 0;
-    transform: scale(0.82);
+    letter-spacing: 0.6em;
+    filter: blur(6px);
   }
-  to {
+  100% {
     opacity: 1;
-    transform: scale(1);
+    letter-spacing: 0.24em;
+    filter: blur(0);
   }
 }
 
-@keyframes ambientBreathe {
-  from {
+@keyframes brandTitleReveal {
+  0% {
     opacity: 0;
-    transform: scale(0.6);
-    filter: blur(140px);
-  }
-  to {
-    opacity: 0.35;
-    transform: scale(1);
-    filter: blur(80px);
-  }
-}
-
-@keyframes shimmerReveal {
-  from {
-    opacity: 0;
+    letter-spacing: 0.2em;
+    filter: blur(8px);
     transform: translateY(0.6rem);
   }
-  to {
+  100% {
     opacity: 1;
+    letter-spacing: -0.01em;
+    filter: blur(0);
     transform: translateY(0);
   }
 }
 
-body {
-  animation: fadeIn 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
 .ambient-one {
-  animation: ambientBreathe 1600ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
+  animation: ambientBreathe 2600ms cubic-bezier(0.16, 1, 0.3, 1) 1200ms both;
 }
 
 .ambient-two {
-  animation: ambientBreathe 1800ms cubic-bezier(0.16, 1, 0.3, 1) 350ms both;
+  animation: ambientBreathe 2800ms cubic-bezier(0.16, 1, 0.3, 1) 1400ms both;
 }
 
 .sidebar {
-  animation: fadeSlideUp 780ms cubic-bezier(0.16, 1, 0.3, 1) 150ms both;
+  animation: fadeSlideUp 1100ms cubic-bezier(0.16, 1, 0.3, 1) 1400ms both;
 }
 
 .editor-panel {
-  animation: fadeSlideUp 780ms cubic-bezier(0.16, 1, 0.3, 1) 260ms both;
+  animation: fadeSlideUp 1100ms cubic-bezier(0.16, 1, 0.3, 1) 1550ms both;
 }
 
 .ai-panel {
-  animation: fadeSlideUp 780ms cubic-bezier(0.16, 1, 0.3, 1) 380ms both;
+  animation: fadeSlideUp 1100ms cubic-bezier(0.16, 1, 0.3, 1) 1700ms both;
 }
 
 .brand-mark {
-  animation: fadeScaleIn 650ms cubic-bezier(0.34, 1.56, 0.64, 1) 520ms both;
+  animation: fadeScaleIn 900ms cubic-bezier(0.34, 1.56, 0.64, 1) 2000ms both;
 }
 
 .brand-row .eyebrow {
-  animation: shimmerReveal 620ms cubic-bezier(0.16, 1, 0.3, 1) 620ms both;
+  animation: brandTextReveal 900ms cubic-bezier(0.16, 1, 0.3, 1) 2150ms both;
 }
 
 .brand-row h1 {
-  animation: shimmerReveal 640ms cubic-bezier(0.16, 1, 0.3, 1) 720ms both;
+  animation: brandTitleReveal 1000ms cubic-bezier(0.16, 1, 0.3, 1) 2250ms both;
 }
 
 .sidebar .primary-action {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2350ms both;
 }
 
-.sidebar .search-box,
-.sidebar .filter-stack {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+.sidebar .search-box {
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2450ms both;
 }
 
 .sidebar .filter-stack {
-  animation-delay: 960ms;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2540ms both;
 }
 
 .editor-toolbar {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 520ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 1850ms both;
 }
 
 .editor-card .title-input {
-  animation: shimmerReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) 600ms both;
+  animation: shimmerReveal 900ms cubic-bezier(0.16, 1, 0.3, 1) 2000ms both;
 }
 
 .editor-card .body-input {
-  animation: shimmerReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) 760ms both;
+  animation: shimmerReveal 900ms cubic-bezier(0.16, 1, 0.3, 1) 2200ms both;
 }
 
 .editor-card .metadata-row {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2400ms both;
 }
 
 .assistant-card .assistant-header {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 600ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2100ms both;
 }
 
 .assistant-card .ai-form {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 720ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2250ms both;
 }
 
 .assistant-card .quick-actions {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2400ms both;
 }
 
 .assistant-card .ai-response {
-  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 2550ms both;
 }
 
 .insight-card {
-  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 780ms both;
+  animation: shimmerReveal 900ms cubic-bezier(0.16, 1, 0.3, 1) 2350ms both;
 }
 
 body:not(.booted) .note-list .note-item {
   animation: shimmerReveal 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(1000ms + (var(--stagger, 0) * 70ms));
+  animation-delay: calc(2650ms + (var(--stagger, 0) * 90ms));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body,
+  .splash,
+  .splash-mark,
+  .splash-word,
+  .splash-tag,
   .ambient,
   .sidebar,
   .editor-panel,
@@ -946,6 +1132,10 @@ body:not(.booted) .note-list .note-item {
   .insight-card,
   .note-list .note-item {
     animation: none !important;
+  }
+
+  .splash {
+    display: none !important;
   }
 }
 

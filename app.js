@@ -1018,7 +1018,12 @@ function initApp() {
   bindEvents();
   render();
 
-  window.setTimeout(() => document.body.classList.add("booted"), 1800);
+  window.setTimeout(() => document.body.classList.add("booted"), 3600);
+
+  const splash = document.getElementById("splash");
+  if (splash) {
+    window.setTimeout(() => splash.remove(), 3300);
+  }
 }
 
 function bindEvents() {
