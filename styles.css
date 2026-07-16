@@ -780,6 +780,175 @@ kbd {
   transform: translateY(0);
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(1.2rem);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes fadeScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ambientBreathe {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+    filter: blur(140px);
+  }
+  to {
+    opacity: 0.35;
+    transform: scale(1);
+    filter: blur(80px);
+  }
+}
+
+@keyframes shimmerReveal {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+body {
+  animation: fadeIn 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ambient-one {
+  animation: ambientBreathe 1600ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
+}
+
+.ambient-two {
+  animation: ambientBreathe 1800ms cubic-bezier(0.16, 1, 0.3, 1) 350ms both;
+}
+
+.sidebar {
+  animation: fadeSlideUp 780ms cubic-bezier(0.16, 1, 0.3, 1) 150ms both;
+}
+
+.editor-panel {
+  animation: fadeSlideUp 780ms cubic-bezier(0.16, 1, 0.3, 1) 260ms both;
+}
+
+.ai-panel {
+  animation: fadeSlideUp 780ms cubic-bezier(0.16, 1, 0.3, 1) 380ms both;
+}
+
+.brand-mark {
+  animation: fadeScaleIn 650ms cubic-bezier(0.34, 1.56, 0.64, 1) 520ms both;
+}
+
+.brand-row .eyebrow {
+  animation: shimmerReveal 620ms cubic-bezier(0.16, 1, 0.3, 1) 620ms both;
+}
+
+.brand-row h1 {
+  animation: shimmerReveal 640ms cubic-bezier(0.16, 1, 0.3, 1) 720ms both;
+}
+
+.sidebar .primary-action {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+}
+
+.sidebar .search-box,
+.sidebar .filter-stack {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+}
+
+.sidebar .filter-stack {
+  animation-delay: 960ms;
+}
+
+.editor-toolbar {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 520ms both;
+}
+
+.editor-card .title-input {
+  animation: shimmerReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) 600ms both;
+}
+
+.editor-card .body-input {
+  animation: shimmerReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) 760ms both;
+}
+
+.editor-card .metadata-row {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+}
+
+.assistant-card .assistant-header {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 600ms both;
+}
+
+.assistant-card .ai-form {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 720ms both;
+}
+
+.assistant-card .quick-actions {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+}
+
+.assistant-card .ai-response {
+  animation: shimmerReveal 600ms cubic-bezier(0.16, 1, 0.3, 1) 900ms both;
+}
+
+.insight-card {
+  animation: shimmerReveal 700ms cubic-bezier(0.16, 1, 0.3, 1) 780ms both;
+}
+
+body:not(.booted) .note-list .note-item {
+  animation: shimmerReveal 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(1000ms + (var(--stagger, 0) * 70ms));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .ambient,
+  .sidebar,
+  .editor-panel,
+  .ai-panel,
+  .brand-mark,
+  .brand-row .eyebrow,
+  .brand-row h1,
+  .sidebar .primary-action,
+  .sidebar .search-box,
+  .sidebar .filter-stack,
+  .editor-toolbar,
+  .editor-card .title-input,
+  .editor-card .body-input,
+  .editor-card .metadata-row,
+  .assistant-card .assistant-header,
+  .assistant-card .ai-form,
+  .assistant-card .quick-actions,
+  .assistant-card .ai-response,
+  .insight-card,
+  .note-list .note-item {
+    animation: none !important;
+  }
+}
+
 @keyframes rotate {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

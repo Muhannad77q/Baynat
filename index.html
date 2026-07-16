@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=5" />
+    <link rel="stylesheet" href="./styles.css?v=6" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -91,7 +91,7 @@
             id="noteBody"
             class="body-input"
             dir="auto"
-            placeholder="Start typing in any language. Ask AI to write, brainstorm, summarize, fix typos, extract tasks, tag, or delete everything."
+            placeholder="Start typing in any language. Ask AI to write, translate, continue, shorten, outline, rewrite, answer, tag, or delete everything."
           ></textarea>
 
           <div class="metadata-row">
@@ -126,7 +126,7 @@
             <input
               id="aiPrompt"
               dir="auto"
-              placeholder='Try "write a paragraph about my idea", "اكتب خطة", or "delete everything"'
+              placeholder='Try "translate to Spanish", "continue this note", "make it formal", or "delete everything"'
               autocomplete="off"
             />
             <button type="submit">Run</button>
@@ -134,15 +134,21 @@
 
           <div class="quick-actions" aria-label="AI quick actions">
             <button data-prompt="Write a strong opening paragraph for this note" type="button">Write</button>
+            <button data-prompt="Continue this note" type="button">Continue</button>
+            <button data-prompt="Translate this note to Spanish" type="button">Translate</button>
+            <button data-prompt="Rewrite this in a formal tone" type="button">Rewrite</button>
+            <button data-prompt="Make this shorter" type="button">Shorten</button>
+            <button data-prompt="Turn this into an outline" type="button">Outline</button>
+            <button data-prompt="Convert this to a bullet list" type="button">List</button>
+            <button data-prompt="Suggest a title for this note" type="button">Title</button>
             <button data-prompt="Give me ideas for this note" type="button">Ideas</button>
             <button data-prompt="Fix typos in this note" type="button">Fix typos</button>
             <button data-prompt="Summarize this note" type="button">Summary</button>
-            <button data-prompt="Extract action items" type="button">Tasks</button>
             <button data-prompt="Suggest tags" type="button">Tags</button>
           </div>
 
           <div class="ai-response" id="aiResponse" aria-live="polite">
-            <p class="muted">Ask Notari to write, ideate, tidy up typos, extract tasks, tag your workspace, or take actions like “delete everything.”</p>
+            <p class="muted">Ask Notari to write, translate to any language, continue, shorten, outline, rewrite in a new tone, answer a question, extract tasks, or take actions like “delete everything.”</p>
           </div>
         </section>
 
@@ -173,6 +179,6 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=5"></script>
+    <script type="module" src="./app.js?v=6"></script>
   </body>
 </html>

@@ -230,24 +230,424 @@ export function generateDraft(prompt, note = createNote()) {
   ].join("\n");
 }
 
+export const LANGUAGE_MAP = {
+  english: "en", en: "en", ingles: "en", "inglés": "en", "الإنجليزية": "en", "الانجليزية": "en", "انجليزي": "en", "انجليزية": "en", "إنجليزي": "en", "إنجليزية": "en", anglais: "en", englisch: "en",
+  arabic: "ar", ar: "ar", arabe: "ar", "árabe": "ar", "العربية": "ar", "عربي": "ar", "عربية": "ar", arabisch: "ar",
+  spanish: "es", es: "es", "español": "es", espanol: "es", espagnol: "es", spanisch: "es", "الإسبانية": "es", "الاسبانية": "es", "اسباني": "es",
+  french: "fr", fr: "fr", "français": "fr", francais: "fr", "französisch": "fr", franzosisch: "fr", "الفرنسية": "fr", "فرنسي": "fr",
+  german: "de", de: "de", deutsch: "de", aleman: "de", "alemán": "de", allemand: "de", "الألمانية": "de", "الالمانية": "de",
+  italian: "it", it: "it", italiano: "it", italien: "it", italienisch: "it", "الإيطالية": "it", "الايطالية": "it",
+  portuguese: "pt", pt: "pt", "português": "pt", portugues: "pt", portugais: "pt", portugiesisch: "pt", "البرتغالية": "pt",
+  russian: "ru", ru: "ru", "русский": "ru", ruso: "ru", russe: "ru", russisch: "ru", "الروسية": "ru", "روسي": "ru",
+  japanese: "ja", ja: "ja", "日本語": "ja", "japonés": "ja", japones: "ja", japonais: "ja", japanisch: "ja", "اليابانية": "ja",
+  chinese: "zh-CN", zh: "zh-CN", "中文": "zh-CN", mandarin: "zh-CN", chino: "zh-CN", chinois: "zh-CN", chinesisch: "zh-CN", "الصينية": "zh-CN",
+  korean: "ko", ko: "ko", "한국어": "ko", coreano: "ko", "coréen": "ko", coreen: "ko", koreanisch: "ko", "الكورية": "ko",
+  hindi: "hi", hi: "hi", "हिन्दी": "hi", "الهندية": "hi",
+  turkish: "tr", tr: "tr", "türkçe": "tr", turco: "tr", turc: "tr", "türkisch": "tr", turkisch: "tr", "التركية": "tr",
+  dutch: "nl", nl: "nl", nederlands: "nl", "holandés": "nl", holandes: "nl", neerlandais: "nl", "niederländisch": "nl", "الهولندية": "nl",
+  urdu: "ur", ur: "ur", "اردو": "ur", "الأردية": "ur",
+  persian: "fa", farsi: "fa", fa: "fa", "فارسي": "fa", "الفارسية": "fa",
+  hebrew: "he", he: "he", "עברית": "he", "hebreo": "he", hebreu: "he", hebraisch: "he", "العبرية": "he",
+  polish: "pl", pl: "pl", polski: "pl", polaco: "pl", polonais: "pl", polnisch: "pl", "البولندية": "pl",
+  swedish: "sv", sv: "sv", svenska: "sv", sueco: "sv", "suédois": "sv", suedois: "sv", schwedisch: "sv", "السويدية": "sv",
+  greek: "el", el: "el", griego: "el", grec: "el", griechisch: "el", "اليونانية": "el",
+  vietnamese: "vi", vi: "vi", vietnamita: "vi", vietnamien: "vi", vietnamesisch: "vi", "الفيتنامية": "vi",
+  indonesian: "id", id: "id", bahasa: "id", indonesio: "id", "indonésien": "id", indonesisch: "id", "الإندونيسية": "id",
+  thai: "th", th: "th", "ภาษาไทย": "th", "tailandés": "th", tailandes: "th", "thaïlandais": "th", "التايلاندية": "th",
+  ukrainian: "uk", uk: "uk", "українська": "uk", ucraniano: "uk", ukrainien: "uk", ukrainisch: "uk",
+  bengali: "bn", bn: "bn", "বাংলা": "bn",
+};
+
+export const LANGUAGE_NAMES = {
+  en: "English", ar: "Arabic", es: "Spanish", fr: "French", de: "German", it: "Italian",
+  pt: "Portuguese", ru: "Russian", ja: "Japanese", "zh-CN": "Chinese", ko: "Korean",
+  hi: "Hindi", tr: "Turkish", nl: "Dutch", ur: "Urdu", fa: "Persian", he: "Hebrew",
+  pl: "Polish", sv: "Swedish", el: "Greek", vi: "Vietnamese", id: "Indonesian",
+  th: "Thai", uk: "Ukrainian", bn: "Bengali",
+};
+
+export function isTranslatePrompt(prompt) {
+  if (!prompt) return false;
+  const normalized = normalizePromptForMatching(prompt).toLowerCase();
+  if (/\b(translate|translation|translator)\b/.test(normalized)) return true;
+  if (/(traduce|traduci|traduza|traduzir|traduire|traducir|übersetze|ubersetze|çevir|翻译|翻訳|번역)/iu.test(normalized)) return true;
+  if (/(ترجم|الترجمة|ترجمة|ترجمها|ترجمه)/u.test(normalized)) return true;
+  return false;
+}
+
+export function detectTargetLanguage(prompt, fallback = "en") {
+  if (!prompt) return fallback;
+  const normalized = normalizePromptForMatching(prompt).toLowerCase();
+  const prepositionPatterns = [
+    /(?:to|into|in)\s+(?:the\s+)?([\p{L}]+)/gu,
+    /(?:al|en|au|aux|à|a|nach|ins?|em|para)\s+([\p{L}]+)/gu,
+    /(?:إلى|الى|للـ|لـ|ل)\s*([\p{L}]+)/gu,
+  ];
+  for (const pattern of prepositionPatterns) {
+    for (const match of normalized.matchAll(pattern)) {
+      const key = match[1];
+      if (LANGUAGE_MAP[key]) return LANGUAGE_MAP[key];
+    }
+  }
+  const wordSet = new Set(normalized.match(/[\p{L}]+/gu) || []);
+  for (const [key, code] of Object.entries(LANGUAGE_MAP)) {
+    if (wordSet.has(key)) return code;
+  }
+  return fallback;
+}
+
+export function detectDominantLanguage(text) {
+  if (!text) return "en";
+  if (/[\u0600-\u06ff]/u.test(text)) return "ar";
+  if (/[\u4e00-\u9fff]/u.test(text)) return "zh-CN";
+  if (/[\u3040-\u309f\u30a0-\u30ff]/u.test(text)) return "ja";
+  if (/[\uac00-\ud7af]/u.test(text)) return "ko";
+  if (/[\u0900-\u097f]/u.test(text)) return "hi";
+  if (/[\u0590-\u05ff]/u.test(text)) return "he";
+  if (/[\u0400-\u04ff]/u.test(text)) return "ru";
+  if (/[\u0e00-\u0e7f]/u.test(text)) return "th";
+  return "en";
+}
+
+function splitForTranslate(text, limit = 450) {
+  if (!text) return [];
+  if (text.length <= limit) return [text];
+  const paragraphs = text.split(/\n{2,}/);
+  const chunks = [];
+  let buffer = "";
+  const flushBuffer = () => { if (buffer) { chunks.push(buffer); buffer = ""; } };
+  for (const paragraph of paragraphs) {
+    if ((buffer.length + paragraph.length + 2) > limit) {
+      flushBuffer();
+      if (paragraph.length > limit) {
+        const sentences = paragraph.split(/(?<=[.!?،؟。])\s+/);
+        let inner = "";
+        for (const sentence of sentences) {
+          if ((inner.length + sentence.length + 1) > limit) {
+            if (inner) { chunks.push(inner); inner = ""; }
+            if (sentence.length > limit) {
+              for (let i = 0; i < sentence.length; i += limit) chunks.push(sentence.slice(i, i + limit));
+            } else {
+              inner = sentence;
+            }
+          } else {
+            inner = inner ? `${inner} ${sentence}` : sentence;
+          }
+        }
+        if (inner) chunks.push(inner);
+      } else {
+        buffer = paragraph;
+      }
+    } else {
+      buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
+    }
+  }
+  flushBuffer();
+  return chunks.length ? chunks : [text];
+}
+
+export async function translateViaApi(text, sourceLang, targetLang, { fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(globalThis) : null) } = {}) {
+  if (!text || !text.trim()) return "";
+  if (!fetchImpl) throw new Error("fetch is not available");
+  if (sourceLang === targetLang) return text;
+  const chunks = splitForTranslate(text, 450);
+  const results = [];
+  for (const chunk of chunks) {
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${encodeURIComponent(sourceLang)}|${encodeURIComponent(targetLang)}`;
+    const response = await fetchImpl(url);
+    if (!response.ok) throw new Error(`Translate service returned ${response.status}`);
+    const data = await response.json();
+    const translated = data?.responseData?.translatedText;
+    if (typeof translated !== "string" || /INVALID TARGET LANGUAGE|PLEASE SELECT|MYMEMORY WARNING/i.test(translated)) {
+      throw new Error("Translate service could not process this language pair");
+    }
+    results.push(translated);
+  }
+  return results.join("\n\n");
+}
+
+export function shortenText(text) {
+  if (!text || !text.trim()) return text;
+  const sentences = text.replace(/\n+/g, " ").split(/(?<=[.!?،؟。])\s+/).filter(Boolean);
+  if (sentences.length <= 2) return text.trim();
+  const target = Math.max(2, Math.round(sentences.length / 3));
+  return sentences.slice(0, target).join(" ").trim();
+}
+
+export function toBulletList(text) {
+  if (!text || !text.trim()) return text;
+  const items = text
+    .split(/\n+|(?<=[.!?،؟。])\s+/)
+    .map((piece) => piece.replace(/^[-*•]\s*/, "").replace(/[.!?،؟。]+$/u, "").trim())
+    .filter((piece) => piece.length > 0);
+  const seen = new Set();
+  const unique = items.filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return unique.map((item) => `- ${item}`).join("\n");
+}
+
+export function outlineFromText(text) {
+  const language = detectDominantLanguage(text);
+  const headings = {
+    en: { outline: "Outline", section: "Section", overview: "Overview", takeaways: "Key takeaways" },
+    ar: { outline: "الخطوط العريضة", section: "قسم", overview: "نظرة عامة", takeaways: "أبرز النقاط" },
+    es: { outline: "Esquema", section: "Sección", overview: "Vista general", takeaways: "Puntos clave" },
+    fr: { outline: "Plan", section: "Section", overview: "Aperçu", takeaways: "Points clés" },
+  };
+  const H = headings[language] || headings.en;
+  if (!text || !text.trim()) {
+    return `## ${H.outline}\n\n### ${H.overview}\n- ${language === "ar" ? "أضف محتوى وسأنظمه في خطوط عريضة." : "Add content and I will structure it as an outline."}`;
+  }
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const lines = [`## ${H.outline}`, ""];
+  paragraphs.forEach((paragraph, index) => {
+    const sentences = paragraph.split(/(?<=[.!?،؟。])\s+/).filter(Boolean);
+    const heading = (sentences[0] || `${H.section} ${index + 1}`).replace(/[.!?،؟。]+$/u, "").slice(0, 90);
+    lines.push(`### ${index + 1}. ${heading}`);
+    sentences.slice(1, 4).forEach((sentence) => {
+      const point = sentence.replace(/[.!?،؟。]+$/u, "").trim();
+      if (point) lines.push(`- ${point}`);
+    });
+    lines.push("");
+  });
+  return lines.join("\n").trim();
+}
+
+export function generateTitleFromContent(text) {
+  const cleaned = (text || "").replace(/^#+\s*/gm, "").trim();
+  if (!cleaned) return "Untitled note";
+  const firstSentence = cleaned.split(/(?<=[.!?،؟。])\s+/)[0] || cleaned.split(/\n/)[0];
+  if (firstSentence && firstSentence.length <= 70) {
+    return capitalize(firstSentence.replace(/[.!?،؟。]+$/u, "").trim());
+  }
+  const keywords = topKeywords(cleaned).slice(0, 4);
+  if (keywords.length) return capitalize(keywords.join(" "));
+  return firstSentence.slice(0, 60);
+}
+
+export function extendDraft(prompt, note) {
+  const language = detectDominantLanguage(note?.body || "") !== "en"
+    ? detectDominantLanguage(note.body)
+    : detectPromptLanguage(prompt);
+  const noteKeywords = topKeywords(`${note?.title || ""} ${note?.body || ""}`).slice(0, 3);
+  const anchor = noteKeywords[0] || extractDraftTopic(prompt) || note?.title || "this idea";
+  if (language === "ar") {
+    return [
+      `بالإضافة إلى ما سبق، هناك زاوية أخرى تتعلق بـ${anchor} تستحق التوضيح.`,
+      "يمكن تعميق هذه الفكرة بذكر مثال محدد يوضح كيف تنطبق على الواقع.",
+      "- الفكرة الأساسية: اربطها بنتيجة يمكن قياسها.",
+      "- الخطوة التالية: حدد قراراً واحداً يمكن اتخاذه هذا الأسبوع.",
+    ].join("\n");
+  }
+  if (language === "es") {
+    return [
+      `Ampliando lo anterior, otro ángulo sobre ${anchor} vale la pena aclarar.`,
+      "Puedes profundizarlo con un ejemplo concreto que muestre cómo se aplica en la práctica.",
+      "- Idea central: conéctala con un resultado que puedas medir.",
+      "- Siguiente paso: elige una decisión concreta para esta semana.",
+    ].join("\n");
+  }
+  if (language === "fr") {
+    return [
+      `En prolongeant ce qui précède, un autre angle autour de ${anchor} mérite d'être précisé.`,
+      "Approfondis-le avec un exemple concret qui montre comment cela se joue dans la pratique.",
+      "- Idée clé : relie-la à un résultat mesurable.",
+      "- Prochaine étape : choisis une décision précise pour cette semaine.",
+    ].join("\n");
+  }
+  return [
+    `Building on that, another angle around ${anchor} is worth spelling out.`,
+    "Go deeper with one concrete example that shows how this plays out in practice.",
+    "- The core idea: connect it to an outcome you can measure.",
+    "- Next step: pick one decision you can make this week.",
+  ].join("\n");
+}
+
+export function draftAnswer(prompt, note) {
+  const language = detectPromptLanguage(prompt) !== "en"
+    ? detectPromptLanguage(prompt)
+    : detectDominantLanguage(note?.body || "");
+  const question = prompt
+    .replace(/^(what|why|how|when|where|who|which|is|are|can|should|does|do|will|would|could)\b\s*/i, "")
+    .replace(/^(ما|لماذا|كيف|متى|أين|من|هل)\s*/u, "")
+    .replace(/[?؟.!]+$/u, "")
+    .trim() || "this";
+  if (language === "ar") {
+    return [
+      `## إجابة`,
+      `سؤالك حول ${question} يستحق تفكيراً هادئاً.`,
+      "الإطار: عرّف المصطلحات، اذكر السياق، ثم قدم إجابة واضحة مع سبب.",
+      "- ابدأ بجملة واحدة تلخص الإجابة.",
+      "- أضف مثالاً واحداً يجعلها ملموسة.",
+      "- انتهِ بخطوة تالية أو قرار يمكن اتخاذه.",
+    ].join("\n");
+  }
+  if (language === "es") {
+    return [
+      `## Respuesta`,
+      `Tu pregunta sobre ${question} merece una respuesta reflexiva.`,
+      "Marco: define los términos, nombra el contexto y da una respuesta clara con una razón.",
+      "- Empieza con una frase que resuma la respuesta.",
+      "- Añade un ejemplo que la haga concreta.",
+      "- Cierra con un siguiente paso o decisión.",
+    ].join("\n");
+  }
+  if (language === "fr") {
+    return [
+      `## Réponse`,
+      `Ta question sur ${question} mérite une réflexion posée.`,
+      "Cadre : définis les termes, nomme le contexte, puis donne une réponse claire avec une raison.",
+      "- Commence par une phrase qui résume la réponse.",
+      "- Ajoute un exemple pour la rendre concrète.",
+      "- Termine par une prochaine étape ou une décision.",
+    ].join("\n");
+  }
+  return [
+    `## Answer`,
+    `Your question about ${question} deserves a thoughtful take.`,
+    "Frame it like this: define the terms, name the context, then give a clear answer with a reason.",
+    "- Open with one sentence that captures the answer.",
+    "- Add one example that makes it concrete.",
+    "- Close with a next step or a decision you can make.",
+  ].join("\n");
+}
+
+export function draftExplanation(topic, note) {
+  const language = detectDominantLanguage(note?.body || "");
+  const safeTopic = topic || (note?.title || "this idea");
+  if (language === "ar") {
+    return [
+      `## ${safeTopic}`,
+      `يمكن فهم ${safeTopic} كفكرة تجمع بين عدة عناصر مترابطة.`,
+      "- التعريف: صف الفكرة في جملة واحدة، ثم اذكر الغرض منها.",
+      "- السياق: أضف مثالاً من الحياة اليومية يوضح كيف تعمل.",
+      "- لماذا تهم: اربطها بنتيجة أو قرار يمكن اتخاذه الآن.",
+    ].join("\n");
+  }
+  if (language === "es") {
+    return [
+      `## ${capitalize(safeTopic)}`,
+      `${capitalize(safeTopic)} se puede entender como una idea que reúne varias piezas conectadas.`,
+      "- Definición: describe la idea en una frase y di para qué sirve.",
+      "- Contexto: añade un ejemplo cotidiano que la haga concreta.",
+      "- Por qué importa: conéctala con un resultado o decisión.",
+    ].join("\n");
+  }
+  if (language === "fr") {
+    return [
+      `## ${capitalize(safeTopic)}`,
+      `${capitalize(safeTopic)} peut être compris comme une idée qui relie plusieurs éléments.`,
+      "- Définition : décris l'idée en une phrase et dis à quoi elle sert.",
+      "- Contexte : ajoute un exemple concret qui la rend claire.",
+      "- Pourquoi c'est important : relie-la à un résultat ou une décision.",
+    ].join("\n");
+  }
+  return [
+    `## ${capitalize(safeTopic)}`,
+    `${capitalize(safeTopic)} can be understood as an idea that pulls together a few connected pieces.`,
+    "- Definition: describe the idea in one sentence and say what it is for.",
+    "- Context: add an everyday example that makes it concrete.",
+    "- Why it matters: connect it to an outcome or decision you can make now.",
+  ].join("\n");
+}
+
+export function detectTone(prompt) {
+  const p = (prompt || "").toLowerCase();
+  if (/\b(concise|shorter|briefer?|terse|tight|snappy|concisely|tersely)\b/.test(p)) return "concise";
+  if (/\b(formal|professional|business|serious|academic|formally|professionally)\b/.test(p)) return "formal";
+  if (/\b(casual|informal|relaxed|chill|chatty|casually|informally)\b/.test(p)) return "casual";
+  if (/\b(warm|friendly|approachable|kind|nice|warmly|kindly)\b/.test(p)) return "friendly";
+  return "formal";
+}
+
+export function rewriteWithTone(text, tone) {
+  if (!text || !text.trim()) return text;
+  if (tone === "concise") return shortenText(text);
+  const replacements = {
+    formal: [
+      ["\\bcan't\\b", "cannot"], ["\\bwon't\\b", "will not"], ["\\bdon't\\b", "do not"],
+      ["\\bdoesn't\\b", "does not"], ["\\bdidn't\\b", "did not"], ["\\bisn't\\b", "is not"],
+      ["\\baren't\\b", "are not"], ["\\bwasn't\\b", "was not"], ["\\bweren't\\b", "were not"],
+      ["\\bit's\\b", "it is"], ["\\bthat's\\b", "that is"], ["\\bwe're\\b", "we are"],
+      ["\\bthey're\\b", "they are"], ["\\byou're\\b", "you are"], ["\\bi'm\\b", "I am"],
+      ["\\bi'll\\b", "I will"], ["\\bwe'll\\b", "we will"], ["\\bwanna\\b", "want to"],
+      ["\\bgonna\\b", "going to"], ["\\bkinda\\b", "somewhat"], ["\\bsorta\\b", "somewhat"],
+      ["\\bget\\b", "obtain"], ["\\bhelp\\b", "assist"], ["\\bshow\\b", "demonstrate"],
+      ["\\bstart\\b", "commence"], ["\\bstuff\\b", "material"], ["\\bthings\\b", "items"],
+    ],
+    casual: [
+      ["\\bcannot\\b", "can't"], ["\\bwill not\\b", "won't"], ["\\bdo not\\b", "don't"],
+      ["\\bit is\\b", "it's"], ["\\bwe are\\b", "we're"], ["\\bthey are\\b", "they're"],
+      ["\\byou are\\b", "you're"], ["\\bI am\\b", "I'm"], ["\\bthat is\\b", "that's"],
+      ["\\bobtain\\b", "get"], ["\\bassist\\b", "help"], ["\\bcommence\\b", "start"],
+      ["\\butilize\\b", "use"], ["\\bdemonstrate\\b", "show"], ["\\bhowever\\b", "but"],
+      ["\\btherefore\\b", "so"], ["\\bconsequently\\b", "so"], ["\\badditionally\\b", "also"],
+    ],
+    friendly: [
+      ["\\bhi\\b", "hey there"], ["\\bhello\\b", "hey"], ["\\butilize\\b", "use"],
+      ["\\bassistance\\b", "a hand"], ["\\bhowever\\b", "though"], ["\\bimmediately\\b", "right away"],
+    ],
+  };
+  const list = replacements[tone] || replacements.formal;
+  let result = text;
+  for (const [pattern, replacement] of list) {
+    result = result.replace(new RegExp(pattern, "gi"), (match) =>
+      match[0] === match[0].toUpperCase() ? capitalize(replacement) : replacement
+    );
+  }
+  return result;
+}
+
+export function isQuestion(prompt) {
+  if (!prompt) return false;
+  const trimmed = prompt.trim();
+  if (/[?؟]/.test(trimmed)) return true;
+  const lower = trimmed.toLowerCase();
+  if (/^(what|why|how|when|where|who|which|whose|whom|is|are|can|should|does|do|did|will|would|could|may|might)\b/.test(lower)) return true;
+  if (/^(ما|لماذا|كيف|متى|أين|من|هل|أ)\s/u.test(trimmed)) return true;
+  return false;
+}
+
+function extractExplainTopic(prompt) {
+  const match = prompt.match(/(?:explain|clarify|elaborate on|what does|what is|help me understand)\s+(?:me\s+)?(?:the\s+|a\s+|an\s+)?(.+?)(?:\s+(?:mean|means|please))?[?.!]*$/i);
+  if (match) return match[1].trim();
+  const arabicMatch = prompt.match(/(?:اشرح|وضح|فسر)\s+(?:لي\s+)?(.+?)[?؟.!]*$/u);
+  if (arabicMatch) return arabicMatch[1].trim();
+  return null;
+}
+
 export function parseAiIntent(prompt) {
   const normalized = prompt.trim().toLowerCase();
+  const raw = prompt.trim();
   if (!normalized) return "empty";
-  if (/\b(undo|restore)\b/.test(normalized)) return "undo";
+  if (isTranslatePrompt(prompt)) return "translate";
+  if (/\b(undo|restore)\b/.test(normalized) || /(تراجع|استرجع)/u.test(raw)) return "undo";
   if (/\b(delete|clear|remove|erase|wipe)\b.*\b(everything|all notes|all|workspace)\b/.test(normalized)) return "deleteAll";
   if (/\b(delete|remove|erase)\b.*\b(current|this note|note)\b/.test(normalized)) return "deleteCurrent";
   if (/\b(clear|empty)\b.*\b(current|this note|body|page)\b/.test(normalized)) return "clearCurrent";
   if (/\b(new|create|make)\b.*\b(note|page)\b/.test(normalized)) return "createNote";
   if (/\b(fix|correct|clean).*\b(typos?|spelling|grammar|writing)\b/.test(normalized)) return "fixTypos";
-  if (/\b(summarize|summary|shorten|tl;dr)\b/.test(normalized)) return "summarize";
+  if (/\b(outline|structure it|table of contents|toc)\b/.test(normalized)) return "outline";
+  if (/\b(bullet(?:s|point)?|as (?:a )?list|to (?:a )?list|convert to (?:a )?list|make (?:it |this |a )?list|checklistify)\b/.test(normalized)) return "convertToList";
+  if (/\b(title|headline|name (?:this|the|for)? ?note|suggest (?:a )?title)\b/.test(normalized)) return "generateTitle";
+  if (/\b(shorter|shorten|make (?:it |this )?(?:short|shorter|brief|concise|tight)|trim|condense|tl;dr)\b/.test(normalized)) return "shorten";
+  if (/\b(continue|keep going|extend|expand|another paragraph|add more|write more|more please)\b/.test(normalized) || /(أكمل|واصل|أضف المزيد|زد)/u.test(raw)) return "continue";
+  if (/\b(rewrite|paraphrase|rephrase|redo|rework|say (?:it|this) (?:differently|another way)|make (?:it|this) (?:more )?(?:formal|casual|professional|friendly))\b/.test(normalized)) return "rewrite";
+  if (/\b(explain|clarify|elaborate|what does .+ mean|help me understand)\b/.test(normalized) || /(اشرح|وضح|فسر)/u.test(raw)) return "explain";
+  if (/\b(summarize|summary|recap)\b/.test(normalized)) return "summarize";
   if (/\b(action items|tasks|todo|to-do|checklist)\b/.test(normalized)) return "tasks";
   if (/\b(tags?|organize|categorize)\b/.test(normalized)) return "tags";
   if (/\b(ideas?|brainstorm|inspire|suggestions?)\b/.test(normalized)) return "ideas";
-  if (/\b(improve|rewrite|make better|polish)\b/.test(normalized)) return "improve";
+  if (/\b(improve|make better|polish|refine)\b/.test(normalized)) return "improve";
   if (isWritePrompt(prompt)) return "write";
+  if (isQuestion(prompt)) return "answer";
   if (/\b(shortcuts?|help|commands?)\b/.test(normalized)) return "shortcuts";
   if (/\b(search|find|look for)\b/.test(normalized)) return "search";
-  return "chat";
+  return "write";
 }
 
 export function runAiCommand({ prompt, note, notes, lastDeleted = null }) {
@@ -355,6 +755,153 @@ export function runAiCommand({ prompt, note, notes, lastDeleted = null }) {
           "Add one decision, one risk, and one next step.",
         ],
       };
+    case "translate": {
+      const targetLang = detectTargetLanguage(prompt, "en");
+      const sourceLang = detectDominantLanguage(note.body);
+      const targetName = LANGUAGE_NAMES[targetLang] || targetLang.toUpperCase();
+      return {
+        intent,
+        action: "translate",
+        note,
+        sourceLang,
+        targetLang,
+        title: `Translating to ${targetName}`,
+        lines: [`Reaching the translation service for ${targetName}…`],
+      };
+    }
+    case "continue": {
+      if (!note.body.trim()) {
+        return {
+          intent,
+          action: "respond",
+          title: "Nothing to continue yet",
+          lines: ["Add a first sentence and I will extend the thought."],
+        };
+      }
+      const extension = extendDraft(prompt, note);
+      const nextBody = `${note.body.trim()}\n\n${extension}`;
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: nextBody, updatedAt: Date.now() },
+        title: "Note extended",
+        lines: ["Added a new paragraph that keeps the thought going.", "Works in every supported language."],
+      };
+    }
+    case "shorten": {
+      const shortened = shortenText(note.body);
+      if (!note.body.trim() || shortened === note.body.trim()) {
+        return {
+          intent,
+          action: "respond",
+          title: "Already tight",
+          lines: ["The note is already short. Add more content and I can trim it."],
+        };
+      }
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: shortened, updatedAt: Date.now() },
+        title: "Shortened",
+        lines: ["Trimmed the note to its core sentences.", "Type undo in the note to revert."],
+      };
+    }
+    case "outline": {
+      const outline = outlineFromText(note.body);
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: outline, updatedAt: Date.now() },
+        title: "Outline created",
+        lines: ["Restructured the note into headings and bullets."],
+      };
+    }
+    case "convertToList": {
+      if (!note.body.trim()) {
+        return {
+          intent,
+          action: "respond",
+          title: "Nothing to list yet",
+          lines: ["Add some sentences and I will turn them into a list."],
+        };
+      }
+      const list = toBulletList(note.body);
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: list, updatedAt: Date.now() },
+        title: "Turned into a list",
+        lines: ["Converted your paragraphs into bullet points."],
+      };
+    }
+    case "generateTitle": {
+      const newTitle = generateTitleFromContent(note.body);
+      if (newTitle === note.title) {
+        return {
+          intent,
+          action: "respond",
+          title: "Title already fits",
+          lines: [`Current title "${note.title}" is a strong match for the content.`],
+        };
+      }
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, title: newTitle, updatedAt: Date.now() },
+        title: "Title suggested",
+        lines: [`Renamed the note to "${newTitle}".`],
+      };
+    }
+    case "rewrite": {
+      if (!note.body.trim()) {
+        return {
+          intent,
+          action: "respond",
+          title: "Nothing to rewrite",
+          lines: ["Write a sentence or two first, then ask me to rewrite in any tone."],
+        };
+      }
+      const tone = detectTone(prompt);
+      const rewritten = rewriteWithTone(note.body, tone);
+      if (rewritten === note.body) {
+        return {
+          intent,
+          action: "respond",
+          title: `Already ${tone}`,
+          lines: ["The note already reads in that tone."],
+        };
+      }
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: rewritten, updatedAt: Date.now() },
+        title: `Rewritten (${tone})`,
+        lines: [`Applied a ${tone} rewrite. Type undo to revert.`],
+      };
+    }
+    case "explain": {
+      const topic = extractExplainTopic(prompt) || topKeywords(note.body)[0] || note.title || "this idea";
+      const explanation = draftExplanation(topic, note);
+      const nextBody = note.body.trim() ? `${note.body.trim()}\n\n${explanation}` : explanation;
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: nextBody, updatedAt: Date.now() },
+        title: "Explanation added",
+        lines: [`Explained ${topic} inside the note.`],
+      };
+    }
+    case "answer": {
+      const answer = draftAnswer(prompt, note);
+      const nextBody = note.body.trim() ? `${note.body.trim()}\n\n${answer}` : answer;
+      return {
+        intent,
+        action: "updateNote",
+        note: { ...note, body: nextBody, updatedAt: Date.now() },
+        title: "Answered in the note",
+        lines: ["Drafted a thoughtful answer directly in the note."],
+      };
+    }
     case "shortcuts":
       return {
         intent,
@@ -435,6 +982,8 @@ function initApp() {
 
   bindEvents();
   render();
+
+  window.setTimeout(() => document.body.classList.add("booted"), 1800);
 }
 
 function bindEvents() {
@@ -562,6 +1111,23 @@ function deleteActiveNote() {
   showToast("Note deleted. Type undo in AI to restore.");
 }
 
+const BODY_STREAM_INTENTS = new Set([
+  "write", "continue", "explain", "answer",
+  "shorten", "outline", "convertToList", "rewrite",
+]);
+
+const STREAM_LABELS = {
+  write: "Notari is writing",
+  continue: "Notari is continuing",
+  explain: "Notari is explaining",
+  answer: "Notari is answering",
+  shorten: "Notari is trimming",
+  outline: "Notari is outlining",
+  convertToList: "Notari is listing",
+  rewrite: "Notari is rewriting",
+  translate: "Notari is translating",
+};
+
 async function runAssistant(prompt) {
   if (isStreaming) return;
   const currentNote = activeNote();
@@ -584,7 +1150,12 @@ async function runAssistant(prompt) {
       lastDeleted: state.lastDeleted,
     });
 
-    if (result.action === "updateNote" && result.intent === "write") {
+    if (result.action === "translate") {
+      await handleTranslate(currentNote, result);
+      return;
+    }
+
+    if (result.action === "updateNote" && BODY_STREAM_INTENTS.has(result.intent) && result.note.body !== currentNote.body) {
       await streamWriteIntoNote(currentNote, result);
     } else {
       applyStateChange(result);
@@ -596,6 +1167,58 @@ async function runAssistant(prompt) {
     refs.aiForm.querySelector("button").disabled = false;
     refs.body.classList.remove("thinking");
     isStreaming = false;
+  }
+}
+
+async function handleTranslate(currentNote, result) {
+  const targetName = LANGUAGE_NAMES[result.targetLang] || result.targetLang.toUpperCase();
+  const sourceName = LANGUAGE_NAMES[result.sourceLang] || result.sourceLang.toUpperCase();
+
+  if (!currentNote.body.trim()) {
+    const emptyResult = {
+      intent: "translate",
+      action: "respond",
+      title: "Nothing to translate",
+      lines: ["Write some text in the note first, then ask me to translate."],
+    };
+    await streamAssistantResponse(emptyResult);
+    showToast(emptyResult.title);
+    return;
+  }
+
+  showThinkingIndicator(`Translating ${sourceName} → ${targetName}`);
+  try {
+    const translated = await translateViaApi(currentNote.body, result.sourceLang, result.targetLang);
+    if (!translated || !translated.trim()) {
+      throw new Error("Empty translation");
+    }
+    const divider = "\n\n— — —\n\n";
+    const nextBody = `${currentNote.body.trim()}${divider}${translated.trim()}`;
+    const updateResult = {
+      intent: "translate",
+      action: "updateNote",
+      note: { ...currentNote, body: nextBody, updatedAt: Date.now() },
+      title: `Translated to ${targetName}`,
+      lines: [
+        `Added the ${targetName} translation below the original.`,
+        "Powered by MyMemory. Type undo to remove it.",
+      ],
+    };
+    await streamWriteIntoNote(currentNote, updateResult);
+    await streamAssistantResponse(updateResult);
+    showToast(updateResult.title);
+  } catch (error) {
+    const errorResult = {
+      intent: "translate",
+      action: "respond",
+      title: "Translation unavailable",
+      lines: [
+        "I could not reach the translation service from this network.",
+        "Check your internet or try again in a moment. I can still rewrite, shorten, outline, or continue in any language.",
+      ],
+    };
+    await streamAssistantResponse(errorResult);
+    showToast(errorResult.title);
   }
 }
 
@@ -622,13 +1245,16 @@ function applyStateChange(result) {
 }
 
 async function streamWriteIntoNote(currentNote, result) {
-  showThinkingIndicator("Notari is writing");
+  const label = STREAM_LABELS[result.intent] || "Notari is writing";
+  showThinkingIndicator(label);
   await sleep(420);
 
   const target = result.note;
-  const startBody = currentNote.body;
+  const oldBody = currentNote.body;
   const finalBody = target.body;
-  const appended = finalBody.startsWith(startBody) ? finalBody.slice(startBody.length) : finalBody;
+  const appending = Boolean(oldBody) && finalBody.startsWith(oldBody);
+  const startBody = appending ? oldBody : "";
+  const streamText = appending ? finalBody.slice(oldBody.length) : finalBody;
 
   state.notes = state.notes.map((note) =>
     note.id === target.id ? createNote({ ...target, body: startBody }) : note
@@ -642,7 +1268,7 @@ async function streamWriteIntoNote(currentNote, result) {
   refs.noteBody.setSelectionRange(workingBody.length, workingBody.length);
   setInputDirection(refs.noteBody, workingBody);
 
-  const tokens = tokenizeForStream(appended);
+  const tokens = tokenizeForStream(streamText);
   let step = 0;
   for (const token of tokens) {
     workingBody += token;
@@ -688,10 +1314,11 @@ function renderList() {
     return;
   }
 
-  filtered.forEach((note) => {
+  filtered.forEach((note, index) => {
     const button = document.createElement("button");
     button.className = `note-item${note.id === state.activeId ? " active" : ""}`;
     button.type = "button";
+    button.style.setProperty("--stagger", String(index));
     button.addEventListener("click", () => {
       state.activeId = note.id;
       render();
