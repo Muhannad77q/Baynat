@@ -1,20 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Notari logo">
   <defs>
-    <linearGradient id="notari-fill" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f4ecd8" />
-      <stop offset="1" stop-color="#b8a5ff" />
-    </linearGradient>
     <linearGradient id="notari-bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1c1a24" />
-      <stop offset="1" stop-color="#0d0c12" />
+      <stop offset="0" stop-color="#1a2538" />
+      <stop offset="1" stop-color="#101722" />
+    </linearGradient>
+    <linearGradient id="notari-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f9fbff" />
+      <stop offset="1" stop-color="#c3d7ff" />
+    </linearGradient>
+    <linearGradient id="notari-accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fb1ff" />
+      <stop offset="1" stop-color="#4f88ff" />
     </linearGradient>
   </defs>
-  <rect x="0" y="0" width="64" height="64" rx="16" fill="url(#notari-bg)" />
-  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="none" stroke="rgba(255,255,255,0.08)" />
-  <g fill="url(#notari-fill)">
-    <rect x="15" y="15" width="6" height="34" rx="1.6" />
-    <rect x="43" y="15" width="6" height="34" rx="1.6" />
-    <path d="M21 15 L27 15 L49 46 L49 49 L43 49 L21 18 Z" />
-  </g>
-  <circle cx="52.5" cy="46.5" r="2.6" fill="#e8d5a8" />
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="url(#notari-bg)" />
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="none" stroke="#3a4a64" stroke-width="1.2" />
+  <path
+    fill="url(#notari-mark)"
+    d="M17 14h8v19.8L39 14h8v36h-8V30.2L25 50h-8z"
+  />
+  <rect x="44" y="44" width="8" height="8" rx="2.4" fill="url(#notari-accent)" />
 </svg>
