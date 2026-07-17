@@ -1,96 +1,58 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  correctTypos,
-  createNote,
-  extractActionItems,
-  generateDraft,
-  getTextDirection,
-  getWordCount,
-  parseAiIntent,
-  runAiCommand,
-  suggestTags,
+  buildSearchTrailAnswer,
+  calculatePopulationJump,
+  ksaPopulationSeries,
+  parseSearchIntent,
+  themeDirections,
 } from "../app.js";
 
-test("parses direct AI actions", () => {
-  assert.equal(parseAiIntent("delete everything"), "deleteAll");
-  assert.equal(parseAiIntent("clear this note"), "clearCurrent");
-  assert.equal(parseAiIntent("make a new note about product ideas"), "createNote");
-  assert.equal(parseAiIntent("fix typos"), "fixTypos");
-  assert.equal(parseAiIntent("Ideas"), "ideas");
-  assert.equal(parseAiIntent("Suggest tags"), "tags");
-  assert.equal(parseAiIntent("write a paragraph about study goals"), "write");
-  assert.equal(parseAiIntent("اكتب خطة عن الدراسة"), "write");
-  assert.equal(parseAiIntent("إكتب خُطّة عن الدراسة"), "write");
-  assert.equal(parseAiIntent("show shortcuts"), "shortcuts");
+test("classifies Search Trail prompt types", () => {
+  assert.equal(parseSearchIntent("People living in KSA for the past 10 years and changes in 2025"), "population");
+  assert.equal(parseSearchIntent("School science search about photosynthesis with ideas"), "school");
+  assert.equal(parseSearchIntent("Generate a high quality photo of a stadium"), "photo");
+  assert.equal(parseSearchIntent("Latest football match score and momentum"), "football");
+  assert.equal(parseSearchIntent(""), "empty");
+  assert.equal(parseSearchIntent("Explain why oceans are blue"), "general");
 });
 
-test("cleans common typos and duplicate words", () => {
-  const input = "teh app has has full full ai power becuase it is atheistic.";
-  assert.equal(correctTypos(input), "the app has full AI power because it is aesthetic.");
-});
-
-test("extracts actionable lines from messy notes", () => {
-  const items = extractActionItems("- Need to review copy\nRandom thought\nShould send the demo");
-  assert.deepEqual(items, ["Need to review copy", "Should send the demo"]);
-});
-
-test("delete everything replaces workspace and keeps undo snapshot", () => {
-  const notes = [
-    createNote({ id: "one", title: "One", body: "Keep this" }),
-    createNote({ id: "two", title: "Two", body: "Keep this too" }),
-  ];
-  const result = runAiCommand({ prompt: "delete everything", note: notes[0], notes });
-
-  assert.equal(result.action, "replaceAll");
-  assert.equal(result.notes.length, 1);
-  assert.equal(result.notes[0].title, "Fresh start");
-  assert.deepEqual(result.lastDeleted.map((note) => note.id), ["one", "two"]);
-});
-
-test("undo restores deleted note snapshot", () => {
-  const deleted = [createNote({ id: "old", title: "Old note" })];
-  const active = createNote({ id: "fresh", title: "Fresh start" });
-  const result = runAiCommand({ prompt: "undo", note: active, notes: [active], lastDeleted: deleted });
-
-  assert.equal(result.action, "replaceAll");
-  assert.equal(result.notes[0].id, "old");
-  assert.equal(result.lastDeleted, null);
-});
-
-test("suggests useful tags from note content", () => {
-  const note = createNote({
-    title: "AI launch tasks",
-    body: "Need to review AI assistant prompts and create aesthetic launch copy.",
+test("calculates the highlighted 2025 population jump", () => {
+  assert.deepEqual(calculatePopulationJump(ksaPopulationSeries, 2024, 2025), {
+    fromYear: 2024,
+    toYear: 2025,
+    change: 0.6,
+    percent: 1.6,
   });
-
-  const tags = suggestTags(note);
-  assert.deepEqual(tags.slice(0, 4), ["ai", "tasks", "design", "content"]);
-  assert.equal(tags.includes("the"), false);
 });
 
-test("writes draft content directly into the active note", () => {
-  const note = createNote({ id: "draft", title: "Study goals", body: "Existing thought." });
-  const result = runAiCommand({
-    prompt: "write a paragraph about study goals",
-    note,
-    notes: [note],
-  });
+test("builds population answer with ten-year graph data", () => {
+  const answer = buildSearchTrailAnswer("people living in KSA from past 10 years and show 2025 jump");
 
-  assert.equal(result.action, "updateNote");
-  assert.match(result.note.body, /Existing thought\./);
-  assert.match(result.note.body, /Here is a strong draft about study goals/i);
+  assert.equal(answer.intent, "population");
+  assert.equal(answer.graph.length, 10);
+  assert.equal(answer.graph.at(-1).year, 2025);
+  assert.match(answer.bullets.join(" "), /\+6\.5M/);
+  assert.match(answer.bullets.join(" "), /\+0\.6M/);
 });
 
-test("supports Arabic draft prompts and unicode word counts", () => {
-  const draft = generateDraft("اكتب خطة عن الدراسة", createNote({ title: "الدراسة" }));
+test("builds school science answer with project ideas", () => {
+  const answer = buildSearchTrailAnswer("got search in school for science it write it and give ideas");
 
-  assert.match(draft, /هذه مسودة واضحة/);
-  assert.equal(getWordCount("مرحبا بالعالم hello world"), 4);
+  assert.equal(answer.intent, "school");
+  assert.match(answer.summary, /school research/i);
+  assert.ok(answer.bullets.some((bullet) => bullet.includes("Project idea")));
 });
 
-test("sets direction from the first strong character", () => {
-  assert.equal(getTextDirection("English first\nثم العربية"), "ltr");
-  assert.equal(getTextDirection("العربية أولا\nthen English"), "rtl");
-  assert.equal(getTextDirection("1234"), "auto");
+test("builds image generation answer with editable media prompt", () => {
+  const answer = buildSearchTrailAnswer("generate photos high quality graphics football stadium");
+
+  assert.equal(answer.intent, "photo");
+  assert.match(answer.bullets.join(" "), /4K realism/);
+  assert.equal(answer.media.label, "Generated photo direction");
+});
+
+test("includes ten editable dark theme directions", () => {
+  assert.equal(themeDirections.length, 10);
+  assert.equal(new Set(themeDirections.map((theme) => theme.name)).size, 10);
 });
