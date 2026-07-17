@@ -257,7 +257,8 @@ h3 {
 }
 
 .hero-search button,
-.example-grid button {
+.example-grid button,
+.demo-actions button {
   border: 0;
   color: var(--text-strong);
   font-weight: 800;
@@ -270,14 +271,23 @@ h3 {
   box-shadow: 0 10px 30px rgba(102, 228, 255, 0.2);
 }
 
-.example-grid {
+.example-grid,
+.demo-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
+}
+
+.example-grid {
   margin-top: 1rem;
 }
 
-.example-grid button {
+.demo-actions {
+  margin: -0.4rem 0 1rem;
+}
+
+.example-grid button,
+.demo-actions button {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.055);
@@ -287,6 +297,7 @@ h3 {
 }
 
 .example-grid button:hover,
+.demo-actions button:hover,
 .theme-card:hover,
 .feature-grid article:hover {
   border-color: var(--border-strong);

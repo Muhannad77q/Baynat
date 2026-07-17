@@ -202,7 +202,6 @@ function initApp() {
   refs = {
     form: document.querySelector("#searchForm"),
     input: document.querySelector("#searchInput"),
-    examples: document.querySelector(".example-grid"),
     answerType: document.querySelector("#answerType"),
     answerTitle: document.querySelector("#answerTitle"),
     answerSummary: document.querySelector("#answerSummary"),
@@ -217,12 +216,14 @@ function initApp() {
     renderAnswer(refs.input.value);
   });
 
-  refs.examples.addEventListener("click", (event) => {
+  document.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-query]");
     if (!button) return;
     refs.input.value = button.dataset.query;
     renderAnswer(button.dataset.query);
-    document.querySelector("#demo").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!button.closest("#demo")) {
+      document.querySelector("#demo").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   });
 
   renderThemes();
