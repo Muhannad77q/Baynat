@@ -3,157 +3,200 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Notari — AI Notes</title>
-    <meta name="description" content="Notari is a professional AI notes workspace for writing, organizing, and editing ideas." />
+    <title>Search Trail — answers, graphs, photos, and match insight</title>
+    <meta
+      name="description"
+      content="Search Trail is a dark AI search concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight."
+    />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=15" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css?v=1" />
   </head>
   <body>
-    <main class="app-shell">
-      <aside class="sidebar" aria-label="Notes workspace">
-        <div class="brand-row">
-          <div class="brand-mark" aria-hidden="true">
-            <img src="./logo.svg" alt="Notari logo" loading="eager" decoding="sync" />
-          </div>
-          <div>
-            <p class="eyebrow">Notari</p>
-            <h1>AI Notes</h1>
+    <div class="background-glow" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Search Trail home">
+        <img src="./logo.svg" alt="" />
+        <span>Search Trail</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#demo">Demo</a>
+        <a href="#features">Features</a>
+        <a href="#themes">Theme photos</a>
+      </nav>
+      <a class="header-cta" href="#demo">Try a question</a>
+    </header>
+
+    <main id="top">
+      <section class="hero-section">
+        <div class="hero-copy">
+          <p class="eyebrow">Fast AI search concept</p>
+          <h1>Ask anything. Follow the answer trail.</h1>
+          <p class="hero-lede">
+            Search Trail turns questions into clear answers, live-style graphs, study ideas, photo generation prompts,
+            football match summaries, and next steps in one polished dark workspace.
+          </p>
+
+          <form class="hero-search" id="searchForm">
+            <label class="sr-only" for="searchInput">Ask Search Trail</label>
+            <input
+              id="searchInput"
+              name="query"
+              type="search"
+              autocomplete="off"
+              placeholder="Ask about KSA population, science homework, photos, football matches..."
+            />
+            <button type="submit">Search</button>
+          </form>
+
+          <div class="example-grid" aria-label="Example searches">
+            <button type="button" data-query="People living in KSA for the past 10 years and what changed in 2025">
+              KSA population graph
+            </button>
+            <button type="button" data-query="Help me with a school science search about photosynthesis and give ideas">
+              School science ideas
+            </button>
+            <button type="button" data-query="Generate a high quality photo of a futuristic football stadium at night">
+              Photo prompt
+            </button>
+            <button type="button" data-query="What happened in the latest football match and who had momentum">
+              Football match insight
+            </button>
           </div>
         </div>
 
-        <button class="primary-action" id="newNoteBtn" type="button">
-          <span aria-hidden="true">+</span>
-          New note
-        </button>
+        <aside class="hero-visual" aria-label="Search Trail preview">
+          <div class="result-window">
+            <div class="window-bar">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="trail-card active">
+              <p class="eyebrow">Best answer</p>
+              <h2>KSA population trail</h2>
+              <p>Shows ten-year movement, highlights 2025, and explains the jump in plain language.</p>
+            </div>
+            <div class="mini-chart" aria-hidden="true">
+              <span style="height: 38%"></span>
+              <span style="height: 42%"></span>
+              <span style="height: 47%"></span>
+              <span style="height: 51%"></span>
+              <span style="height: 56%"></span>
+              <span style="height: 64%"></span>
+              <span style="height: 70%"></span>
+              <span style="height: 77%"></span>
+              <span style="height: 86%"></span>
+              <span style="height: 94%"></span>
+            </div>
+            <div class="visual-row">
+              <div class="photo-tile">4K image prompt</div>
+              <div class="score-tile">2 - 1<br /><small>match pulse</small></div>
+            </div>
+          </div>
+        </aside>
+      </section>
 
-        <label class="search-box">
-          <span>Search notes</span>
-          <input id="searchInput" type="search" placeholder="Ideas, tags, projects…" autocomplete="off" />
-        </label>
-
-        <div class="filter-stack" aria-label="Note filters">
-          <button class="filter active" data-filter="all" type="button">All</button>
-          <button class="filter" data-filter="pinned" type="button">Pinned</button>
-          <button class="filter" data-filter="favorites" type="button">Favorites</button>
-          <button class="filter" data-filter="todo" type="button">Tasks</button>
+      <section class="demo-section" id="demo">
+        <div class="section-copy">
+          <p class="eyebrow">Interactive demo</p>
+          <h2>One search box, many answer types.</h2>
+          <p>
+            This demo runs locally in the browser. A production version can connect real search, sports, image, and data APIs.
+          </p>
         </div>
 
-        <section class="note-list-section">
-          <div class="section-heading">
-            <h2>Library</h2>
-            <span id="noteCount">0 notes</span>
-          </div>
-          <div class="note-list" id="noteList" aria-live="polite"></div>
-        </section>
-      </aside>
+        <div class="answer-layout">
+          <article class="answer-card" id="answerCard" aria-live="polite">
+            <div class="answer-header">
+              <div>
+                <p class="eyebrow" id="answerType">Data answer</p>
+                <h3 id="answerTitle">KSA population: ten-year trend with 2025 highlight</h3>
+              </div>
+              <span class="speed-pill">Fast answer</span>
+            </div>
+            <p id="answerSummary">
+              Saudi Arabia's population trend rises across the decade in this sample trail. The 2025 point is highlighted so you can quickly see the latest jump and compare it with previous years.
+            </p>
+            <ul class="answer-list" id="answerList"></ul>
+            <div class="chart-panel" id="chartPanel" aria-label="Population chart"></div>
+            <div class="media-panel" id="mediaPanel"></div>
+          </article>
 
-      <section class="editor-panel" aria-label="Note editor">
-        <header class="editor-toolbar">
-          <div class="status-pill" id="saveStatus">Saved locally</div>
-          <div class="toolbar-actions">
-            <button class="ghost-button" id="pinBtn" type="button">Pin</button>
-            <button class="ghost-button" id="favoriteBtn" type="button">Favorite</button>
-            <button class="danger-button" id="deleteBtn" type="button">Delete</button>
-          </div>
-        </header>
-
-        <div class="editor-card">
-          <input id="noteTitle" class="title-input" placeholder="Untitled note" autocomplete="off" dir="auto" />
-          <textarea
-            id="noteBody"
-            class="body-input"
-            dir="auto"
-            placeholder="Start typing in any language. Ask AI to write, translate, continue, shorten, outline, rewrite, answer, tag, or delete everything."
-          ></textarea>
-
-          <div class="metadata-row">
-            <label>
-              Tags
-              <input id="tagInput" placeholder="ai, research, school" autocomplete="off" />
-            </label>
-            <label>
-              Mood
-              <select id="moodInput">
-                <option value="focused">Focused</option>
-                <option value="creative">Creative</option>
-                <option value="calm">Calm</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </label>
-          </div>
+          <aside class="insight-stack">
+            <div class="stat-card">
+              <strong>&lt; 1s</strong>
+              <span>local demo response</span>
+            </div>
+            <div class="stat-card">
+              <strong>10</strong>
+              <span>theme photos generated</span>
+            </div>
+            <div class="stat-card">
+              <strong>All</strong>
+              <span>answers, ideas, photos, charts</span>
+            </div>
+          </aside>
         </div>
       </section>
 
-      <aside class="ai-panel" aria-label="AI assistant">
-        <section class="assistant-card">
-          <div class="assistant-header">
-            <div>
-              <p class="eyebrow">Copilot</p>
-              <h2>Ask your notes</h2>
-            </div>
-            <div class="thinking-orb" id="thinkingOrb" aria-hidden="true"></div>
-          </div>
+      <section class="feature-section" id="features">
+        <div class="section-copy">
+          <p class="eyebrow">What it can become</p>
+          <h2>Search for facts, visuals, classes, and games.</h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span class="feature-icon">01</span>
+            <h3>Best answers fast</h3>
+            <p>Summaries start with the answer, then add bullets, sources, and next steps for deeper research.</p>
+          </article>
+          <article>
+            <span class="feature-icon">02</span>
+            <h3>Graphs from questions</h3>
+            <p>Ask for changes over time and Search Trail turns the data into a readable visual trail.</p>
+          </article>
+          <article>
+            <span class="feature-icon">03</span>
+            <h3>High-quality photos</h3>
+            <p>Describe any scene and get a polished image prompt with style, lighting, lens, and detail guidance.</p>
+          </article>
+          <article>
+            <span class="feature-icon">04</span>
+            <h3>School research helper</h3>
+            <p>Science searches can become explanations, experiment ideas, outlines, and project angles.</p>
+          </article>
+          <article>
+            <span class="feature-icon">05</span>
+            <h3>Football match pulse</h3>
+            <p>Follow score, momentum, key moments, players, and tactical changes in a compact match card.</p>
+          </article>
+          <article>
+            <span class="feature-icon">06</span>
+            <h3>Everything you ask</h3>
+            <p>The interface adapts the answer style to the question: data, creative, learning, sports, or general search.</p>
+          </article>
+        </div>
+      </section>
 
-          <form id="aiForm" class="ai-form">
-            <input
-              id="aiPrompt"
-              dir="auto"
-              placeholder='Try "translate to Spanish", "continue this note", "make it formal", or "delete everything"'
-              autocomplete="off"
-            />
-            <button type="submit">Run</button>
-          </form>
-
-          <div class="quick-actions" aria-label="AI quick actions">
-            <button data-prompt="Write a strong opening paragraph for this note" type="button">Write</button>
-            <button data-prompt="Continue this note" type="button">Continue</button>
-            <button data-prompt="Translate this note to Spanish" type="button">Translate</button>
-            <button data-prompt="Rewrite this in a formal tone" type="button">Rewrite</button>
-            <button data-prompt="Make this shorter" type="button">Shorten</button>
-            <button data-prompt="Turn this into an outline" type="button">Outline</button>
-            <button data-prompt="Convert this to a bullet list" type="button">List</button>
-            <button data-prompt="Suggest a title for this note" type="button">Title</button>
-            <button data-prompt="Give me ideas for this note" type="button">Ideas</button>
-            <button data-prompt="Fix typos in this note" type="button">Fix typos</button>
-            <button data-prompt="Summarize this note" type="button">Summary</button>
-            <button data-prompt="Suggest tags" type="button">Tags</button>
-          </div>
-
-          <div class="ai-response" id="aiResponse" aria-live="polite">
-            <p class="muted">Ask Notari to write, translate to any language, continue, shorten, outline, rewrite in a new tone, answer a question, extract tasks, or take actions like “delete everything.”</p>
-          </div>
-        </section>
-
-        <section class="insight-card">
-          <div class="section-heading">
-            <h2>Workspace pulse</h2>
-            <span id="wordCount">0 words</span>
-          </div>
-          <div class="metrics-grid">
-            <div>
-              <strong id="taskCount">0</strong>
-              <span>Tasks</span>
-            </div>
-            <div>
-              <strong id="tagCount">0</strong>
-              <span>Tags</span>
-            </div>
-          </div>
-          <div class="shortcuts">
-            <h3>Shortcuts</h3>
-            <p><kbd>Ctrl</kbd> + <kbd>N</kbd> new note</p>
-            <p><kbd>Ctrl</kbd> + <kbd>K</kbd> search</p>
-            <p><kbd>Ctrl</kbd> + <kbd>Enter</kbd> ask AI</p>
-            <p><kbd>Ctrl</kbd> + <kbd>/</kbd> command help</p>
-          </div>
-        </section>
-      </aside>
+      <section class="theme-section" id="themes">
+        <div class="section-copy">
+          <p class="eyebrow">Pick and edit</p>
+          <h2>10 dark theme photo directions.</h2>
+          <p>Use these directions to choose the Search Trail mood before refining colors, graphics, and layout.</p>
+        </div>
+        <div class="theme-grid" id="themeGrid"></div>
+      </section>
     </main>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="./app.js?v=15"></script>
+    <footer class="site-footer">
+      <span>Search Trail</span>
+      <p>Dark AI search website concept for answers, graphs, photos, school, and football.</p>
+    </footer>
+
+    <script type="module" src="./app.js?v=1"></script>
   </body>
 </html>
