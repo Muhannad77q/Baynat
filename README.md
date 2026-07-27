@@ -1,3 +1,19 @@
-# Search Trail
+# بينات
 
-Dark AI search website concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight.
+واجهة عربية متجاوبة لإدارة حلقات القرآن، تتيح للمعلّم تسجيل حضور الطلاب ومتابعة الحفظ والتلاوة والمراجعة والتثبيت وقراءة التفسير المختصر.
+
+## التشغيل
+
+```bash
+npm run dev
+```
+
+يفتح الموقع على `http://localhost:5173`.
+
+## الاختبارات
+
+```bash
+npm test
+```
+
+تغطي الاختبارات البحث العربي، فلترة الحضور، ملخص الجلسة، وقائمة المتابعة.

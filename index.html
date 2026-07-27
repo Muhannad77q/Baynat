@@ -1,202 +1,401 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Search Trail — answers, graphs, photos, and match insight</title>
+    <title>بينات | إدارة حلقات القرآن</title>
     <meta
       name="description"
-      content="Search Trail is a dark AI search concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight."
+      content="بينات، مساحة متكاملة لإدارة حضور طلاب حلقات القرآن ومتابعة الحفظ والتلاوة والمراجعة والتفسير."
     />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Tajawal:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=2" />
   </head>
   <body>
-    <div class="background-glow" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <a class="brand" href="#main-content" aria-label="بينات، الصفحة الرئيسية">
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32" fill="none">
+                <path d="M5.2 20.1 16 5.5l10.8 14.6L16 27 5.2 20.1Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
+                <path d="m10.3 19.8 5.7-7.7 5.7 7.7-5.7 4.1-5.7-4.1Z" fill="currentColor" />
+              </svg>
+            </span>
+            <span>بينات</span>
+          </a>
+          <button class="sidebar-close icon-button" id="sidebarClose" type="button" aria-label="إغلاق القائمة">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
 
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Search Trail home">
-        <img src="./logo.svg" alt="" />
-        <span>Search Trail</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#demo">Demo</a>
-        <a href="#features">Features</a>
-        <a href="#themes">Theme photos</a>
-      </nav>
-      <a class="header-cta" href="#demo">Try a question</a>
-    </header>
+        <div class="circle-card">
+          <span class="circle-card__label">الحلقة الحالية</span>
+          <strong>حلقة الفجر</strong>
+          <span>مسجد الهدى · المستوى المتوسط</span>
+          <button type="button" class="circle-switcher">
+            تبديل الحلقة
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
+          </button>
+        </div>
 
-    <main id="top">
-      <section class="hero-section">
-        <div class="hero-copy">
-          <p class="eyebrow">Fast AI search concept</p>
-          <h1>Ask anything. Follow the answer trail.</h1>
-          <p class="hero-lede">
-            Search Trail turns questions into clear answers, live-style graphs, study ideas, photo generation prompts,
-            football match summaries, and next steps in one polished dark workspace.
-          </p>
+        <nav class="main-nav" aria-label="التنقل الرئيسي">
+          <p>مساحة المتابعة</p>
+          <button class="nav-item active" type="button" data-view="overview">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" /></svg></span>
+            لوحة اليوم
+          </button>
+          <button class="nav-item" type="button" data-view="attendance">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4.5 9.5h15M6.8 5h10.4A2.3 2.3 0 0 1 19.5 7.3v10.9a2.3 2.3 0 0 1-2.3 2.3H6.8a2.3 2.3 0 0 1-2.3-2.3V7.3A2.3 2.3 0 0 1 6.8 5Z" /><path d="m8 14 2.2 2.1L16 10.7" /></svg></span>
+            الحضور
+          </button>
+          <button class="nav-item" type="button" data-view="reports">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10m7 10V4m7 16v-7" /></svg></span>
+            التقارير
+          </button>
+          <button class="nav-item" type="button" data-view="students">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V20m14-9a3 3 0 1 0 0-6m3.1 9.1A4 4 0 0 1 22 17.5V20M9.5 10.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /></svg></span>
+            الطلاب
+          </button>
+        </nav>
 
-          <form class="hero-search" id="searchForm">
-            <label class="sr-only" for="searchInput">Ask Search Trail</label>
-            <input
-              id="searchInput"
-              name="query"
-              type="search"
-              autocomplete="off"
-              placeholder="Ask about KSA population, science homework, photos, football matches..."
-            />
-            <button type="submit">Search</button>
-          </form>
-
-          <div class="example-grid" aria-label="Example searches">
-            <button type="button" data-query="People living in KSA for the past 10 years and what changed in 2025">
-              KSA population graph
-            </button>
-            <button type="button" data-query="Help me with a school science search about photosynthesis and give ideas">
-              School science ideas
-            </button>
-            <button type="button" data-query="Generate a high quality photo of a futuristic football stadium at night">
-              Photo prompt
-            </button>
-            <button type="button" data-query="What happened in the latest football match and who had momentum">
-              Football match insight
+        <div class="sidebar-bottom">
+          <a class="help-link" href="#support">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17h.01M9.1 9a3 3 0 1 1 4.95 2.28c-.93.8-2.05 1.45-2.05 2.72v.5M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" /></svg></span>
+            مركز المساعدة
+          </a>
+          <div class="teacher-card">
+            <span class="avatar avatar--teacher">ع</span>
+            <div>
+              <strong>عبد الرحمن العتيبي</strong>
+              <span>معلّم الحلقة</span>
+            </div>
+            <button class="more-button" type="button" aria-label="خيارات الحساب">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="19" r="1" fill="currentColor" /></svg>
             </button>
           </div>
         </div>
+      </aside>
 
-        <aside class="hero-visual" aria-label="Search Trail preview">
-          <div class="result-window">
-            <div class="window-bar">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="trail-card active">
-              <p class="eyebrow">Best answer</p>
-              <h2>KSA population trail</h2>
-              <p>Shows ten-year movement, highlights 2025, and explains the jump in plain language.</p>
-            </div>
-            <div class="mini-chart" aria-hidden="true">
-              <span style="height: 38%"></span>
-              <span style="height: 42%"></span>
-              <span style="height: 47%"></span>
-              <span style="height: 51%"></span>
-              <span style="height: 56%"></span>
-              <span style="height: 64%"></span>
-              <span style="height: 70%"></span>
-              <span style="height: 77%"></span>
-              <span style="height: 86%"></span>
-              <span style="height: 94%"></span>
-            </div>
-            <div class="visual-row">
-              <div class="photo-tile">4K image prompt</div>
-              <div class="score-tile">2 - 1<br /><small>match pulse</small></div>
-            </div>
+      <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+      <div class="page-wrap">
+        <header class="topbar">
+          <button class="menu-button icon-button" id="sidebarToggle" type="button" aria-label="فتح القائمة">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+          <div class="breadcrumb">
+            <span>حلقة الفجر</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            <strong id="breadcrumbCurrent">لوحة اليوم</strong>
           </div>
-        </aside>
-      </section>
+          <div class="topbar-actions">
+            <button class="notification-button icon-button" type="button" aria-label="لديك 3 إشعارات">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9A6 6 0 0 0 6 9c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+              <span></span>
+            </button>
+            <button class="today-button" type="button" id="jumpToToday">
+              <span class="today-button__dot"></span>
+              جلسة اليوم
+            </button>
+          </div>
+        </header>
 
-      <section class="demo-section" id="demo">
-        <div class="section-copy">
-          <p class="eyebrow">Interactive demo</p>
-          <h2>One search box, many answer types.</h2>
-          <p>
-            This demo runs locally in the browser. A production version can connect real search, sports, image, and data APIs.
-          </p>
-        </div>
-
-        <div class="answer-layout">
-          <article class="answer-card" id="answerCard" aria-live="polite">
-            <div class="answer-header">
+        <main id="main-content">
+          <section class="view-section active" data-view-section="overview">
+            <section class="welcome-row">
               <div>
-                <p class="eyebrow" id="answerType">Data answer</p>
-                <h3 id="answerTitle">KSA population: ten-year trend with 2025 highlight</h3>
+                <div class="date-line">
+                  <span id="todayDate">الاثنين، 27 يوليو 2026</span>
+                  <span class="date-line__separator"></span>
+                  <span>13 محرّم 1448 هـ</span>
+                </div>
+                <h1>أهلًا بك، شيخ عبد الرحمن</h1>
+                <p>هذه نظرة سريعة على متابعة طلابك في جلسة اليوم.</p>
               </div>
-              <span class="speed-pill">Fast answer</span>
-            </div>
-            <p id="answerSummary">
-              Saudi Arabia's population trend rises across the decade in this sample trail. The 2025 point is highlighted so you can quickly see the latest jump and compare it with previous years.
-            </p>
-            <ul class="answer-list" id="answerList"></ul>
-            <div class="chart-panel" id="chartPanel" aria-label="Population chart"></div>
-            <div class="media-panel" id="mediaPanel"></div>
-          </article>
+              <div class="welcome-actions">
+                <button class="secondary-button" type="button" id="addStudentButton">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                  إضافة طالب
+                </button>
+                <button class="primary-button" type="button" id="saveAllButton">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.2 17 19 7.2" /></svg>
+                  حفظ تحديثات اليوم
+                </button>
+              </div>
+            </section>
 
-          <aside class="insight-stack">
-            <div class="stat-card">
-              <strong>&lt; 1s</strong>
-              <span>local demo response</span>
-            </div>
-            <div class="stat-card">
-              <strong>10</strong>
-              <span>theme photos generated</span>
-            </div>
-            <div class="stat-card">
-              <strong>All</strong>
-              <span>answers, ideas, photos, charts</span>
-            </div>
-          </aside>
+            <section class="metrics-grid" aria-label="ملخص جلسة اليوم">
+              <article class="metric-card metric-card--accent">
+                <div class="metric-card__top">
+                  <span class="metric-card__icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-1.5a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4V20M12 10.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /></svg>
+                  </span>
+                  <span class="metric-card__tag">حتى الآن</span>
+                </div>
+                <strong id="presentValue">8 <small>/ 10</small></strong>
+                <span>الطلاب الحاضرون</span>
+                <div class="metric-progress"><i id="attendanceProgress"></i></div>
+              </article>
+
+              <article class="metric-card">
+                <div class="metric-card__top">
+                  <span class="metric-card__icon metric-card__icon--sand">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5h10M7 19.5h10M8.5 4.5c0 4 2.1 4.2 3.5 7.5-1.4 3.3-3.5 3.5-3.5 7.5m7-15c0 4-2.1 4.2-3.5 7.5 1.4 3.3 3.5 3.5 3.5 7.5" /></svg>
+                  </span>
+                  <span class="trend trend--up">↑ 3 عن أمس</span>
+                </div>
+                <strong id="memorizationValue">18 <small>وجهًا</small></strong>
+                <span>مقدار الحفظ اليوم</span>
+                <p>من أصل 24 وجهًا مستهدفًا</p>
+              </article>
+
+              <article class="metric-card">
+                <div class="metric-card__top">
+                  <span class="metric-card__icon metric-card__icon--blue">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 16.5h8M8 12h8M8 7.5h4M5.5 3.5h13A1.5 1.5 0 0 1 20 5v14a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19V5a1.5 1.5 0 0 1 1.5-1.5Z" /></svg>
+                  </span>
+                  <span class="trend">متوسط الحلقة</span>
+                </div>
+                <strong id="recitationValue">4.6 <small>/ 5</small></strong>
+                <span>تقييم التلاوة</span>
+                <p>تحسّن ملحوظ في ضبط التجويد</p>
+              </article>
+
+              <article class="metric-card">
+                <div class="metric-card__top">
+                  <span class="metric-card__icon metric-card__icon--rose">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 20.5-1.45-1.32C5.4 14.5 2 11.42 2 7.65 2 4.57 4.42 2.5 7.5 2.5c1.74 0 3.41.81 4.5 2.08A6.08 6.08 0 0 1 16.5 2.5C19.58 2.5 22 4.57 22 7.65c0 3.77-3.4 6.85-8.55 11.54L12 20.5Z" /></svg>
+                  </span>
+                  <span class="metric-card__tag metric-card__tag--rose">متابعة</span>
+                </div>
+                <strong id="tafsirValue">7 <small>طلاب</small></strong>
+                <span>قرأوا التفسير المختصر</span>
+                <p id="tafsirNote">3 طلاب بانتظار القراءة</p>
+              </article>
+            </section>
+
+            <section class="insight-grid">
+              <article class="card weekly-card">
+                <div class="card-heading">
+                  <div>
+                    <span class="eyebrow">أداء الحلقة</span>
+                    <h2>حضور هذا الأسبوع</h2>
+                  </div>
+                  <button class="text-button" type="button" data-view-trigger="reports">التقرير الكامل</button>
+                </div>
+                <div class="week-chart" aria-label="رسم حضور هذا الأسبوع">
+                  <div class="chart-y-labels" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
+                  <div class="week-bars">
+                    <div class="week-bar"><i style="height: 66%"></i><span>س</span></div>
+                    <div class="week-bar"><i style="height: 84%"></i><span>ح</span></div>
+                    <div class="week-bar"><i style="height: 74%"></i><span>ن</span></div>
+                    <div class="week-bar"><i style="height: 92%"></i><span>ث</span></div>
+                    <div class="week-bar"><i style="height: 80%"></i><span>ر</span></div>
+                    <div class="week-bar is-today"><i id="todayChartBar" style="height: 80%"></i><span>خ</span></div>
+                    <div class="week-bar is-future"><i style="height: 16%"></i><span>ج</span></div>
+                  </div>
+                </div>
+                <div class="chart-legend">
+                  <span><i></i> نسبة الحضور</span>
+                  <strong id="chartCaption">80% في جلسة اليوم</strong>
+                </div>
+              </article>
+
+              <article class="card focus-card">
+                <div class="card-heading">
+                  <div>
+                    <span class="eyebrow">تنبيه اليوم</span>
+                    <h2>يحتاجون إلى متابعة</h2>
+                  </div>
+                  <span class="count-bubble" id="followupCount">3</span>
+                </div>
+                <div class="followup-list" id="followupList"></div>
+                <button class="soft-button" type="button" data-view-trigger="attendance">
+                  فتح سجل الحضور
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+                </button>
+              </article>
+            </section>
+
+            <section class="workspace-section" id="attendanceWorkspace">
+              <article class="card student-list-card">
+                <div class="card-heading student-list-heading">
+                  <div>
+                    <span class="eyebrow">جلسة اليوم</span>
+                    <h2>سجل طلاب الحلقة</h2>
+                    <p>اختر الطالب لتحديث حضوره وإنجازه.</p>
+                  </div>
+                  <div class="student-list-actions">
+                    <label class="search-field">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.2" /><path d="m16 16 4.1 4.1" /></svg>
+                      <input id="studentSearch" type="search" placeholder="ابحث باسم الطالب" autocomplete="off" />
+                    </label>
+                    <button class="filter-button icon-button" id="filterButton" type="button" aria-label="تصفية الطلاب">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10m-7 6h4" /></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="filter-row" id="filterRow" aria-label="تصفية حالة الحضور">
+                  <button class="filter-chip active" type="button" data-filter="all">الكل <span id="allCount">10</span></button>
+                  <button class="filter-chip" type="button" data-filter="present">حاضر <span id="presentCount">8</span></button>
+                  <button class="filter-chip" type="button" data-filter="late">متأخر <span id="lateCount">1</span></button>
+                  <button class="filter-chip" type="button" data-filter="absent">غائب <span id="absentCount">1</span></button>
+                </div>
+                <div class="student-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>الطالب</th>
+                        <th>الحضور</th>
+                        <th>الحفظ الجديد</th>
+                        <th>التلاوة</th>
+                        <th aria-label="فتح سجل الطالب"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="studentsTable"></tbody>
+                  </table>
+                  <div class="empty-state" id="emptyStudents" hidden>
+                    <span>⌕</span>
+                    <strong>لا توجد نتائج مطابقة</strong>
+                    <p>جرّب اسمًا آخر أو أزل التصفية.</p>
+                  </div>
+                </div>
+              </article>
+
+              <aside class="card record-card" id="recordCard">
+                <form id="recordForm">
+                  <div class="record-heading">
+                    <div class="selected-student" id="selectedStudentSummary"></div>
+                    <button class="more-button" type="button" aria-label="مزيد من خيارات الطالب">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1" fill="currentColor" /><circle cx="12" cy="12" r="1" fill="currentColor" /><circle cx="12" cy="19" r="1" fill="currentColor" /></svg>
+                    </button>
+                  </div>
+
+                  <div class="form-block">
+                    <div class="form-label-row">
+                      <label>حالة الحضور</label>
+                      <span class="auto-save-note">تُحفظ تلقائيًا</span>
+                    </div>
+                    <div class="attendance-choices" id="attendanceChoices">
+                      <button type="button" data-attendance="present">حاضر</button>
+                      <button type="button" data-attendance="late">متأخر</button>
+                      <button type="button" data-attendance="absent">غائب</button>
+                    </div>
+                  </div>
+
+                  <div class="record-fields">
+                    <label class="field">
+                      <span>مقدار الحفظ</span>
+                      <input id="memorizationInput" name="memorization" type="text" placeholder="مثال: النبأ 1–12" />
+                    </label>
+                    <label class="field field--compact">
+                      <span>عدد الأوجه</span>
+                      <input id="memorizationPagesInput" name="memorizationPages" type="number" min="0" max="20" step="0.5" />
+                    </label>
+                    <label class="field">
+                      <span>المراجعة</span>
+                      <input id="reviewInput" name="review" type="text" placeholder="مثال: جزء عمّ" />
+                    </label>
+                    <label class="field">
+                      <span>التثبيت</span>
+                      <input id="reinforcementInput" name="reinforcement" type="text" placeholder="مواضع تحتاج ضبطًا" />
+                    </label>
+                  </div>
+
+                  <div class="form-block recitation-block">
+                    <div class="form-label-row">
+                      <label for="recitationInput">تقييم التلاوة</label>
+                      <output id="recitationOutput" for="recitationInput">4.5 / 5</output>
+                    </div>
+                    <div class="range-line">
+                      <span>ضعيف</span>
+                      <input id="recitationInput" name="recitation" type="range" min="1" max="5" step="0.5" value="4.5" />
+                      <span>متقن</span>
+                    </div>
+                  </div>
+
+                  <label class="tafsir-check">
+                    <input id="tafsirInput" name="tafsirRead" type="checkbox" />
+                    <span class="checkmark">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.2 4.2L19 7.2" /></svg>
+                    </span>
+                    <span>
+                      <strong>قرأ التفسير المختصر</strong>
+                      <small>تمت قراءة تفسير آيات الحفظ اليوم</small>
+                    </span>
+                  </label>
+
+                  <label class="field notes-field">
+                    <span>ملاحظات المعلّم <em>اختياري</em></span>
+                    <textarea id="notesInput" name="notes" rows="2" placeholder="دوّن ملاحظة تساعدك في المتابعة القادمة…"></textarea>
+                  </label>
+
+                  <button class="primary-button record-save" type="submit">
+                    حفظ سجل الطالب
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.2 17 19 7.2" /></svg>
+                  </button>
+                </form>
+              </aside>
+            </section>
+          </section>
+
+          <section class="view-section" data-view-section="reports" id="reportsSection">
+            <section class="welcome-row welcome-row--compact">
+              <div>
+                <div class="date-line"><span>حلقة الفجر</span><span class="date-line__separator"></span><span>ملخص المتابعة</span></div>
+                <h1>تقارير الحلقة</h1>
+                <p>صورة مركزة للحضور، الحفظ، والتفسير المختصر.</p>
+              </div>
+              <button class="secondary-button" type="button" data-view-trigger="overview">العودة للوحة اليوم</button>
+            </section>
+            <section class="reports-grid">
+              <article class="card report-summary">
+                <span class="eyebrow">نسبة الإنجاز</span>
+                <div class="radial-progress" id="reportDonut"><strong id="reportAttendanceRate">80%</strong><span>الحضور</span></div>
+                <p>نسبة الحضور في جلسة اليوم مقارنة بعدد طلاب الحلقة المسجلين.</p>
+              </article>
+              <article class="card report-table-card">
+                <div class="card-heading">
+                  <div><span class="eyebrow">تقدم الطلاب</span><h2>ملخص فردي</h2></div>
+                  <span class="session-pill">جلسة اليوم</span>
+                </div>
+                <div class="report-student-list" id="reportStudentList"></div>
+              </article>
+              <article class="card interpretation-card">
+                <div class="interpretation-card__top"><span class="metric-card__icon metric-card__icon--rose">ت</span><span id="reportTafsirRate">70%</span></div>
+                <h2>التفسير المختصر</h2>
+                <p>طلاب أتموا قراءة تفسير آيات الحفظ خلال جلسة اليوم.</p>
+                <div class="segmented-progress" id="tafsirSegments" aria-label="تقدم قراءة التفسير المختصر"></div>
+              </article>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <dialog class="student-dialog" id="addStudentDialog">
+      <form method="dialog" id="addStudentForm">
+        <div class="dialog-heading">
+          <div><span class="eyebrow">قيد جديد</span><h2>إضافة طالب للحلقة</h2></div>
+          <button class="icon-button" value="cancel" aria-label="إغلاق"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
         </div>
-      </section>
-
-      <section class="feature-section" id="features">
-        <div class="section-copy">
-          <p class="eyebrow">What it can become</p>
-          <h2>Search for facts, visuals, classes, and games.</h2>
+        <label class="field"><span>اسم الطالب</span><input id="newStudentName" name="studentName" required placeholder="مثال: زياد محمد" /></label>
+        <label class="field"><span>المستوى</span><select id="newStudentLevel" name="studentLevel"><option>المستوى المتوسط</option><option>المستوى التمهيدي</option><option>المستوى المتقدم</option></select></label>
+        <div class="dialog-actions">
+          <button class="secondary-button" type="button" id="cancelAddStudent">إلغاء</button>
+          <button class="primary-button" type="submit">إضافة الطالب</button>
         </div>
-        <div class="feature-grid">
-          <article>
-            <span class="feature-icon">01</span>
-            <h3>Best answers fast</h3>
-            <p>Summaries start with the answer, then add bullets, sources, and next steps for deeper research.</p>
-          </article>
-          <article>
-            <span class="feature-icon">02</span>
-            <h3>Graphs from questions</h3>
-            <p>Ask for changes over time and Search Trail turns the data into a readable visual trail.</p>
-          </article>
-          <article>
-            <span class="feature-icon">03</span>
-            <h3>High-quality photos</h3>
-            <p>Describe any scene and get a polished image prompt with style, lighting, lens, and detail guidance.</p>
-          </article>
-          <article>
-            <span class="feature-icon">04</span>
-            <h3>School research helper</h3>
-            <p>Science searches can become explanations, experiment ideas, outlines, and project angles.</p>
-          </article>
-          <article>
-            <span class="feature-icon">05</span>
-            <h3>Football match pulse</h3>
-            <p>Follow score, momentum, key moments, players, and tactical changes in a compact match card.</p>
-          </article>
-          <article>
-            <span class="feature-icon">06</span>
-            <h3>Everything you ask</h3>
-            <p>The interface adapts the answer style to the question: data, creative, learning, sports, or general search.</p>
-          </article>
-        </div>
-      </section>
+      </form>
+    </dialog>
 
-      <section class="theme-section" id="themes">
-        <div class="section-copy">
-          <p class="eyebrow">Pick and edit</p>
-          <h2>10 dark theme photo directions.</h2>
-          <p>Use these directions to choose the Search Trail mood before refining colors, graphics, and layout.</p>
-        </div>
-        <div class="theme-grid" id="themeGrid"></div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <span>Search Trail</span>
-      <p>Dark AI search website concept for answers, graphs, photos, school, and football.</p>
-    </footer>
-
-    <script type="module" src="./app.js?v=1"></script>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js?v=2"></script>
   </body>
 </html>

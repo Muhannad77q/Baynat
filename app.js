@@ -1,317 +1,699 @@
-export const ksaPopulationSeries = [
-  { year: 2016, population: 31.8 },
-  { year: 2017, population: 32.6 },
-  { year: 2018, population: 33.4 },
-  { year: 2019, population: 34.2 },
-  { year: 2020, population: 35.0 },
-  { year: 2021, population: 35.5 },
-  { year: 2022, population: 36.4 },
-  { year: 2023, population: 37.0 },
-  { year: 2024, population: 37.7 },
-  { year: 2025, population: 38.3 },
-];
+const STORAGE_KEY = "bayanat-session-v1";
 
-export const themeDirections = [
-  {
-    name: "Neon Observatory",
-    detail: "Deep navy, cyan trails, glass answer cards, and glowing graph lines.",
-    gradient: "radial-gradient(circle at 25% 20%, #66e4ff 0 10%, transparent 24%), linear-gradient(135deg, #06111f, #18255e 52%, #0bf0bd)",
-  },
-  {
-    name: "Football Night",
-    detail: "Dark stadium lights, electric green accents, match pulse panels.",
-    gradient: "radial-gradient(circle at 70% 24%, #d4ff70 0 9%, transparent 22%), linear-gradient(135deg, #03080a, #102d24 52%, #39ff88)",
-  },
-  {
-    name: "Royal Data",
-    detail: "Black and gold dashboard for premium answers and statistics.",
-    gradient: "radial-gradient(circle at 35% 28%, #ffd166 0 10%, transparent 25%), linear-gradient(135deg, #090806, #22170d 55%, #d49a28)",
-  },
-  {
-    name: "Purple Engine",
-    detail: "Violet search field, fast AI glow, and cinematic cards.",
-    gradient: "radial-gradient(circle at 72% 24%, #ff7af5 0 10%, transparent 24%), linear-gradient(135deg, #0b0718, #241454 52%, #8a6dff)",
-  },
-  {
-    name: "Science Lab",
-    detail: "Teal formulas, school research cards, and clean experiment visuals.",
-    gradient: "radial-gradient(circle at 24% 24%, #9afff0 0 10%, transparent 24%), linear-gradient(135deg, #071414, #0d323d 52%, #43e8d8)",
-  },
-  {
-    name: "Graph Galaxy",
-    detail: "Space black, bright blue bars, starfield dots, and data trails.",
-    gradient: "radial-gradient(circle at 62% 30%, #ffffff 0 2%, transparent 5%), radial-gradient(circle at 28% 20%, #66e4ff 0 8%, transparent 21%), linear-gradient(135deg, #050812, #101b45 55%, #355cff)",
-  },
-  {
-    name: "Photo Studio",
-    detail: "High-contrast black, magenta light, and glossy generated image tiles.",
-    gradient: "radial-gradient(circle at 35% 18%, #ff4eb8 0 11%, transparent 25%), linear-gradient(135deg, #09030a, #281127 52%, #ff78cf)",
-  },
-  {
-    name: "Desert Signal",
-    detail: "KSA-inspired dark sand, aqua routes, and map-like patterns.",
-    gradient: "radial-gradient(circle at 72% 20%, #f2b36d 0 11%, transparent 26%), linear-gradient(135deg, #0f0b08, #352514 52%, #49d7c8)",
-  },
-  {
-    name: "Matrix Trail",
-    detail: "Black interface, green code glow, instant answer rhythm.",
-    gradient: "radial-gradient(circle at 26% 22%, #26ff8a 0 9%, transparent 23%), linear-gradient(135deg, #020806, #072018 55%, #00c46f)",
-  },
-  {
-    name: "Arctic Focus",
-    detail: "Cool graphite, ice-blue highlights, and calm research workspace.",
-    gradient: "radial-gradient(circle at 70% 22%, #b6f3ff 0 11%, transparent 25%), linear-gradient(135deg, #071018, #193148 52%, #9bdcff)",
-  },
-];
-
-const answerTemplates = {
-  population: {
-    type: "Data answer",
-    title: "KSA population: ten-year trend with 2025 highlight",
-    summary:
-      "This sample trail shows Saudi Arabia rising from about 31.8M people in 2016 to about 38.3M in 2025. The 2025 bar is highlighted so the latest jump is easy to compare.",
-    bullets: [
-      "2016 to 2025 sample change: +6.5M people, about +20.4% across the decade.",
-      "2025 sample jump from 2024: +0.6M people, about +1.6% year over year.",
-      "Likely drivers to research: migration, Vision 2030 projects, labor demand, birth rates, and city growth.",
-      "Best next step: connect live official statistics so the graph updates with verified data.",
-    ],
-    graph: ksaPopulationSeries,
-  },
-  school: {
-    type: "School helper",
-    title: "Science search: clear explanation and project ideas",
-    summary:
-      "For school research, Search Trail gives a simple explanation first, then ideas you can turn into a paragraph, poster, or experiment.",
-    bullets: [
-      "Explain the topic in one short paragraph using your grade level.",
-      "Add three key facts, one diagram idea, and one real-life example.",
-      "Project idea: compare two plants, one with full sunlight and one with limited light, then record changes.",
-      "Writing angle: start with why the science matters in daily life, then show evidence.",
-    ],
-  },
-  photo: {
-    type: "Photo generator",
-    title: "High-quality image prompt ready to generate",
-    summary:
-      "Search Trail turns visual requests into polished prompts with subject, style, lighting, camera detail, and quality guidance.",
-    bullets: [
-      "Prompt: futuristic football stadium at night, glowing roof trails, packed crowd, cinematic lighting, ultra-detailed grass, 4K realism.",
-      "Style: premium sports photography mixed with clean AI interface graphics.",
-      "Lighting: blue rim light, neon green field glow, soft fog, high contrast.",
-      "Avoid: blurry players, warped text, low-quality crowd faces, broken geometry.",
-    ],
-    media: {
-      label: "Generated photo direction",
-      copy: "Use this as the image prompt, then edit colors, stadium style, logo placement, or camera angle.",
-    },
-  },
-  football: {
-    type: "Football insight",
-    title: "Match pulse: score, momentum, and key moments",
-    summary:
-      "For football searches, Search Trail can summarize the score, explain momentum, and highlight the moments that changed the match.",
-    bullets: [
-      "Score card: show current score, minute, possession, shots on target, and dangerous attacks.",
-      "Momentum: explain which team is controlling space and why.",
-      "Key moments: goals, missed chances, cards, substitutions, injuries, and tactical switches.",
-      "Next upgrade: connect a live sports feed for real fixtures and verified match events.",
-    ],
-  },
-  general: {
-    type: "Best answer",
-    title: "Answer trail prepared",
-    summary:
-      "Search Trail adapts the answer to your question and gives a direct response, supporting details, visuals, and next steps.",
-    bullets: [
-      "Start with the shortest useful answer.",
-      "Add details only where they help you decide, learn, or create.",
-      "Suggest a graph, image, study outline, or match card when the question needs one.",
-      "Keep the dark interface readable so the best answer is easy to scan.",
-    ],
-  },
-  empty: {
-    type: "Try a prompt",
-    title: "Ask Search Trail anything",
-    summary:
-      "Try asking about population changes, school science, photo generation, football matches, or any topic you want explained.",
-    bullets: [
-      "Example: people living in KSA for the past 10 years and changes in 2025.",
-      "Example: help me with a school science search and give ideas.",
-      "Example: generate a high quality photo of a futuristic football stadium.",
-      "Example: explain the latest football match momentum.",
-    ],
-  },
+export const attendanceMeta = {
+  present: { label: "حاضر", className: "present" },
+  late: { label: "متأخر", className: "late" },
+  absent: { label: "غائب", className: "absent" },
 };
 
+export const initialStudents = [
+  {
+    id: "abdullah-alshammari",
+    name: "عبدالله الشمري",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "النبأ 1–12",
+    memorizationPages: 2,
+    recitation: 5,
+    review: "جزء عمّ",
+    reinforcement: "الغنة في المواضع المحددة",
+    tafsirRead: true,
+    notes: "تلاوة متقنة، بارك الله فيه.",
+    avatarColor: "#e8f3ed",
+    avatarText: "#1e7453",
+  },
+  {
+    id: "sultan-alharbi",
+    name: "سلطان الحربي",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "النبأ 13–24",
+    memorizationPages: 2,
+    recitation: 4.5,
+    review: "سورة النازعات",
+    reinforcement: "مدّ البدل",
+    tafsirRead: true,
+    notes: "",
+    avatarColor: "#eff0fc",
+    avatarText: "#5963a5",
+  },
+  {
+    id: "yousef-alqahtani",
+    name: "يوسف القحطاني",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "النازعات 1–11",
+    memorizationPages: 1.5,
+    recitation: 4,
+    review: "النبأ كاملة",
+    reinforcement: "همز الوصل",
+    tafsirRead: true,
+    notes: "",
+    avatarColor: "#fcf0e3",
+    avatarText: "#b47532",
+  },
+  {
+    id: "amer-alotaibi",
+    name: "عامر العتيبي",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "النازعات 12–23",
+    memorizationPages: 2,
+    recitation: 4.5,
+    review: "النبأ 1–20",
+    reinforcement: "ترقيق الراء",
+    tafsirRead: true,
+    notes: "",
+    avatarColor: "#eaf3f6",
+    avatarText: "#477d8a",
+  },
+  {
+    id: "badr-aldosari",
+    name: "بدر الدوسري",
+    level: "المستوى المتوسط",
+    attendance: "absent",
+    memorization: "",
+    memorizationPages: 0,
+    recitation: 0,
+    review: "",
+    reinforcement: "التواصل مع ولي الأمر",
+    tafsirRead: false,
+    notes: "غياب دون إشعار.",
+    avatarColor: "#f9e9e8",
+    avatarText: "#b95f57",
+  },
+  {
+    id: "fahad-almutairi",
+    name: "فهد المطيري",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "عبس 1–16",
+    memorizationPages: 2.5,
+    recitation: 5,
+    review: "النازعات 1–26",
+    reinforcement: "وصل الآيات",
+    tafsirRead: true,
+    notes: "",
+    avatarColor: "#e8f4ee",
+    avatarText: "#28734f",
+  },
+  {
+    id: "ibrahim-alghamdi",
+    name: "إبراهيم الغامدي",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "عبس 17–27",
+    memorizationPages: 1.5,
+    recitation: 4,
+    review: "النازعات كاملة",
+    reinforcement: "الوقف على رؤوس الآي",
+    tafsirRead: true,
+    notes: "",
+    avatarColor: "#f4efe4",
+    avatarText: "#9a7042",
+  },
+  {
+    id: "salman-alenezi",
+    name: "سلمان العنزي",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "عبس 28–42",
+    memorizationPages: 2.5,
+    recitation: 4.5,
+    review: "النبأ والنازعات",
+    reinforcement: "تطبيق أحكام النون",
+    tafsirRead: true,
+    notes: "",
+    avatarColor: "#edf0fc",
+    avatarText: "#5963a5",
+  },
+  {
+    id: "tariq-alsubaie",
+    name: "طارق السبيعي",
+    level: "المستوى المتوسط",
+    attendance: "present",
+    memorization: "التكوير 1–9",
+    memorizationPages: 1,
+    recitation: 4.5,
+    review: "عبس 1–20",
+    reinforcement: "مخارج الحروف",
+    tafsirRead: false,
+    notes: "يحتاج تثبيت موضعين.",
+    avatarColor: "#e9f4f6",
+    avatarText: "#3c7682",
+  },
+  {
+    id: "ziad-mohammed",
+    name: "زياد محمد",
+    level: "المستوى المتوسط",
+    attendance: "late",
+    memorization: "التكوير 10–29",
+    memorizationPages: 3,
+    recitation: 3.5,
+    review: "عبس كاملة",
+    reinforcement: "المدود الفرعية",
+    tafsirRead: false,
+    notes: "حضر متأخرًا، يحتاج مراجعة الحفظ قبل الغد.",
+    avatarColor: "#fcf0e3",
+    avatarText: "#b47532",
+  },
+];
+
 let refs = {};
+let state = createInitialState();
+let toastTimer;
 
-export function parseSearchIntent(query) {
-  const normalized = query.trim().toLowerCase();
-
-  if (!normalized) return "empty";
-  if (/\b(ksa|saudi|population|people living|past 10 years|2025|graph|chart)\b/.test(normalized)) {
-    return "population";
-  }
-  if (/\b(school|science|homework|study|experiment|photosynthesis|ideas|project)\b/.test(normalized)) {
-    return "school";
-  }
-  if (/\b(photo|image|picture|generate|4k|quality|graphic|graphics)\b/.test(normalized)) {
-    return "photo";
-  }
-  if (/\b(football|match|score|goal|fixture|league|stadium)\b/.test(normalized)) {
-    return "football";
-  }
-
-  return "general";
+export function normalizeArabic(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/ـ/g, "")
+    .replace(/[إأآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .toLowerCase()
+    .trim();
 }
 
-export function calculatePopulationJump(series = ksaPopulationSeries, fromYear = 2024, toYear = 2025) {
-  const from = series.find((item) => item.year === fromYear);
-  const to = series.find((item) => item.year === toYear);
-  if (!from || !to) return null;
+export function filterStudents(students, query = "", attendance = "all") {
+  const normalizedQuery = normalizeArabic(query);
 
-  const change = Number((to.population - from.population).toFixed(1));
-  const percent = Number(((change / from.population) * 100).toFixed(1));
-  return { fromYear, toYear, change, percent };
+  return students.filter((student) => {
+    const matchesQuery = !normalizedQuery || normalizeArabic(student.name).includes(normalizedQuery);
+    const matchesAttendance = attendance === "all" || student.attendance === attendance;
+    return matchesQuery && matchesAttendance;
+  });
 }
 
-export function buildSearchTrailAnswer(query) {
-  const intent = parseSearchIntent(query);
-  const template = answerTemplates[intent];
+export function calculateSessionSummary(students) {
+  const total = students.length;
+  const present = students.filter((student) => student.attendance === "present").length;
+  const late = students.filter((student) => student.attendance === "late").length;
+  const absent = students.filter((student) => student.attendance === "absent").length;
+  const activeStudents = students.filter((student) => student.attendance !== "absent" && Number(student.recitation) > 0);
+  const memorizationPages = students.reduce((totalPages, student) => totalPages + Number(student.memorizationPages || 0), 0);
+  const recitationAverage =
+    activeStudents.length === 0
+      ? 0
+      : Number((activeStudents.reduce((totalScore, student) => totalScore + Number(student.recitation), 0) / activeStudents.length).toFixed(1));
+  const tafsirRead = students.filter((student) => student.tafsirRead).length;
+  const attendanceRate = total === 0 ? 0 : Math.round((present / total) * 100);
 
-  if (intent !== "population") {
-    return { intent, ...template };
-  }
-
-  const decadeChange = Number((ksaPopulationSeries.at(-1).population - ksaPopulationSeries[0].population).toFixed(1));
-  const jump = calculatePopulationJump();
   return {
-    intent,
-    ...template,
-    bullets: [
-      `2016 to 2025 sample change: +${decadeChange}M people, about +20.4% across the decade.`,
-      `2025 sample jump from 2024: +${jump.change}M people, about +${jump.percent}% year over year.`,
-      "Likely drivers to research: migration, Vision 2030 projects, labor demand, birth rates, and city growth.",
-      "Best next step: connect live official statistics so the graph updates with verified data.",
-    ],
+    total,
+    present,
+    late,
+    absent,
+    memorizationPages,
+    recitationAverage,
+    tafsirRead,
+    attendanceRate,
   };
+}
+
+export function getFollowupStudents(students, limit = 3) {
+  return students
+    .filter((student) => student.attendance === "absent" || student.attendance === "late" || !student.tafsirRead)
+    .sort((first, second) => {
+      const priority = { absent: 0, late: 1, present: 2 };
+      return priority[first.attendance] - priority[second.attendance];
+    })
+    .slice(0, limit);
+}
+
+export function createInitialState() {
+  return {
+    students: initialStudents.map((student) => ({ ...student })),
+    selectedId: initialStudents[0].id,
+    search: "",
+    filter: "all",
+  };
+}
+
+function loadState() {
+  if (typeof window === "undefined") return createInitialState();
+
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (!saved) return createInitialState();
+
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed.students) || parsed.students.length === 0) return createInitialState();
+
+    return {
+      ...createInitialState(),
+      ...parsed,
+      selectedId: parsed.students.some((student) => student.id === parsed.selectedId) ? parsed.selectedId : parsed.students[0].id,
+      search: "",
+      filter: "all",
+    };
+  } catch {
+    return createInitialState();
+  }
+}
+
+function persistState() {
+  if (typeof window === "undefined") return;
+
+  try {
+    const { students, selectedId } = state;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ students, selectedId }));
+  } catch {
+    // The interface remains usable when storage is unavailable.
+  }
+}
+
+function getStudentById(id = state.selectedId) {
+  return state.students.find((student) => student.id === id) || state.students[0];
+}
+
+function formatNumber(value, options = {}) {
+  return new Intl.NumberFormat("ar-SA", {
+    maximumFractionDigits: 1,
+    ...options,
+  }).format(value);
+}
+
+function formatScore(score) {
+  if (!score) return "—";
+  return Number.isInteger(score) ? String(score) : Number(score).toFixed(1);
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getInitials(name) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("");
+}
+
+function studentAvatarStyle(student) {
+  return `style="--avatar-color:${student.avatarColor};--avatar-text:${student.avatarText}"`;
+}
+
+function getFollowupLabel(student) {
+  if (student.attendance === "absent") return "غياب اليوم";
+  if (student.attendance === "late") return "حضور متأخر";
+  if (!student.tafsirRead) return "لم يقرأ التفسير";
+  return "متابعة مطلوبة";
+}
+
+function updateTodayDate() {
+  const today = new Date();
+  const gregorian = new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(today);
+  const hijri = new Intl.DateTimeFormat("ar-SA-u-ca-islamic", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(today);
+
+  refs.todayDate.textContent = gregorian;
+  refs.todayDate.nextElementSibling.nextElementSibling.textContent = hijri;
+}
+
+function renderSummary() {
+  const summary = calculateSessionSummary(state.students);
+  refs.presentValue.innerHTML = `${formatNumber(summary.present)} <small>/ ${formatNumber(summary.total)}</small>`;
+  refs.memorizationValue.innerHTML = `${formatNumber(summary.memorizationPages)} <small>وجهًا</small>`;
+  refs.recitationValue.innerHTML = `${formatScore(summary.recitationAverage)} <small>/ 5</small>`;
+  refs.tafsirValue.innerHTML = `${formatNumber(summary.tafsirRead)} <small>طلاب</small>`;
+  refs.tafsirNote.textContent = `${formatNumber(summary.total - summary.tafsirRead)} طلاب بانتظار القراءة`;
+  refs.attendanceProgress.style.width = `${summary.attendanceRate}%`;
+  refs.todayChartBar.style.height = `${Math.max(12, summary.attendanceRate)}%`;
+  refs.chartCaption.textContent = `${formatNumber(summary.attendanceRate)}% في جلسة اليوم`;
+
+  refs.allCount.textContent = formatNumber(summary.total);
+  refs.presentCount.textContent = formatNumber(summary.present);
+  refs.lateCount.textContent = formatNumber(summary.late);
+  refs.absentCount.textContent = formatNumber(summary.absent);
+}
+
+function renderFollowupList() {
+  const followups = getFollowupStudents(state.students);
+  refs.followupCount.textContent = formatNumber(followups.length);
+  refs.followupList.replaceChildren();
+
+  followups.forEach((student) => {
+    const item = document.createElement("div");
+    item.className = "followup-item";
+    item.innerHTML = `
+      <span class="followup-item__avatar" ${studentAvatarStyle(student)}>${escapeHtml(getInitials(student.name))}</span>
+      <div class="followup-item__copy">
+        <strong>${escapeHtml(student.name)}</strong>
+        <span>${escapeHtml(student.reinforcement || "سجّل ملاحظة المتابعة")}</span>
+      </div>
+      <span class="followup-item__status">${getFollowupLabel(student)}</span>
+    `;
+    refs.followupList.append(item);
+  });
+}
+
+function renderStudentTable() {
+  const students = filterStudents(state.students, state.search, state.filter);
+  refs.studentsTable.replaceChildren();
+  refs.emptyStudents.hidden = students.length > 0;
+
+  students.forEach((student) => {
+    const attendance = attendanceMeta[student.attendance] || attendanceMeta.present;
+    const row = document.createElement("tr");
+    row.className = student.id === state.selectedId ? "is-selected" : "";
+    row.innerHTML = `
+      <td>
+        <div class="student-name">
+          <span class="student-avatar" ${studentAvatarStyle(student)}>${escapeHtml(getInitials(student.name))}</span>
+          <div class="student-name__copy">
+            <strong>${escapeHtml(student.name)}</strong>
+            <small>${escapeHtml(student.level)}</small>
+          </div>
+        </div>
+      </td>
+      <td><span class="attendance-pill attendance-pill--${attendance.className}">${attendance.label}</span></td>
+      <td class="memorization-cell">${escapeHtml(student.memorization || "لم يُسجّل")}</td>
+      <td><span class="recitation-score">${formatScore(student.recitation)}${student.recitation ? "<i></i>" : ""}</span></td>
+      <td>
+        <button class="student-select-button" type="button" data-student-id="${student.id}" aria-label="تحديث سجل ${escapeHtml(student.name)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+        </button>
+      </td>
+    `;
+    refs.studentsTable.append(row);
+  });
+}
+
+function updateRangeUI() {
+  const value = Number(refs.recitationInput.value);
+  const percentage = ((value - 1) / 4) * 100;
+  refs.recitationInput.style.setProperty("--range-value", `${percentage}%`);
+  refs.recitationOutput.textContent = `${formatScore(value)} / 5`;
+}
+
+function renderRecordForm() {
+  const student = getStudentById();
+  if (!student) return;
+
+  refs.selectedStudentSummary.innerHTML = `
+    <span class="student-avatar" ${studentAvatarStyle(student)}>${escapeHtml(getInitials(student.name))}</span>
+    <span class="selected-student__text">
+      <strong>${escapeHtml(student.name)}</strong>
+      <span>${escapeHtml(student.level)} · سجل جلسة اليوم</span>
+    </span>
+  `;
+
+  refs.memorizationInput.value = student.memorization || "";
+  refs.memorizationPagesInput.value = student.memorizationPages || 0;
+  refs.reviewInput.value = student.review || "";
+  refs.reinforcementInput.value = student.reinforcement || "";
+  refs.recitationInput.value = student.recitation || 1;
+  refs.tafsirInput.checked = Boolean(student.tafsirRead);
+  refs.notesInput.value = student.notes || "";
+
+  refs.attendanceChoices.querySelectorAll("button").forEach((button) => {
+    button.classList.toggle("is-selected", button.dataset.attendance === student.attendance);
+  });
+
+  updateRangeUI();
+}
+
+function renderReports() {
+  const summary = calculateSessionSummary(state.students);
+  refs.reportAttendanceRate.textContent = `${formatNumber(summary.attendanceRate)}%`;
+  refs.reportDonut.style.setProperty("--progress", `${summary.attendanceRate}%`);
+
+  const tafsirRate = summary.total === 0 ? 0 : Math.round((summary.tafsirRead / summary.total) * 100);
+  refs.reportTafsirRate.textContent = `${formatNumber(tafsirRate)}%`;
+  refs.tafsirSegments.replaceChildren(
+    ...Array.from({ length: Math.max(summary.total, 1) }, (_, index) => {
+      const segment = document.createElement("i");
+      segment.classList.toggle("is-filled", index < summary.tafsirRead);
+      return segment;
+    })
+  );
+
+  refs.reportStudentList.replaceChildren();
+  [...state.students]
+    .sort((first, second) => Number(second.memorizationPages) - Number(first.memorizationPages))
+    .slice(0, 7)
+    .forEach((student) => {
+      const row = document.createElement("div");
+      row.className = "report-row";
+      const progress = Math.min(100, Math.round((Number(student.memorizationPages || 0) / 3) * 100));
+      row.innerHTML = `
+        <div class="report-row__student">
+          <span ${studentAvatarStyle(student)}>${escapeHtml(getInitials(student.name))}</span>
+          <strong>${escapeHtml(student.name)}</strong>
+        </div>
+        <span class="report-row__bar"><i style="--width:${progress}%"></i></span>
+        <span class="report-row__detail">${formatNumber(student.memorizationPages || 0)} وجه</span>
+      `;
+      refs.reportStudentList.append(row);
+    });
+}
+
+function renderAll() {
+  updateTodayDate();
+  renderSummary();
+  renderFollowupList();
+  renderStudentTable();
+  renderRecordForm();
+  renderReports();
+}
+
+function showToast(message) {
+  refs.toast.textContent = message;
+  refs.toast.classList.add("is-visible");
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => refs.toast.classList.remove("is-visible"), 3200);
+}
+
+function selectStudent(id) {
+  if (!state.students.some((student) => student.id === id)) return;
+
+  state.selectedId = id;
+  persistState();
+  renderStudentTable();
+  renderRecordForm();
+  refs.recordCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function saveCurrentRecord() {
+  const student = getStudentById();
+  if (!student) return;
+
+  student.memorization = refs.memorizationInput.value.trim();
+  student.memorizationPages = Math.min(20, Math.max(0, Number(refs.memorizationPagesInput.value) || 0));
+  student.review = refs.reviewInput.value.trim();
+  student.reinforcement = refs.reinforcementInput.value.trim();
+  student.recitation = Number(refs.recitationInput.value);
+  student.tafsirRead = refs.tafsirInput.checked;
+  student.notes = refs.notesInput.value.trim();
+
+  persistState();
+  renderAll();
+  showToast(`تم حفظ سجل ${student.name} بنجاح.`);
+}
+
+function setAttendance(attendance) {
+  const student = getStudentById();
+  if (!student || !attendanceMeta[attendance]) return;
+
+  student.attendance = attendance;
+  persistState();
+  renderAll();
+  showToast(`تم تسجيل ${student.name} ${attendanceMeta[attendance].label}.`);
+}
+
+function getViewLabel(view) {
+  return {
+    overview: "لوحة اليوم",
+    attendance: "الحضور",
+    reports: "التقارير",
+    students: "الطلاب",
+  }[view] || "لوحة اليوم";
+}
+
+function setActiveView(view, shouldScroll = true) {
+  const isReport = view === "reports";
+  document.querySelectorAll("[data-view-section]").forEach((section) => {
+    section.classList.toggle("active", section.dataset.viewSection === (isReport ? "reports" : "overview"));
+  });
+  document.querySelectorAll(".nav-item[data-view]").forEach((item) => {
+    item.classList.toggle("active", item.dataset.view === view);
+  });
+  refs.breadcrumbCurrent.textContent = getViewLabel(view);
+
+  if (!isReport && shouldScroll && (view === "attendance" || view === "students")) {
+    const target = view === "students" ? refs.studentSearch : refs.attendanceWorkspace;
+    window.setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "start" }), 10);
+  }
+
+  if (isReport && shouldScroll) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  document.body.classList.remove("sidebar-open");
+}
+
+function addStudent(event) {
+  event.preventDefault();
+  const name = refs.newStudentName.value.trim();
+  if (!name) {
+    refs.newStudentName.focus();
+    return;
+  }
+
+  const student = {
+    id: `student-${Date.now()}`,
+    name,
+    level: refs.newStudentLevel.value,
+    attendance: "present",
+    memorization: "",
+    memorizationPages: 0,
+    recitation: 4,
+    review: "",
+    reinforcement: "",
+    tafsirRead: false,
+    notes: "",
+    avatarColor: "#e8f3ed",
+    avatarText: "#1e7453",
+  };
+
+  state.students.push(student);
+  state.selectedId = student.id;
+  state.search = "";
+  state.filter = "all";
+  refs.studentSearch.value = "";
+  persistState();
+  renderAll();
+  refs.addStudentDialog.close();
+  refs.addStudentForm.reset();
+  setActiveView("students");
+  showToast(`تمت إضافة ${student.name} إلى حلقة الفجر.`);
 }
 
 function initApp() {
+  state = loadState();
   refs = {
-    form: document.querySelector("#searchForm"),
-    input: document.querySelector("#searchInput"),
-    examples: document.querySelector(".example-grid"),
-    answerType: document.querySelector("#answerType"),
-    answerTitle: document.querySelector("#answerTitle"),
-    answerSummary: document.querySelector("#answerSummary"),
-    answerList: document.querySelector("#answerList"),
-    chartPanel: document.querySelector("#chartPanel"),
-    mediaPanel: document.querySelector("#mediaPanel"),
-    themeGrid: document.querySelector("#themeGrid"),
+    todayDate: document.querySelector("#todayDate"),
+    breadcrumbCurrent: document.querySelector("#breadcrumbCurrent"),
+    presentValue: document.querySelector("#presentValue"),
+    memorizationValue: document.querySelector("#memorizationValue"),
+    recitationValue: document.querySelector("#recitationValue"),
+    tafsirValue: document.querySelector("#tafsirValue"),
+    tafsirNote: document.querySelector("#tafsirNote"),
+    attendanceProgress: document.querySelector("#attendanceProgress"),
+    todayChartBar: document.querySelector("#todayChartBar"),
+    chartCaption: document.querySelector("#chartCaption"),
+    allCount: document.querySelector("#allCount"),
+    presentCount: document.querySelector("#presentCount"),
+    lateCount: document.querySelector("#lateCount"),
+    absentCount: document.querySelector("#absentCount"),
+    followupCount: document.querySelector("#followupCount"),
+    followupList: document.querySelector("#followupList"),
+    studentSearch: document.querySelector("#studentSearch"),
+    filterRow: document.querySelector("#filterRow"),
+    studentsTable: document.querySelector("#studentsTable"),
+    emptyStudents: document.querySelector("#emptyStudents"),
+    recordCard: document.querySelector("#recordCard"),
+    recordForm: document.querySelector("#recordForm"),
+    selectedStudentSummary: document.querySelector("#selectedStudentSummary"),
+    attendanceChoices: document.querySelector("#attendanceChoices"),
+    memorizationInput: document.querySelector("#memorizationInput"),
+    memorizationPagesInput: document.querySelector("#memorizationPagesInput"),
+    reviewInput: document.querySelector("#reviewInput"),
+    reinforcementInput: document.querySelector("#reinforcementInput"),
+    recitationInput: document.querySelector("#recitationInput"),
+    recitationOutput: document.querySelector("#recitationOutput"),
+    tafsirInput: document.querySelector("#tafsirInput"),
+    notesInput: document.querySelector("#notesInput"),
+    reportAttendanceRate: document.querySelector("#reportAttendanceRate"),
+    reportDonut: document.querySelector("#reportDonut"),
+    reportTafsirRate: document.querySelector("#reportTafsirRate"),
+    tafsirSegments: document.querySelector("#tafsirSegments"),
+    reportStudentList: document.querySelector("#reportStudentList"),
+    attendanceWorkspace: document.querySelector("#attendanceWorkspace"),
+    toast: document.querySelector("#toast"),
+    addStudentDialog: document.querySelector("#addStudentDialog"),
+    addStudentForm: document.querySelector("#addStudentForm"),
+    newStudentName: document.querySelector("#newStudentName"),
+    newStudentLevel: document.querySelector("#newStudentLevel"),
   };
 
-  refs.form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    renderAnswer(refs.input.value);
+  refs.studentSearch.addEventListener("input", (event) => {
+    state.search = event.target.value;
+    renderStudentTable();
   });
 
-  refs.examples.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-query]");
+  refs.filterRow.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-filter]");
     if (!button) return;
-    refs.input.value = button.dataset.query;
-    renderAnswer(button.dataset.query);
-    document.querySelector("#demo").scrollIntoView({ behavior: "smooth", block: "start" });
+    state.filter = button.dataset.filter;
+    refs.filterRow.querySelectorAll("[data-filter]").forEach((chip) => {
+      chip.classList.toggle("active", chip === button);
+    });
+    renderStudentTable();
   });
 
-  renderThemes();
-  renderAnswer("People living in KSA for the past 10 years and what changed in 2025");
-}
-
-function renderAnswer(query) {
-  const answer = buildSearchTrailAnswer(query);
-  refs.answerType.textContent = answer.type;
-  refs.answerTitle.textContent = answer.title;
-  refs.answerSummary.textContent = answer.summary;
-  refs.answerList.replaceChildren(...answer.bullets.map(renderBullet));
-  renderChart(answer.graph || []);
-  renderMedia(answer.media);
-}
-
-function renderBullet(text) {
-  const item = document.createElement("li");
-  item.textContent = text;
-  return item;
-}
-
-function renderChart(series) {
-  refs.chartPanel.replaceChildren();
-  refs.chartPanel.hidden = series.length === 0;
-  if (!series.length) return;
-
-  const values = series.map((item) => item.population);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-
-  series.forEach((item) => {
-    const bar = document.createElement("div");
-    bar.className = `chart-bar${item.year === 2025 ? " highlight" : ""}`;
-
-    const fill = document.createElement("span");
-    fill.style.height = `${34 + ((item.population - min) / (max - min)) * 60}%`;
-
-    const value = document.createElement("small");
-    value.className = "chart-value";
-    value.textContent = `${item.population.toFixed(1)}M`;
-
-    const year = document.createElement("small");
-    year.textContent = item.year;
-
-    bar.append(fill, value, year);
-    refs.chartPanel.append(bar);
+  refs.studentsTable.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-student-id]");
+    if (button) selectStudent(button.dataset.studentId);
   });
+
+  refs.attendanceChoices.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-attendance]");
+    if (button) setAttendance(button.dataset.attendance);
+  });
+
+  refs.recordForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveCurrentRecord();
+  });
+
+  refs.recitationInput.addEventListener("input", updateRangeUI);
+
+  document.querySelector("#saveAllButton").addEventListener("click", () => {
+    persistState();
+    showToast("تم حفظ جميع تحديثات جلسة اليوم.");
+  });
+
+  document.querySelector("#filterButton").addEventListener("click", () => {
+    refs.filterRow.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    refs.filterRow.querySelector(".filter-chip.active").focus();
+  });
+
+  document.querySelector("#jumpToToday").addEventListener("click", () => {
+    setActiveView("overview", false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  document.querySelectorAll("[data-view], [data-view-trigger]").forEach((button) => {
+    button.addEventListener("click", () => setActiveView(button.dataset.view || button.dataset.viewTrigger));
+  });
+
+  document.querySelector("#sidebarToggle").addEventListener("click", () => document.body.classList.add("sidebar-open"));
+  document.querySelector("#sidebarClose").addEventListener("click", () => document.body.classList.remove("sidebar-open"));
+  document.querySelector("#sidebarOverlay").addEventListener("click", () => document.body.classList.remove("sidebar-open"));
+
+  document.querySelector("#addStudentButton").addEventListener("click", () => refs.addStudentDialog.showModal());
+  document.querySelector("#cancelAddStudent").addEventListener("click", () => refs.addStudentDialog.close());
+  refs.addStudentForm.addEventListener("submit", addStudent);
+
+  renderAll();
 }
 
-function renderMedia(media) {
-  refs.mediaPanel.replaceChildren();
-  if (!media) return;
-
-  const photo = document.createElement("div");
-  photo.className = "media-photo";
-  photo.textContent = media.label;
-
-  const copy = document.createElement("div");
-  copy.className = "media-copy";
-  const title = document.createElement("h3");
-  title.textContent = "Editable image direction";
-  const text = document.createElement("p");
-  text.textContent = media.copy;
-  copy.append(title, text);
-
-  refs.mediaPanel.append(photo, copy);
-}
-
-function renderThemes() {
-  refs.themeGrid.replaceChildren(
-    ...themeDirections.map((theme, index) => {
-      const card = document.createElement("article");
-      card.className = "theme-card";
-      card.style.setProperty("--theme-bg", theme.gradient);
-
-      const content = document.createElement("div");
-      content.className = "theme-card-content";
-      const name = document.createElement("strong");
-      name.textContent = `${String(index + 1).padStart(2, "0")} ${theme.name}`;
-      const detail = document.createElement("span");
-      detail.textContent = theme.detail;
-      content.append(name, detail);
-      card.append(content);
-      return card;
-    })
-  );
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("DOMContentLoaded", initApp);
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", initApp);
 }
