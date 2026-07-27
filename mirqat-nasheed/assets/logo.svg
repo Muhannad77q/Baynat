@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" role="img" aria-label="E1B') 'DB1(">
+  <defs>
+    <style>
+      .brand {
+        fill: #1B4D3E;
+        font-family: "Noto Kufi Arabic", "Noto Sans Arabic", "DejaVu Sans", sans-serif;
+        font-weight: 700;
+        font-size: 78px;
+      }
+    </style>
+  </defs>
+
+  <!-- Arabic brand text (visual LTR layout with RTL glyphs handled by renderer) -->
+  <text class="brand" text-anchor="end" x="430" y="135">E1B')</text>
+  <text class="brand" text-anchor="end" x="430" y="225">'DB1(</text>
+
+  <!-- Geometric floral emblem -->
+  <g transform="translate(560 160)">
+    <!-- outer gold petals -->
+    <g fill="none" stroke="#C4A35A" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(45)"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(90)"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(135)"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(180)"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(225)"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(270)"/>
+      <path d="M0,-78 C28,-52 28,-20 0,-8 C-28,-20 -28,-52 0,-78 Z" transform="rotate(315)"/>
+      <circle r="22" stroke-width="2.6"/>
+    </g>
+    <!-- tip dots -->
+    <g fill="#C4A35A">
+      <circle cx="0" cy="-92" r="5"/>
+      <circle cx="65" cy="-65" r="5"/>
+      <circle cx="92" cy="0" r="5"/>
+      <circle cx="65" cy="65" r="5"/>
+      <circle cx="0" cy="92" r="5"/>
+      <circle cx="-65" cy="65" r="5"/>
+      <circle cx="-92" cy="0" r="5"/>
+      <circle cx="-65" cy="-65" r="5"/>
+    </g>
+    <!-- central Meem / leaf -->
+    <path fill="#1B4D3E" d="M-6,18 C-18,4 -14,-18 2,-26 C16,-32 28,-18 22,-4 C18,6 10,14 2,20 C-2,22 -4,22 -6,18 Z"/>
+    <path fill="none" stroke="#F4F1EA" stroke-width="2" stroke-linecap="round" d="M0,-18 C4,-6 4,6 1,16"/>
+  </g>
+</svg>
