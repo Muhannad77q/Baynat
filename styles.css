@@ -1245,6 +1245,10 @@ tbody tr.is-selected td:first-child {
   text-align: center;
 }
 
+.empty-state[hidden] {
+  display: none;
+}
+
 .empty-state > span {
   display: grid;
   width: 42px;

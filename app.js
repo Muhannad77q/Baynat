@@ -476,7 +476,7 @@ function showToast(message) {
   refs.toast.textContent = message;
   refs.toast.classList.add("is-visible");
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => refs.toast.classList.remove("is-visible"), 3200);
+  toastTimer = window.setTimeout(() => refs.toast.classList.remove("is-visible"), 6000);
 }
 
 function selectStudent(id) {
