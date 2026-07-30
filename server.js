@@ -6,8 +6,8 @@ import {
   scryptSync,
   timingSafeEqual,
 } from "node:crypto";
-import { closeSync, unlinkSync } from "node:fs";
-import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -61,7 +61,7 @@ class JsonStore {
   constructor(filePath) {
     this.filePath = filePath;
     this.lockPath = `${filePath}.lock`;
-    this.lockHandle = null;
+    this.lockFd = null;
     this.data = null;
     this.writeQueue = Promise.resolve();
   }
@@ -111,9 +111,9 @@ class JsonStore {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        this.lockHandle = await open(this.lockPath, "wx", 0o600);
+        this.lockFd = openSync(this.lockPath, "wx", 0o600);
         try {
-          await this.lockHandle.writeFile(String(process.pid));
+          writeFileSync(this.lockFd, String(process.pid));
         } catch (error) {
           this.close();
           throw error;
@@ -172,13 +172,13 @@ class JsonStore {
   }
 
   close() {
-    if (!this.lockHandle) return;
+    if (this.lockFd === null) return;
     try {
-      closeSync(this.lockHandle.fd);
+      closeSync(this.lockFd);
     } catch {
       // The process is already closing; best-effort lock cleanup is sufficient.
     }
-    this.lockHandle = null;
+    this.lockFd = null;
     try {
       unlinkSync(this.lockPath);
     } catch {
