@@ -1,4 +1,19 @@
 export const AD_DURATION = 18_000;
+export const AD_WIDTH = 1_080;
+export const AD_HEIGHT = 1_920;
+export const EXPORT_FPS = 30;
+export const EXPORT_FRAME_COUNT = (AD_DURATION / 1_000) * EXPORT_FPS;
+export const RENDERED_VIDEO_PATH = "./assets/laththa-cake-ad-1080x1920.mp4";
+export const INTRO_FORGET_WORD = "تُنْسى.";
+export const ASSEMBLY_STEPS = [
+  ["١", "القاعدة", 0.08],
+  ["٢", "الكريمة", 0.25],
+  ["٣", "الفراولة", 0.42],
+  ["٤", "اللمسة", 0.74],
+];
+export const STEP_PILL_WIDTH = 205;
+export const STEP_PILL_GAP = 18;
+export const STEP_PILL_START_X = 70;
 
 export const TIMELINE = [
   { id: "intro", label: "الافتتاح", start: 0, end: 2_800 },
@@ -15,8 +30,8 @@ export const INGREDIENTS = [
   { name: "شوكولاتة", detail: "مقرمشة وغنية", icon: "chocolate", accent: "#8f4c2d" },
 ];
 
-const WIDTH = 1080;
-const HEIGHT = 1920;
+const WIDTH = AD_WIDTH;
+const HEIGHT = AD_HEIGHT;
 const FONT_ARABIC = '"Noto Sans Arabic", "Noto Kufi Arabic", Tahoma, Arial, sans-serif';
 const FONT_DISPLAY = '"Noto Kufi Arabic", "Noto Sans Arabic", Tahoma, Arial, sans-serif';
 
@@ -31,6 +46,25 @@ const COLORS = {
   gold: "#f1c16b",
   berry: "#4c405d",
 };
+
+function agentDebugLog({ hypothesisId, location, message, data }) {
+  void fetch("/__debug_log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+const visualDebugLogged = new Set();
+
+function readAnalyserRms(analyser) {
+  if (!analyser) return null;
+  const samples = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(samples);
+  const meanSquare = samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length;
+  return Math.sqrt(meanSquare);
+}
 
 const BLUEBERRIES = [
   [-185, -46, 17], [-145, -78, 14], [-93, -82, 17], [-35, -88, 14], [27, -76, 16],
@@ -82,6 +116,17 @@ export function easeOutBack(value) {
   const c1 = 1.70158;
   const c3 = c1 + 1;
   return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2;
+}
+
+export function assemblyTextTransition(time) {
+  return {
+    titleOut: 1 - easeInOutCubic(progressBetween(time, 10_850, 11_350)),
+    heroIn: easeOutCubic(progressBetween(time, 11_350, 12_150)),
+  };
+}
+
+export function assemblyStepPillX(index) {
+  return STEP_PILL_START_X + (ASSEMBLY_STEPS.length - 1 - index) * (STEP_PILL_WIDTH + STEP_PILL_GAP);
 }
 
 function lerp(from, to, amount) {
@@ -239,12 +284,23 @@ function drawIntro(ctx, time) {
   const first = easeOutCubic(progressBetween(time, 160, 1_050));
   const second = easeOutCubic(progressBetween(time, 620, 1_500));
   const third = easeOutBack(progressBetween(time, 1_250, 2_180));
+  if (time >= 1_600 && time < 1_601 && !visualDebugLogged.has("intro-copy")) {
+    visualDebugLogged.add("intro-copy");
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: "V3",
+      location: "app.js:drawIntro-copy",
+      message: "Opening forget word rendered",
+      data: { timeMs: Math.round(time), word: INTRO_FORGET_WORD },
+    });
+    // #endregion
+  }
 
   ctx.save();
   ctx.globalAlpha *= alpha;
   drawLabel(ctx, "كيكة الفراولة", 938, 318, first);
   drawText(ctx, "مو كل كيكة", 938, lerp(600, 548, first), 108, COLORS.ink, 900, "right", first);
-  drawText(ctx, "تِنْسى.", 938, lerp(740, 687, second), 146, COLORS.ink, 900, "right", second);
+  drawText(ctx, INTRO_FORGET_WORD, 938, lerp(740, 687, second), 146, COLORS.ink, 900, "right", second);
   drawText(ctx, "هذي تنحفظ.", 938, lerp(910, 840, third), 83, COLORS.redBright, 900, "right", third);
 
   const lineProgress = easeInOutCubic(progressBetween(time, 1_600, 2_350));
@@ -255,7 +311,6 @@ function drawIntro(ctx, time) {
 
   ctx.save();
   ctx.globalAlpha = 0.14 * progressBetween(time, 900, 2_100);
-  ctx.filter = "blur(3px)";
   drawCake(ctx, 540, 1_465, 1.28, 1, time, 1);
   ctx.restore();
   ctx.restore();
@@ -729,33 +784,24 @@ function drawCake(ctx, centerX, centerY, scale, build, time, alpha = 1) {
 }
 
 function drawStepPills(ctx, build, alpha) {
-  const steps = [
-    ["١", "القاعدة", 0.08],
-    ["٢", "الكريمة", 0.25],
-    ["٣", "الفراولة", 0.42],
-    ["٤", "اللمسة", 0.74],
-  ];
-  const width = 205;
-  const gap = 18;
-  const startX = 70;
-  steps.forEach(([number, label, threshold], index) => {
+  ASSEMBLY_STEPS.forEach(([number, label, threshold], index) => {
     const active = build >= threshold;
-    const x = startX + index * (width + gap);
+    const x = assemblyStepPillX(index);
     ctx.save();
     ctx.globalAlpha *= alpha * (active ? 1 : 0.42);
-    fillRoundRect(ctx, x, 355, width, 72, 36, active ? "rgba(235,45,63,0.13)" : "rgba(255,255,255,0.035)");
+    fillRoundRect(ctx, x, 355, STEP_PILL_WIDTH, 72, 36, active ? "rgba(235,45,63,0.13)" : "rgba(255,255,255,0.035)");
     strokeRoundRect(
       ctx,
       x,
       355,
-      width,
+      STEP_PILL_WIDTH,
       72,
       36,
       active ? "rgba(255,81,96,0.3)" : "rgba(255,240,220,0.1)",
       2,
     );
-    drawText(ctx, label, x + width - 28, 401, 23, active ? COLORS.ink : "#8c7768", 700, "right");
-    drawText(ctx, number, x + 30, 401, 21, active ? COLORS.gold : "#745f52", 800, "left");
+    drawText(ctx, number, x + STEP_PILL_WIDTH - 28, 401, 21, active ? COLORS.gold : "#745f52", 800, "right");
+    drawText(ctx, label, x + STEP_PILL_WIDTH - 62, 401, 23, active ? COLORS.ink : "#8c7768", 700, "right");
     ctx.restore();
   });
 }
@@ -765,8 +811,47 @@ function drawAssemblyScene(ctx, time) {
   if (alpha <= 0) return;
 
   const build = easeInOutCubic(progressBetween(time, 5_750, 11_350));
-  const titleOut = 1 - progressBetween(time, 11_050, 11_850);
-  const heroIn = easeOutCubic(progressBetween(time, 11_250, 12_150));
+  const { titleOut, heroIn } = assemblyTextTransition(time);
+  if (time >= 6_200 && time < 6_201 && !visualDebugLogged.has("step-order")) {
+    visualDebugLogged.add("step-order");
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: "V2",
+      location: "app.js:drawAssemblyScene-step-order",
+      message: "Assembly step positions rendered",
+      data: {
+        timeMs: Math.round(time),
+        steps: ASSEMBLY_STEPS.map(([number, label], index) => ({
+          number,
+          label,
+          x: assemblyStepPillX(index),
+        })),
+      },
+    });
+    // #endregion
+  }
+  if (time >= 11_333 && time < 11_334 && !visualDebugLogged.has("transition-before")) {
+    visualDebugLogged.add("transition-before");
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: "V1,V4",
+      location: "app.js:drawAssemblyScene-transition-before",
+      message: "Assembly copy transition before handoff",
+      data: { timeMs: Math.round(time), titleOut, heroIn, overlap: titleOut > 0 && heroIn > 0 },
+    });
+    // #endregion
+  }
+  if (time >= 11_366 && time < 11_367 && !visualDebugLogged.has("transition-after")) {
+    visualDebugLogged.add("transition-after");
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: "V1,V4",
+      location: "app.js:drawAssemblyScene-transition-after",
+      message: "Assembly copy transition after handoff",
+      data: { timeMs: Math.round(time), titleOut, heroIn, overlap: titleOut > 0 && heroIn > 0 },
+    });
+    // #endregion
+  }
 
   ctx.save();
   ctx.globalAlpha *= alpha;
@@ -1002,6 +1087,64 @@ function scheduleSoundtrack(context, destination, startTime) {
   [2.62, 5.72, 8.7, 11.38, 14.48].forEach((offset, index) => {
     scheduleWhoosh(context, master, startTime + offset, index === 2 ? 0.42 : 0.68, index === 4 ? 0.05 : 0.032);
   });
+
+  return master;
+}
+
+function encodeAudioBufferAsWavBase64(audioBuffer) {
+  const channelCount = audioBuffer.numberOfChannels;
+  const sampleCount = audioBuffer.length;
+  const sampleRate = audioBuffer.sampleRate;
+  const bytesPerSample = 2;
+  const blockAlign = channelCount * bytesPerSample;
+  const wav = new ArrayBuffer(44 + sampleCount * blockAlign);
+  const view = new DataView(wav);
+
+  const writeAscii = (offset, value) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, wav.byteLength - 8, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bytesPerSample * 8, true);
+  writeAscii(36, "data");
+  view.setUint32(40, sampleCount * blockAlign, true);
+
+  const channels = Array.from({ length: channelCount }, (_, index) => audioBuffer.getChannelData(index));
+  let byteOffset = 44;
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+    for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+      const sample = clamp(channels[channelIndex][sampleIndex], -1, 1);
+      view.setInt16(byteOffset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      byteOffset += bytesPerSample;
+    }
+  }
+
+  const bytes = new Uint8Array(wav);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+  }
+  return btoa(binary);
+}
+
+async function renderSoundtrackWavBase64() {
+  const OfflineAudioContextClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OfflineAudioContextClass) throw new Error("OfflineAudioContext is unavailable");
+  const sampleRate = 48_000;
+  const context = new OfflineAudioContextClass(2, (AD_DURATION / 1_000) * sampleRate, sampleRate);
+  scheduleSoundtrack(context, context.destination, 0);
+  return encodeAudioBufferAsWavBase64(await context.startRendering());
 }
 
 function initializeApp() {
@@ -1016,19 +1159,25 @@ function initializeApp() {
   const timelineButtons = [...document.querySelectorAll("[data-seek]")];
 
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const renderMode = new URLSearchParams(window.location.search).has("render");
   const state = {
-    playing: !prefersReducedMotion,
+    playing: !renderMode && !prefersReducedMotion,
     startedAt: performance.now(),
-    offset: prefersReducedMotion ? 11_900 : 0,
+    offset: renderMode ? 0 : (prefersReducedMotion ? 11_900 : 0),
     exporting: false,
     exportStartedAt: 0,
+    exportTimelineStarted: false,
     soundEnabled: false,
     audioContext: null,
     audioTimer: null,
   };
+  let activeExportDebug = null;
 
   function currentTime(now = performance.now()) {
-    if (state.exporting) return Math.min(AD_DURATION - 1, now - state.exportStartedAt);
+    if (state.exporting) {
+      if (!state.exportTimelineStarted) return 0;
+      return Math.min(AD_DURATION - 1, now - state.exportStartedAt);
+    }
     if (!state.playing) return state.offset;
     return (state.offset + now - state.startedAt) % AD_DURATION;
   }
@@ -1130,30 +1279,102 @@ function initializeApp() {
     });
   });
 
-  async function exportVideo() {
+  function downloadRenderedVideo() {
+    const link = document.createElement("a");
+    link.href = RENDERED_VIDEO_PATH;
+    link.download = "laththa-cake-ad-1080x1920.mp4";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    exportStatus.textContent = "بدأ تنزيل MP4 المُعتمد ✓ 540 إطارًا مع الصوت";
+  }
+
+  async function exportVideoRealtime() {
+    const invocationAt = performance.now();
+    // #region agent log
+    agentDebugLog({
+      hypothesisId: "C",
+      location: "app.js:exportVideo-entry",
+      message: "Export function entered",
+      data: {
+        invocationAt: Math.round(invocationAt),
+        previewTimeMs: Math.round(currentTime(invocationAt)),
+        alreadyExporting: state.exporting,
+        mediaRecorderAvailable: Boolean(window.MediaRecorder),
+        captureStreamAvailable: typeof canvas.captureStream === "function",
+        visibilityState: document.visibilityState,
+      },
+    });
+    // #endregion
     if (state.exporting || !window.MediaRecorder || !canvas.captureStream) {
       if (!window.MediaRecorder || !canvas.captureStream) exportStatus.textContent = "المتصفح لا يدعم التصدير المباشر.";
       return;
     }
 
+    activeExportDebug = {
+      invocationAt,
+      recorderStartCalledAt: null,
+      lastRenderAt: null,
+      renderedFrames: 0,
+      maxRenderGapMs: 0,
+      firstRenderLogged: false,
+      largeGapLogged: false,
+      firstChunkLogged: false,
+      chunkEvents: 0,
+      totalChunkBytes: 0,
+      firstTimelineMs: null,
+      lastTimelineMs: null,
+      audioAnalyser: null,
+      maxAudioRms: 0,
+    };
     const mimeTypes = [
-      "video/webm;codecs=vp9,opus",
       "video/webm;codecs=vp8,opus",
+      "video/webm;codecs=vp9,opus",
       "video/webm",
     ];
     const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
     const stream = canvas.captureStream(30);
     let exportAudioContext = null;
+    let exportSoundtrackDestination = null;
 
     try {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (AudioContextClass) {
         exportAudioContext = new AudioContextClass();
         const destination = exportAudioContext.createMediaStreamDestination();
-        scheduleSoundtrack(exportAudioContext, destination, exportAudioContext.currentTime + 0.08);
+        exportSoundtrackDestination = exportAudioContext.createGain();
+        exportSoundtrackDestination.connect(destination);
+        const analyser = exportAudioContext.createAnalyser();
+        analyser.fftSize = 2_048;
+        exportSoundtrackDestination.connect(analyser);
+        activeExportDebug.audioAnalyser = analyser;
         const audioTrack = destination.stream.getAudioTracks()[0];
         if (audioTrack) stream.addTrack(audioTrack);
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: "D",
+          location: "app.js:export-audio-setup",
+          message: "Export audio graph and track created",
+          data: {
+            contextState: exportAudioContext.state,
+            contextTime: exportAudioContext.currentTime,
+            sampleRate: exportAudioContext.sampleRate,
+            baseLatency: exportAudioContext.baseLatency ?? null,
+            trackPresent: Boolean(audioTrack),
+            trackReadyState: audioTrack?.readyState ?? null,
+            trackMuted: audioTrack?.muted ?? null,
+            trackEnabled: audioTrack?.enabled ?? null,
+          },
+        });
+        // #endregion
       }
+
+      stopSound();
+      state.exporting = true;
+      state.exportTimelineStarted = false;
+      state.exportStartedAt = performance.now();
+      exportButton.disabled = true;
+      exportStatus.textContent = "جارٍ تهيئة محرّك الفيديو...";
 
       const recorder = new MediaRecorder(stream, {
         mimeType,
@@ -1161,11 +1382,79 @@ function initializeApp() {
         audioBitsPerSecond: 192_000,
       });
       const chunks = [];
+      recorder.addEventListener("start", () => {
+        state.exportStartedAt = performance.now();
+        state.exportTimelineStarted = true;
+        if (exportAudioContext && exportSoundtrackDestination) {
+          scheduleSoundtrack(exportAudioContext, exportSoundtrackDestination, exportAudioContext.currentTime);
+        }
+        window.setTimeout(() => {
+          if (recorder.state !== "inactive") recorder.stop();
+        }, AD_DURATION);
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: "C",
+          location: "app.js:recorder-start-event",
+          message: "MediaRecorder emitted start",
+          data: {
+            lagFromStartCallMs: activeExportDebug?.recorderStartCalledAt == null
+              ? null
+              : Math.round(performance.now() - activeExportDebug.recorderStartCalledAt),
+            elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
+            recorderState: recorder.state,
+            exportTimelineMs: Math.round(currentTime()),
+          },
+        });
+        // #endregion
+      });
       recorder.addEventListener("dataavailable", (event) => {
+        if (activeExportDebug) {
+          activeExportDebug.chunkEvents += 1;
+          activeExportDebug.totalChunkBytes += event.data.size;
+          const audioRms = readAnalyserRms(activeExportDebug.audioAnalyser);
+          if (audioRms != null) activeExportDebug.maxAudioRms = Math.max(activeExportDebug.maxAudioRms, audioRms);
+          if (!activeExportDebug.firstChunkLogged) {
+            activeExportDebug.firstChunkLogged = true;
+            // #region agent log
+            agentDebugLog({
+              hypothesisId: "A,B,D",
+              location: "app.js:first-dataavailable",
+              message: "First recorder chunk became available",
+              data: {
+                elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
+                chunkSize: event.data.size,
+                chunkType: event.data.type,
+                renderedFrames: activeExportDebug.renderedFrames,
+                maxRenderGapMs: Math.round(activeExportDebug.maxRenderGapMs),
+                audioRms,
+              },
+            });
+            // #endregion
+          }
+        }
         if (event.data.size) chunks.push(event.data);
       });
 
       recorder.addEventListener("stop", () => {
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: "A,B,D",
+          location: "app.js:recorder-stop-summary",
+          message: "Export runtime summary before cleanup",
+          data: {
+            elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
+            renderedFrames: activeExportDebug?.renderedFrames ?? null,
+            maxRenderGapMs: Math.round(activeExportDebug?.maxRenderGapMs ?? 0),
+            firstTimelineMs: activeExportDebug?.firstTimelineMs ?? null,
+            lastTimelineMs: activeExportDebug?.lastTimelineMs ?? null,
+            chunkEvents: activeExportDebug?.chunkEvents ?? null,
+            totalChunkBytes: activeExportDebug?.totalChunkBytes ?? null,
+            maxAudioRms: activeExportDebug?.maxAudioRms ?? null,
+            audioContextState: exportAudioContext?.state ?? null,
+            recorderState: recorder.state,
+          },
+        });
+        // #endregion
         const blob = new Blob(chunks, { type: mimeType || "video/webm" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -1178,34 +1467,93 @@ function initializeApp() {
         exportAudioContext?.close();
         stream.getTracks().forEach((track) => track.stop());
         state.exporting = false;
+        state.exportTimelineStarted = false;
         state.offset = 0;
         state.startedAt = performance.now();
         state.playing = true;
         exportButton.disabled = false;
         exportStatus.textContent = "تم التصدير ✓ الفيديو في مجلد التنزيلات";
         if (state.soundEnabled) startLiveSoundtrack();
+        activeExportDebug = null;
       });
 
-      stopSound();
-      state.exporting = true;
       state.exportStartedAt = performance.now();
-      exportButton.disabled = true;
       recorder.start(250);
-      window.setTimeout(() => recorder.stop(), AD_DURATION + 260);
+      activeExportDebug.recorderStartCalledAt = performance.now();
+      const videoTrack = stream.getVideoTracks()[0];
+      // #region agent log
+      agentDebugLog({
+        hypothesisId: "B,C",
+        location: "app.js:recorder-start-called",
+        message: "Recorder start requested with capture tracks",
+        data: {
+          elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
+          recorderState: recorder.state,
+          recorderMimeType: recorder.mimeType,
+          streamTrackCount: stream.getTracks().length,
+          videoTrackReadyState: videoTrack?.readyState ?? null,
+          videoTrackMuted: videoTrack?.muted ?? null,
+          videoTrackEnabled: videoTrack?.enabled ?? null,
+          requestedFrameRate: 30,
+          captureFrameRate: videoTrack?.getSettings().frameRate ?? null,
+        },
+      });
+      // #endregion
     } catch (error) {
       exportAudioContext?.close();
       stream.getTracks().forEach((track) => track.stop());
       state.exporting = false;
+      state.exportTimelineStarted = false;
       exportButton.disabled = false;
       exportStatus.textContent = "تعذّر التصدير. جرّب Chrome أو Edge.";
+      activeExportDebug = null;
       console.error(error);
     }
   }
 
-  exportButton.addEventListener("click", exportVideo);
+  exportButton.addEventListener("click", downloadRenderedVideo);
 
   function render(now) {
     const time = currentTime(now);
+    if (state.exporting && activeExportDebug) {
+      activeExportDebug.renderedFrames += 1;
+      activeExportDebug.firstTimelineMs ??= Math.round(time);
+      activeExportDebug.lastTimelineMs = Math.round(time);
+      const renderGapMs = activeExportDebug.lastRenderAt == null ? 0 : now - activeExportDebug.lastRenderAt;
+      activeExportDebug.maxRenderGapMs = Math.max(activeExportDebug.maxRenderGapMs, renderGapMs);
+      if (!activeExportDebug.firstRenderLogged) {
+        activeExportDebug.firstRenderLogged = true;
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: "A,C",
+          location: "app.js:first-export-render",
+          message: "First animation frame rendered during export",
+          data: {
+            elapsedFromExportStartMs: Math.round(now - state.exportStartedAt),
+            timelineMs: Math.round(time),
+            renderGapMs: Math.round(renderGapMs),
+          },
+        });
+        // #endregion
+      }
+      if (renderGapMs > 250 && !activeExportDebug.largeGapLogged) {
+        activeExportDebug.largeGapLogged = true;
+        // #region agent log
+        agentDebugLog({
+          hypothesisId: "A",
+          location: "app.js:export-render-gap",
+          message: "Large requestAnimationFrame gap detected",
+          data: {
+            renderGapMs: Math.round(renderGapMs),
+            timelineMs: Math.round(time),
+            renderedFrames: activeExportDebug.renderedFrames,
+            elapsedFromExportStartMs: Math.round(now - state.exportStartedAt),
+          },
+        });
+        // #endregion
+      }
+      activeExportDebug.lastRenderAt = now;
+    }
     drawFrame(context, time);
     timelineProgress.style.width = `${(time / AD_DURATION) * 100}%`;
     const activeScene = sceneAt(time);
@@ -1220,11 +1568,14 @@ function initializeApp() {
   }
 
   updatePlayButton();
-  window.requestAnimationFrame(render);
+  if (renderMode) drawFrame(context, 0);
+  else window.requestAnimationFrame(render);
 
   window.__cakeAd = {
-    drawFrame: (time) => drawFrame(context, time),
-    exportVideo,
+    drawFrame: (time) => drawFrame(context, clamp(Number(time), 0, AD_DURATION - (1_000 / EXPORT_FPS))),
+    renderSoundtrackWavBase64,
+    exportVideo: downloadRenderedVideo,
+    exportVideoRealtime,
     seek,
     getState: () => ({ ...state, audioContext: undefined, audioTimer: undefined }),
   };

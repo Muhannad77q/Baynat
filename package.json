@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 5173",
-    "test": "node --test tests/*.test.js"
+    "dev": "python3 debug_server.py",
+    "render": "node scripts/render-ad.mjs",
+    "test": "node --test tests/*.test.js",
+    "verify:video": "node scripts/render-ad.mjs --verify-only"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.4.0"
   }
 }
