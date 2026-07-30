@@ -303,7 +303,6 @@ async function submitAnswer(event) {
     return;
   }
 
-  const elapsedMs = Math.max(0, Math.round(performance.now() - timerStartedAt));
   stopTimer();
   setButtonLoading(refs.submitAnswerButton, true, "جاري إرسال الإجابة...");
   refs.answerError.textContent = "";
@@ -313,7 +312,7 @@ async function submitAnswer(event) {
       {
         method: "POST",
         headers: { Authorization: `Bearer ${studentToken}` },
-        body: JSON.stringify({ answer, elapsedMs }),
+        body: JSON.stringify({ answer }),
       }
     );
     renderResult(payload.result);
@@ -382,7 +381,8 @@ function renderLeaderboard(leaderboard) {
 async function refreshLeaderboard(showConfirmation) {
   try {
     const payload = await requestJson(
-      `/api/quizzes/${encodeURIComponent(quizId)}/leaderboard`
+      `/api/quizzes/${encodeURIComponent(quizId)}/leaderboard`,
+      { headers: { Authorization: `Bearer ${studentToken}` } }
     );
     renderLeaderboard(payload.leaderboard);
     const currentEntry = payload.leaderboard.find(

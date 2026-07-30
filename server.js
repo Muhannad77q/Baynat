@@ -1,5 +1,13 @@
-import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  scrypt,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto";
+import { closeSync, unlinkSync } from "node:fs";
+import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -17,6 +25,19 @@ const MAX_BODY_BYTES = 128 * 1024;
 const MAX_STUDENTS = 80;
 const ACCESS_WINDOW_MS = 10 * 60 * 1000;
 const ACCESS_ATTEMPTS_LIMIT = 20;
+const QUIZ_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
+const QUIZ_CREATION_WINDOW_MS = 60 * 60 * 1000;
+const QUIZ_CREATION_IP_LIMIT = 5;
+const QUIZ_CREATION_GLOBAL_LIMIT = 30;
+const PUBLIC_FILES = new Map([
+  ["/", "index.html"],
+  ["/index.html", "index.html"],
+  ["/student.html", "student.html"],
+  ["/app.js", "app.js"],
+  ["/student.js", "student.js"],
+  ["/styles.css", "styles.css"],
+  ["/logo.svg", "logo.svg"],
+]);
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -39,19 +60,38 @@ class HttpError extends Error {
 class JsonStore {
   constructor(filePath) {
     this.filePath = filePath;
+    this.lockPath = `${filePath}.lock`;
+    this.lockHandle = null;
     this.data = null;
     this.writeQueue = Promise.resolve();
   }
 
   async init() {
+    await this.acquireLock();
+    let raw;
     try {
-      const parsed = JSON.parse(await readFile(this.filePath, "utf8"));
-      if (parsed?.version === 1 && parsed.secret && parsed.quizzes) {
-        this.data = parsed;
-        return;
-      }
+      raw = await readFile(this.filePath, "utf8");
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (error.code !== "ENOENT") {
+        this.close();
+        throw error;
+      }
+    }
+
+    if (raw !== undefined) {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        this.close();
+        throw new Error("ملف بيانات بَيّنات تالف؛ تم إيقاف الخادم لحماية البيانات.");
+      }
+      if (parsed?.version !== 1 || !parsed.secret || !parsed.quizzes) {
+        this.close();
+        throw new Error("إصدار ملف بيانات بَيّنات غير مدعوم؛ لن تتم الكتابة فوقه.");
+      }
+      this.data = parsed;
+      return;
     }
 
     this.data = {
@@ -59,7 +99,50 @@ class JsonStore {
       secret: randomBytes(32).toString("base64url"),
       quizzes: {},
     };
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (error) {
+      this.close();
+      throw error;
+    }
+  }
+
+  async acquireLock() {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        this.lockHandle = await open(this.lockPath, "wx", 0o600);
+        try {
+          await this.lockHandle.writeFile(String(process.pid));
+        } catch (error) {
+          this.close();
+          throw error;
+        }
+        return;
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        let lockPid = null;
+        try {
+          lockPid = Number((await readFile(this.lockPath, "utf8")).trim());
+        } catch {
+          // An unreadable lock is treated as active to avoid unsafe concurrent writes.
+        }
+        let active = true;
+        if (Number.isInteger(lockPid) && lockPid > 0) {
+          try {
+            process.kill(lockPid, 0);
+          } catch (processError) {
+            if (processError.code === "ESRCH") active = false;
+          }
+        }
+        if (active || attempt === 1) {
+          throw new Error(
+            "ملف بيانات بَيّنات مستخدم من خادم آخر. شغّل نسخة واحدة فقط لكل ملف بيانات."
+          );
+        }
+        await unlink(this.lockPath).catch(() => {});
+      }
+    }
   }
 
   read(callback) {
@@ -68,22 +151,39 @@ class JsonStore {
 
   update(callback) {
     const operation = this.writeQueue.then(async () => {
-      const result = await callback(this.data);
-      await this.persist();
+      const draft = structuredClone(this.data);
+      const result = await callback(draft);
+      await this.persist(draft);
+      this.data = draft;
       return result;
     });
     this.writeQueue = operation.catch(() => {});
     return operation;
   }
 
-  async persist() {
+  async persist(data = this.data) {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(this.data, null, 2)}\n`, {
+    await writeFile(temporaryPath, `${JSON.stringify(data, null, 2)}\n`, {
       encoding: "utf8",
       mode: 0o600,
     });
     await rename(temporaryPath, this.filePath);
+  }
+
+  close() {
+    if (!this.lockHandle) return;
+    try {
+      closeSync(this.lockHandle.fd);
+    } catch {
+      // The process is already closing; best-effort lock cleanup is sufficient.
+    }
+    this.lockHandle = null;
+    try {
+      unlinkSync(this.lockPath);
+    } catch {
+      // A stale lock includes the PID and is recovered safely on next start.
+    }
   }
 }
 
@@ -140,10 +240,18 @@ function pinLookup(secret, quizId, pin) {
 }
 
 function hashPin(pin, salt = randomBytes(16).toString("base64url")) {
-  return {
-    pinSalt: salt,
-    pinHash: scryptSync(normalizeDigits(pin), salt, 32).toString("hex"),
-  };
+  return new Promise((resolve, reject) => {
+    scrypt(normalizeDigits(pin), salt, 32, (error, derivedKey) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve({
+        pinSalt: salt,
+        pinHash: derivedKey.toString("hex"),
+      });
+    });
+  });
 }
 
 function verifyPin(pin, student) {
@@ -210,7 +318,7 @@ function sanitizeQuestion(question, quizId) {
   return cleaned;
 }
 
-function sanitizeStudents(students, secret, quizId) {
+async function sanitizeStudents(students, secret, quizId) {
   if (!Array.isArray(students) || students.length === 0) {
     throw new HttpError(400, "أضف طالبًا واحدًا على الأقل قبل نشر السؤال.", "EMPTY_ROSTER");
   }
@@ -236,7 +344,7 @@ function sanitizeStudents(students, secret, quizId) {
         "INVALID_STUDENT"
       );
     }
-    const pinData = hashPin(validation.value.pin);
+    const pinData = await hashPin(validation.value.pin);
     accepted.push({
       id,
       name: validation.value.name,
@@ -251,6 +359,9 @@ function sanitizeStudents(students, secret, quizId) {
 function requireQuiz(store, quizId) {
   const quiz = store.read((data) => data.quizzes[quizId]);
   if (!quiz) throw new HttpError(404, "رابط السؤال غير صالح أو انتهى.", "QUIZ_NOT_FOUND");
+  if (quiz.expiresAt && new Date(quiz.expiresAt).getTime() <= Date.now()) {
+    throw new HttpError(410, "انتهت صلاحية سؤال اليوم. اطلب رابطًا جديدًا.", "QUIZ_EXPIRED");
+  }
   return quiz;
 }
 
@@ -273,20 +384,20 @@ function requireStudent(request, quiz) {
   if (!student) {
     throw new HttpError(401, "لم يعد الطالب موجودًا في هذا التحدّي.", "STUDENT_UNAUTHORIZED");
   }
-  return student;
+  return { student, session };
 }
 
-function getClientIp(request) {
-  const forwarded = request.headers["x-forwarded-for"];
+function getClientIp(request, trustProxy) {
+  const forwarded = trustProxy ? request.headers["x-forwarded-for"] : "";
   return String(forwarded || request.socket.remoteAddress || "unknown")
     .split(",")[0]
     .trim();
 }
 
-function createAccessLimiter() {
+function createAccessLimiter(trustProxy) {
   const attempts = new Map();
   return (request, quizId, recordFailure = false) => {
-    const key = `${quizId}:${getClientIp(request)}`;
+    const key = `${quizId}:${getClientIp(request, trustProxy)}`;
     const now = Date.now();
     const recent = (attempts.get(key) || []).filter((time) => now - time < ACCESS_WINDOW_MS);
     if (recent.length >= ACCESS_ATTEMPTS_LIMIT) {
@@ -301,18 +412,36 @@ function createAccessLimiter() {
   };
 }
 
+function createQuizCreationLimiter(trustProxy) {
+  const byIp = new Map();
+  let globalAttempts = [];
+  return (request) => {
+    const now = Date.now();
+    const ip = getClientIp(request, trustProxy);
+    const recentForIp = (byIp.get(ip) || []).filter(
+      (time) => now - time < QUIZ_CREATION_WINDOW_MS
+    );
+    globalAttempts = globalAttempts.filter((time) => now - time < QUIZ_CREATION_WINDOW_MS);
+    if (
+      recentForIp.length >= QUIZ_CREATION_IP_LIMIT ||
+      globalAttempts.length >= QUIZ_CREATION_GLOBAL_LIMIT
+    ) {
+      throw new HttpError(
+        429,
+        "تم إنشاء عدة أسئلة مؤخرًا. انتظر قليلًا قبل نشر سؤال جديد.",
+        "QUIZ_CREATION_LIMIT"
+      );
+    }
+    recentForIp.push(now);
+    globalAttempts.push(now);
+    byIp.set(ip, recentForIp);
+  };
+}
+
 async function serveStatic(request, response, pathname) {
-  const requestedPath = pathname === "/" ? "/index.html" : pathname;
-  let decoded;
-  try {
-    decoded = decodeURIComponent(requestedPath);
-  } catch {
-    throw new HttpError(400, "المسار غير صالح.", "INVALID_PATH");
-  }
-  const filePath = path.resolve(ROOT_DIR, `.${decoded}`);
-  if (!filePath.startsWith(`${ROOT_DIR}${path.sep}`)) {
-    throw new HttpError(403, "المسار غير مسموح.", "FORBIDDEN_PATH");
-  }
+  const publicFile = PUBLIC_FILES.get(pathname);
+  if (!publicFile) throw new HttpError(404, "الصفحة غير موجودة.", "NOT_FOUND");
+  const filePath = path.join(ROOT_DIR, publicFile);
   try {
     const content = await readFile(filePath);
     const extension = path.extname(filePath).toLowerCase();
@@ -331,10 +460,14 @@ async function serveStatic(request, response, pathname) {
   }
 }
 
-export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) {
+export async function createBaynatServer({
+  dataFile = DEFAULT_DATA_FILE,
+  trustProxy = process.env.TRUST_PROXY === "true",
+} = {}) {
   const store = new JsonStore(dataFile);
   await store.init();
-  const recordAccessAttempt = createAccessLimiter();
+  const recordAccessAttempt = createAccessLimiter(trustProxy);
+  const recordQuizCreation = createQuizCreationLimiter(trustProxy);
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -347,22 +480,34 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
       }
 
       if (pathname === "/api/quizzes" && request.method === "POST") {
+        recordQuizCreation(request);
         const body = await readJsonBody(request);
         const quizId = randomBytes(6).toString("base64url");
         const adminToken = randomBytes(32).toString("base64url");
         const question = sanitizeQuestion(body.question, quizId);
-        const students = sanitizeStudents(body.students, store.data.secret, quizId);
+        const students = await sanitizeStudents(body.students, store.data.secret, quizId);
+        const createdAt = new Date();
         const quiz = {
           id: quizId,
           question,
           students,
           submissions: [],
           sessions: {},
+          starts: {},
           adminTokenHash: hashToken(adminToken),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: createdAt.toISOString(),
+          updatedAt: createdAt.toISOString(),
+          expiresAt: new Date(createdAt.getTime() + QUIZ_RETENTION_MS).toISOString(),
         };
         await store.update((data) => {
+          for (const [storedQuizId, storedQuiz] of Object.entries(data.quizzes)) {
+            if (
+              storedQuiz.expiresAt &&
+              new Date(storedQuiz.expiresAt).getTime() <= createdAt.getTime()
+            ) {
+              delete data.quizzes[storedQuizId];
+            }
+          }
           data.quizzes[quizId] = quiz;
         });
         json(
@@ -428,11 +573,12 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
           name: validation.value.name,
           className: validation.value.className,
           pinLookup: lookup,
-          ...hashPin(validation.value.pin),
+          ...(await hashPin(validation.value.pin)),
         };
-        await store.update(() => {
-          quiz.students.push(student);
-          quiz.updatedAt = new Date().toISOString();
+        await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          draftQuiz.students.push(student);
+          draftQuiz.updatedAt = new Date().toISOString();
         });
         json(response, 201, { student: publicStudent(student) }, securityHeaders());
         return;
@@ -445,15 +591,19 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
         if (!quiz.students.some((student) => student.id === studentId)) {
           throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
         }
-        await store.update(() => {
-          quiz.students = quiz.students.filter((student) => student.id !== studentId);
-          quiz.submissions = quiz.submissions.filter(
+        await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          draftQuiz.students = draftQuiz.students.filter((student) => student.id !== studentId);
+          draftQuiz.submissions = draftQuiz.submissions.filter(
             (submission) => submission.studentId !== studentId
           );
-          quiz.sessions = Object.fromEntries(
-            Object.entries(quiz.sessions).filter(([, session]) => session.studentId !== studentId)
+          draftQuiz.sessions = Object.fromEntries(
+            Object.entries(draftQuiz.sessions).filter(
+              ([, session]) => session.studentId !== studentId
+            )
           );
-          quiz.updatedAt = new Date().toISOString();
+          if (draftQuiz.starts) delete draftQuiz.starts[studentId];
+          draftQuiz.updatedAt = new Date().toISOString();
         });
         json(response, 200, { ok: true }, securityHeaders());
         return;
@@ -475,16 +625,23 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
           throw new HttpError(401, "الرمز غير صحيح. تأكد منه أو اطلبه من المشرف.", "PIN_REJECTED");
         }
         const token = randomBytes(32).toString("base64url");
-        await store.update(() => {
-          quiz.sessions = Object.fromEntries(
-            Object.entries(quiz.sessions).filter(([, session]) => session.studentId !== student.id)
+        const startedAt = quiz.starts?.[student.id] || Date.now();
+        await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          draftQuiz.starts ||= {};
+          draftQuiz.starts[student.id] ||= startedAt;
+          draftQuiz.sessions = Object.fromEntries(
+            Object.entries(draftQuiz.sessions).filter(
+              ([, session]) => session.studentId !== student.id
+            )
           );
-          quiz.sessions[hashToken(token)] = {
+          draftQuiz.sessions[hashToken(token)] = {
             tokenHash: hashToken(token),
             studentId: student.id,
             createdAt: new Date().toISOString(),
+            startedAt: draftQuiz.starts[student.id],
           };
-          quiz.updatedAt = new Date().toISOString();
+          draftQuiz.updatedAt = new Date().toISOString();
         });
         const existing = quiz.submissions.find(
           (submission) => submission.studentId === student.id
@@ -507,20 +664,18 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
         /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/submissions$/
       );
       if (submissionMatch && request.method === "POST") {
-        const quiz = requireQuiz(store, submissionMatch[1]);
-        const student = requireStudent(request, quiz);
+        let quiz = requireQuiz(store, submissionMatch[1]);
+        const { student, session } = requireStudent(request, quiz);
         const body = await readJsonBody(request);
         const answer = String(body.answer || "").trim();
-        const elapsedMs = Math.round(Number(body.elapsedMs));
         if (!answer || answer.length > 500) {
           throw new HttpError(400, "اكتب إجابة صالحة قبل الإرسال.", "INVALID_ANSWER");
-        }
-        if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs > 60 * 60 * 1000) {
-          throw new HttpError(400, "زمن الإجابة غير صالح.", "INVALID_ELAPSED_TIME");
         }
 
         let submission = quiz.submissions.find((item) => item.studentId === student.id);
         if (!submission) {
+          const startedAt = Number(session.startedAt) || new Date(session.createdAt).getTime();
+          const elapsedMs = Math.max(0, Date.now() - startedAt);
           submission = {
             id: `submission-${randomBytes(8).toString("base64url")}`,
             studentId: student.id,
@@ -530,10 +685,12 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
             elapsedMs,
             submittedAt: new Date().toISOString(),
           };
-          await store.update(() => {
-            quiz.submissions.push(submission);
-            quiz.updatedAt = new Date().toISOString();
+          await store.update((data) => {
+            const draftQuiz = data.quizzes[quiz.id];
+            draftQuiz.submissions.push(submission);
+            draftQuiz.updatedAt = new Date().toISOString();
           });
+          quiz = requireQuiz(store, submissionMatch[1]);
         }
         json(
           response,
@@ -549,6 +706,14 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
       );
       if (leaderboardMatch && request.method === "GET") {
         const quiz = requireQuiz(store, leaderboardMatch[1]);
+        const { student } = requireStudent(request, quiz);
+        if (!quiz.submissions.some((submission) => submission.studentId === student.id)) {
+          throw new HttpError(
+            403,
+            "تظهر لوحة المتصدرين بعد إرسال إجابتك.",
+            "ANSWER_REQUIRED"
+          );
+        }
         json(
           response,
           200,
@@ -609,6 +774,7 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
     }
   });
 
+  server.on("close", () => store.close());
   return { server, store };
 }
 
@@ -619,6 +785,9 @@ async function start() {
   server.listen(port, "0.0.0.0", () => {
     console.log(`Baynat is ready at http://0.0.0.0:${port}`);
   });
+  const shutdown = () => server.close(() => process.exit(0));
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
