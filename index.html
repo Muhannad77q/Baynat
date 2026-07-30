@@ -1,202 +1,707 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Search Trail — answers, graphs, photos, and match insight</title>
     <meta
       name="description"
-      content="Search Trail is a dark AI search concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight."
+      content="بَيّنات — سؤال يومي تفاعلي للفصل مع نقاط السرعة ولوحة المتصدرين."
     />
+    <meta name="theme-color" content="#f7f8fc" />
+    <title>بَيّنات | سؤال اليوم</title>
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=2" />
   </head>
   <body>
-    <div class="background-glow" aria-hidden="true"></div>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-grid" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="7" height="7" rx="2"></rect>
+        <rect x="14" y="3" width="7" height="7" rx="2"></rect>
+        <rect x="3" y="14" width="7" height="7" rx="2"></rect>
+        <rect x="14" y="14" width="7" height="7" rx="2"></rect>
+      </symbol>
+      <symbol id="icon-question" viewBox="0 0 24 24">
+        <path d="M9.1 9a3 3 0 1 1 5.1 2.1c-1.45 1.27-2.2 1.76-2.2 3.4"></path>
+        <path d="M12 18h.01"></path>
+        <circle cx="12" cy="12" r="9"></circle>
+      </symbol>
+      <symbol id="icon-users" viewBox="0 0 24 24">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </symbol>
+      <symbol id="icon-trophy" viewBox="0 0 24 24">
+        <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z"></path>
+        <path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"></path>
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14"></path>
+      </symbol>
+      <symbol id="icon-share" viewBox="0 0 24 24">
+        <circle cx="18" cy="5" r="3"></circle>
+        <circle cx="6" cy="12" r="3"></circle>
+        <circle cx="18" cy="19" r="3"></circle>
+        <path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4"></path>
+      </symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M12 7v5l3 2"></path>
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6"></path>
+      </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+        <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"></path>
+      </symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="7"></circle>
+        <path d="m20 20-4-4"></path>
+      </symbol>
+      <symbol id="icon-edit" viewBox="0 0 24 24">
+        <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"></path>
+      </symbol>
+      <symbol id="icon-arrow" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6"></path>
+      </symbol>
+      <symbol id="icon-log-out" viewBox="0 0 24 24">
+        <path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6"></path>
+      </symbol>
+    </svg>
 
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Search Trail home">
-        <img src="./logo.svg" alt="" />
-        <span>Search Trail</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#demo">Demo</a>
-        <a href="#features">Features</a>
-        <a href="#themes">Theme photos</a>
-      </nav>
-      <a class="header-cta" href="#demo">Try a question</a>
-    </header>
+    <div class="ambient-shape ambient-shape-one" aria-hidden="true"></div>
+    <div class="ambient-shape ambient-shape-two" aria-hidden="true"></div>
 
-    <main id="top">
-      <section class="hero-section">
-        <div class="hero-copy">
-          <p class="eyebrow">Fast AI search concept</p>
-          <h1>Ask anything. Follow the answer trail.</h1>
-          <p class="hero-lede">
-            Search Trail turns questions into clear answers, live-style graphs, study ideas, photo generation prompts,
-            football match summaries, and next steps in one polished dark workspace.
-          </p>
-
-          <form class="hero-search" id="searchForm">
-            <label class="sr-only" for="searchInput">Ask Search Trail</label>
-            <input
-              id="searchInput"
-              name="query"
-              type="search"
-              autocomplete="off"
-              placeholder="Ask about KSA population, science homework, photos, football matches..."
-            />
-            <button type="submit">Search</button>
-          </form>
-
-          <div class="example-grid" aria-label="Example searches">
-            <button type="button" data-query="People living in KSA for the past 10 years and what changed in 2025">
-              KSA population graph
-            </button>
-            <button type="button" data-query="Help me with a school science search about photosynthesis and give ideas">
-              School science ideas
-            </button>
-            <button type="button" data-query="Generate a high quality photo of a futuristic football stadium at night">
-              Photo prompt
-            </button>
-            <button type="button" data-query="What happened in the latest football match and who had momentum">
-              Football match insight
-            </button>
+    <div id="adminApp" class="admin-app">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="./logo.svg" alt="" />
+          <div>
+            <strong>بَيّنات</strong>
+            <span>مساحة الفصل</span>
           </div>
         </div>
 
-        <aside class="hero-visual" aria-label="Search Trail preview">
-          <div class="result-window">
-            <div class="window-bar">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="trail-card active">
-              <p class="eyebrow">Best answer</p>
-              <h2>KSA population trail</h2>
-              <p>Shows ten-year movement, highlights 2025, and explains the jump in plain language.</p>
-            </div>
-            <div class="mini-chart" aria-hidden="true">
-              <span style="height: 38%"></span>
-              <span style="height: 42%"></span>
-              <span style="height: 47%"></span>
-              <span style="height: 51%"></span>
-              <span style="height: 56%"></span>
-              <span style="height: 64%"></span>
-              <span style="height: 70%"></span>
-              <span style="height: 77%"></span>
-              <span style="height: 86%"></span>
-              <span style="height: 94%"></span>
-            </div>
-            <div class="visual-row">
-              <div class="photo-tile">4K image prompt</div>
-              <div class="score-tile">2 - 1<br /><small>match pulse</small></div>
-            </div>
-          </div>
-        </aside>
-      </section>
+        <nav class="side-nav" aria-label="التنقل الرئيسي">
+          <button class="nav-item active" type="button" data-view="dashboard">
+            <svg><use href="#icon-grid"></use></svg>
+            <span>نظرة عامة</span>
+          </button>
+          <button class="nav-item" type="button" data-view="question">
+            <svg><use href="#icon-question"></use></svg>
+            <span>سؤال اليوم</span>
+          </button>
+          <button class="nav-item" type="button" data-view="students">
+            <svg><use href="#icon-users"></use></svg>
+            <span>الطلاب</span>
+            <span class="nav-count" id="sideStudentCount">٠</span>
+          </button>
+          <button class="nav-item" type="button" data-view="leaderboard">
+            <svg><use href="#icon-trophy"></use></svg>
+            <span>المتصدرون</span>
+          </button>
+        </nav>
 
-      <section class="demo-section" id="demo">
-        <div class="section-copy">
-          <p class="eyebrow">Interactive demo</p>
-          <h2>One search box, many answer types.</h2>
-          <p>
-            This demo runs locally in the browser. A production version can connect real search, sports, image, and data APIs.
-          </p>
+        <div class="sidebar-tip">
+          <span class="tip-spark">✦</span>
+          <strong>كل يوم فرصة جديدة</strong>
+          <p>حفّز طلابك بسؤال قصير، ونقاط تعتمد على صحة الإجابة وسرعتها.</p>
         </div>
 
-        <div class="answer-layout">
-          <article class="answer-card" id="answerCard" aria-live="polite">
-            <div class="answer-header">
-              <div>
-                <p class="eyebrow" id="answerType">Data answer</p>
-                <h3 id="answerTitle">KSA population: ten-year trend with 2025 highlight</h3>
+        <div class="teacher-profile">
+          <div class="avatar avatar-purple">م</div>
+          <div>
+            <strong>محمد العتيبي</strong>
+            <span>مشرف الفصل</span>
+          </div>
+          <button class="icon-button" type="button" aria-label="خيارات الحساب">•••</button>
+        </div>
+      </aside>
+
+      <main class="admin-main">
+        <header class="admin-header">
+          <button class="mobile-brand" type="button" data-view="dashboard" aria-label="الرئيسية">
+            <img src="./logo.svg" alt="" />
+            <strong>بَيّنات</strong>
+          </button>
+          <div>
+            <p class="page-kicker" id="pageKicker">لوحة المشرف</p>
+            <h1 id="pageTitle">أهلًا أستاذ محمد 👋</h1>
+          </div>
+          <div class="header-actions">
+            <div class="date-chip">
+              <span class="live-dot"></span>
+              <span id="todayLabel">اليوم</span>
+            </div>
+            <button class="button button-secondary preview-student-button" type="button">
+              <span>معاينة كطالب</span>
+              <svg><use href="#icon-arrow"></use></svg>
+            </button>
+          </div>
+        </header>
+
+        <section id="dashboardView" class="view-panel active" data-admin-view="dashboard">
+          <article class="welcome-card">
+            <div class="welcome-copy">
+              <span class="status-badge">
+                <span class="live-dot"></span>
+                منشور الآن
+              </span>
+              <h2>سؤال اليوم جاهز<br />لبداية التحدّي!</h2>
+              <p>شارك الرابط مع طلابك، وتابع الإجابات والترتيب لحظة بلحظة.</p>
+              <div class="welcome-actions">
+                <button class="button button-light share-question-button" type="button">
+                  <svg><use href="#icon-share"></use></svg>
+                  <span>مشاركة السؤال</span>
+                </button>
+                <button class="button button-ghost-light" type="button" data-view="question">
+                  <svg><use href="#icon-edit"></use></svg>
+                  <span>تعديل السؤال</span>
+                </button>
               </div>
-              <span class="speed-pill">Fast answer</span>
             </div>
-            <p id="answerSummary">
-              Saudi Arabia's population trend rises across the decade in this sample trail. The 2025 point is highlighted so you can quickly see the latest jump and compare it with previous years.
-            </p>
-            <ul class="answer-list" id="answerList"></ul>
-            <div class="chart-panel" id="chartPanel" aria-label="Population chart"></div>
-            <div class="media-panel" id="mediaPanel"></div>
-          </article>
-
-          <aside class="insight-stack">
-            <div class="stat-card">
-              <strong>&lt; 1s</strong>
-              <span>local demo response</span>
+            <div class="welcome-illustration" aria-hidden="true">
+              <div class="orbit orbit-one"></div>
+              <div class="orbit orbit-two"></div>
+              <div class="floating-card floating-card-main">
+                <div class="floating-card-top">
+                  <span>سؤال اليوم</span>
+                  <span class="mini-pill">+١٩٠</span>
+                </div>
+                <strong>؟</strong>
+                <div class="answer-lines"><i></i><i></i><i></i></div>
+              </div>
+              <span class="floating-star star-one">✦</span>
+              <span class="floating-star star-two">✦</span>
+              <span class="floating-dot dot-one"></span>
+              <span class="floating-dot dot-two"></span>
             </div>
-            <div class="stat-card">
-              <strong>10</strong>
-              <span>theme photos generated</span>
+          </article>
+
+          <div class="metric-grid">
+            <article class="metric-card">
+              <div class="metric-icon metric-icon-purple">
+                <svg><use href="#icon-users"></use></svg>
+              </div>
+              <div>
+                <span>إجمالي الطلاب</span>
+                <strong id="studentMetric">٠</strong>
+                <small>في قائمة الفصل</small>
+              </div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-icon metric-icon-green">
+                <svg><use href="#icon-check"></use></svg>
+              </div>
+              <div>
+                <span>أجابوا اليوم</span>
+                <strong id="answeredMetric">٠</strong>
+                <small id="answeredPercent">بانتظار الإجابات</small>
+              </div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-icon metric-icon-orange">
+                <svg><use href="#icon-clock"></use></svg>
+              </div>
+              <div>
+                <span>متوسط السرعة</span>
+                <strong id="speedMetric">—</strong>
+                <small>زمن إرسال الإجابة</small>
+              </div>
+            </article>
+            <article class="metric-card">
+              <div class="metric-icon metric-icon-blue">
+                <svg><use href="#icon-trophy"></use></svg>
+              </div>
+              <div>
+                <span>إجابات صحيحة</span>
+                <strong id="correctMetric">٠٪</strong>
+                <small>من إجابات اليوم</small>
+              </div>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel today-question-card">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">سؤال اليوم</span>
+                  <h3>التحدّي المنشور</h3>
+                </div>
+                <button class="text-button" type="button" data-view="question">
+                  تعديل
+                  <svg><use href="#icon-arrow"></use></svg>
+                </button>
+              </div>
+              <div class="question-summary">
+                <div class="question-number">١</div>
+                <div>
+                  <div class="question-meta">
+                    <span id="dashboardQuestionType">اختيار متعدد</span>
+                    <span>•</span>
+                    <span>نقاط السرعة مفعّلة</span>
+                  </div>
+                  <h4 id="dashboardQuestionPrompt">—</h4>
+                </div>
+              </div>
+              <div class="mini-options" id="dashboardQuestionOptions"></div>
+              <div class="question-footer">
+                <span><svg><use href="#icon-clock"></use></svg> يبدأ الوقت بعد دخول الطالب</span>
+                <button class="copy-inline share-question-button" type="button">
+                  <svg><use href="#icon-copy"></use></svg>
+                  نسخ الرابط
+                </button>
+              </div>
+            </article>
+
+            <article class="panel leaderboard-preview">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">لوحة الشرف</span>
+                  <h3>متصدرو اليوم</h3>
+                </div>
+                <button class="text-button" type="button" data-view="leaderboard">
+                  عرض الكل
+                  <svg><use href="#icon-arrow"></use></svg>
+                </button>
+              </div>
+              <div class="leader-list" id="dashboardLeaders"></div>
+            </article>
+
+            <article class="panel activity-card">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">آخر النشاط</span>
+                  <h3>الإجابات الأخيرة</h3>
+                </div>
+                <span class="updating-badge"><i></i> مباشر</span>
+              </div>
+              <div class="activity-list" id="activityList"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="questionView" class="view-panel" data-admin-view="question">
+          <div class="section-intro">
+            <div>
+              <span class="section-label">إعداد التحدّي</span>
+              <h2>اكتب سؤال اليوم</h2>
+              <p>اختر نوع السؤال، حدّد الإجابة الصحيحة، ثم احفظه وشارك رابطه.</p>
             </div>
-            <div class="stat-card">
-              <strong>All</strong>
-              <span>answers, ideas, photos, charts</span>
+            <button class="button button-secondary share-question-button" type="button">
+              <svg><use href="#icon-share"></use></svg>
+              مشاركة السؤال الحالي
+            </button>
+          </div>
+
+          <div class="question-builder-layout">
+            <form class="panel question-form" id="questionForm" novalidate>
+              <div class="form-section">
+                <div class="form-section-heading">
+                  <span class="step-number">١</span>
+                  <div>
+                    <h3>نوع السؤال</h3>
+                    <p>اختر الطريقة الأنسب للإجابة.</p>
+                  </div>
+                </div>
+                <div class="type-selector" id="questionTypeSelector">
+                  <button class="type-option active" type="button" data-question-type="multiple" aria-pressed="true">
+                    <span class="type-icon">A</span>
+                    <span><strong>اختيار متعدد</strong><small>خيارات بإجابة واحدة</small></span>
+                    <i></i>
+                  </button>
+                  <button class="type-option" type="button" data-question-type="boolean" aria-pressed="false">
+                    <span class="type-icon">✓</span>
+                    <span><strong>صح أو خطأ</strong><small>إجابة سريعة ومباشرة</small></span>
+                    <i></i>
+                  </button>
+                  <button class="type-option" type="button" data-question-type="short" aria-pressed="false">
+                    <span class="type-icon">ــ</span>
+                    <span><strong>إجابة قصيرة</strong><small>نص قصير أو سؤال مقالي</small></span>
+                    <i></i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <div class="form-section-heading">
+                  <span class="step-number">٢</span>
+                  <div>
+                    <h3>نص السؤال</h3>
+                    <p>اكتبه بوضوح وبعبارة قصيرة.</p>
+                  </div>
+                </div>
+                <label class="field-label" for="questionPrompt">السؤال</label>
+                <div class="textarea-wrap">
+                  <textarea
+                    id="questionPrompt"
+                    name="prompt"
+                    rows="4"
+                    maxlength="180"
+                    placeholder="مثال: أيّ كوكب يُعرف بالكوكب الأحمر؟"
+                    required
+                  ></textarea>
+                  <span class="character-count"><span id="promptCount">٠</span>/١٨٠</span>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <div class="form-section-heading">
+                  <span class="step-number">٣</span>
+                  <div>
+                    <h3>الإجابة الصحيحة</h3>
+                    <p>اضغط علامة الصح بجانب الإجابة الصحيحة.</p>
+                  </div>
+                </div>
+                <div id="answerEditor"></div>
+              </div>
+
+              <div class="scoring-note">
+                <div class="metric-icon metric-icon-purple">
+                  <svg><use href="#icon-trophy"></use></svg>
+                </div>
+                <div>
+                  <strong>احتساب النقاط تلقائيًا</strong>
+                  <p>١٠٠ نقطة للإجابة الصحيحة، حتى ٦٠ نقطة للسرعة، و٣٠ نقطة إضافية للمراكز الأولى.</p>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button class="button button-primary" type="submit">
+                  <svg><use href="#icon-check"></use></svg>
+                  حفظ ونشر السؤال
+                </button>
+                <button class="button button-secondary" id="resetQuestionButton" type="button">سؤال جديد</button>
+              </div>
+              <p class="form-error" id="questionFormError" role="alert"></p>
+            </form>
+
+            <aside class="builder-preview">
+              <div class="preview-label">
+                <span>معاينة الطالب</span>
+                <i></i>
+              </div>
+              <article class="student-preview-card">
+                <div class="preview-header">
+                  <img src="./logo.svg" alt="" />
+                  <span>سؤال اليوم</span>
+                  <span class="preview-timer">٠٠:١٢</span>
+                </div>
+                <div class="preview-progress"><i></i></div>
+                <div class="preview-content">
+                  <span class="preview-type" id="builderPreviewType">اختيار متعدد</span>
+                  <h3 id="builderPreviewPrompt">أيّ كوكب يُعرف بالكوكب الأحمر؟</h3>
+                  <div class="preview-options" id="builderPreviewOptions"></div>
+                </div>
+                <button class="preview-submit" type="button" tabindex="-1">إرسال الإجابة</button>
+              </article>
+              <div class="preview-tip">
+                <span>💡</span>
+                <p>يبدأ عدّاد السرعة بعد إدخال الطالب رمزه وظهور السؤال له.</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="studentsView" class="view-panel" data-admin-view="students">
+          <div class="section-intro">
+            <div>
+              <span class="section-label">إدارة الفصل</span>
+              <h2>قائمة الطلاب</h2>
+              <p>أضف اسم الطالب وصفّه ورمز الدخول المكوّن من ٤ أرقام.</p>
             </div>
-          </aside>
-        </div>
-      </section>
+            <button class="button button-primary" id="openStudentModal" type="button">
+              <svg><use href="#icon-plus"></use></svg>
+              إضافة طالب
+            </button>
+          </div>
 
-      <section class="feature-section" id="features">
-        <div class="section-copy">
-          <p class="eyebrow">What it can become</p>
-          <h2>Search for facts, visuals, classes, and games.</h2>
-        </div>
-        <div class="feature-grid">
-          <article>
-            <span class="feature-icon">01</span>
-            <h3>Best answers fast</h3>
-            <p>Summaries start with the answer, then add bullets, sources, and next steps for deeper research.</p>
-          </article>
-          <article>
-            <span class="feature-icon">02</span>
-            <h3>Graphs from questions</h3>
-            <p>Ask for changes over time and Search Trail turns the data into a readable visual trail.</p>
-          </article>
-          <article>
-            <span class="feature-icon">03</span>
-            <h3>High-quality photos</h3>
-            <p>Describe any scene and get a polished image prompt with style, lighting, lens, and detail guidance.</p>
-          </article>
-          <article>
-            <span class="feature-icon">04</span>
-            <h3>School research helper</h3>
-            <p>Science searches can become explanations, experiment ideas, outlines, and project angles.</p>
-          </article>
-          <article>
-            <span class="feature-icon">05</span>
-            <h3>Football match pulse</h3>
-            <p>Follow score, momentum, key moments, players, and tactical changes in a compact match card.</p>
-          </article>
-          <article>
-            <span class="feature-icon">06</span>
-            <h3>Everything you ask</h3>
-            <p>The interface adapts the answer style to the question: data, creative, learning, sports, or general search.</p>
-          </article>
-        </div>
-      </section>
+          <div class="panel students-panel">
+            <div class="students-toolbar">
+              <label class="search-field" for="studentSearch">
+                <svg><use href="#icon-search"></use></svg>
+                <input id="studentSearch" type="search" placeholder="ابحث بالاسم أو الصف..." autocomplete="off" />
+              </label>
+              <div class="student-total"><span id="studentListCount">٠</span> طلاب في الفصل</div>
+            </div>
+            <div class="table-wrap">
+              <table class="students-table">
+                <thead>
+                  <tr>
+                    <th>الطالب</th>
+                    <th>الصف</th>
+                    <th>رمز الدخول</th>
+                    <th>حالة اليوم</th>
+                    <th><span class="sr-only">الإجراءات</span></th>
+                  </tr>
+                </thead>
+                <tbody id="studentsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="studentEmptyState" hidden>
+              <span>👥</span>
+              <h3>لا يوجد طلاب مطابقون</h3>
+              <p>غيّر عبارة البحث أو أضف طالبًا جديدًا.</p>
+            </div>
+          </div>
+        </section>
 
-      <section class="theme-section" id="themes">
-        <div class="section-copy">
-          <p class="eyebrow">Pick and edit</p>
-          <h2>10 dark theme photo directions.</h2>
-          <p>Use these directions to choose the Search Trail mood before refining colors, graphics, and layout.</p>
+        <section id="leaderboardView" class="view-panel" data-admin-view="leaderboard">
+          <div class="section-intro">
+            <div>
+              <span class="section-label">نتائج التحدّي</span>
+              <h2>لوحة المتصدرين</h2>
+              <p>الترتيب يعتمد على صحة الإجابة، ثم سرعة الحل.</p>
+            </div>
+            <div class="score-legend">
+              <span><i class="legend-dot legend-correct"></i> صحة الإجابة</span>
+              <span><i class="legend-dot legend-speed"></i> نقاط السرعة</span>
+            </div>
+          </div>
+
+          <div class="podium" id="adminPodium"></div>
+          <div class="panel leaderboard-table-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="section-label">الترتيب الكامل</span>
+                <h3>نتائج سؤال اليوم</h3>
+              </div>
+              <span class="updating-badge"><i></i> يتحدث تلقائيًا</span>
+            </div>
+            <div class="table-wrap">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th>الترتيب</th>
+                    <th>الطالب</th>
+                    <th>الإجابة</th>
+                    <th>الوقت</th>
+                    <th>النقاط</th>
+                  </tr>
+                </thead>
+                <tbody id="adminLeaderboardRows"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="leaderboardEmptyState" hidden>
+              <span>🏆</span>
+              <h3>المنصّة بانتظار أبطالها</h3>
+              <p>ستظهر النتائج هنا بعد أول إجابة.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="studentApp" class="student-app" hidden>
+      <header class="student-header">
+        <div class="brand">
+          <img src="./logo.svg" alt="" />
+          <div>
+            <strong>بَيّنات</strong>
+            <span>سؤال اليوم</span>
+          </div>
         </div>
-        <div class="theme-grid" id="themeGrid"></div>
-      </section>
-    </main>
+        <button class="button button-secondary" id="exitStudentView" type="button">
+          <svg><use href="#icon-log-out"></use></svg>
+          <span>العودة للمشرف</span>
+        </button>
+      </header>
 
-    <footer class="site-footer">
-      <span>Search Trail</span>
-      <p>Dark AI search website concept for answers, graphs, photos, school, and football.</p>
-    </footer>
+      <main class="student-main">
+        <section class="student-screen access-screen active" id="studentAccessScreen">
+          <div class="access-decoration" aria-hidden="true">
+            <span>؟</span><i></i><b>✦</b>
+          </div>
+          <div class="student-card access-card">
+            <span class="student-kicker">مرحبًا بك 👋</span>
+            <h1>جاهز لسؤال اليوم؟</h1>
+            <p>أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.</p>
+            <form id="studentAccessForm" novalidate>
+              <label for="studentPin">رمز الدخول</label>
+              <input
+                id="studentPin"
+                name="pin"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9٠-٩]{4}"
+                maxlength="4"
+                autocomplete="one-time-code"
+                placeholder="• • • •"
+                aria-describedby="pinHint pinError"
+              />
+              <span class="pin-hint" id="pinHint">للتجربة استخدم الرمز: <b>٤٨٢١</b></span>
+              <p class="form-error" id="pinError" role="alert"></p>
+              <button class="button button-primary button-wide" type="submit">
+                ابدأ التحدّي
+                <svg><use href="#icon-arrow"></use></svg>
+              </button>
+            </form>
+          </div>
+          <div class="access-features" aria-label="مميزات التحدي">
+            <span>⚡ نقاط للسرعة</span>
+            <span>🏆 ترتيب مباشر</span>
+            <span>🎯 محاولة واحدة</span>
+          </div>
+        </section>
 
-    <script type="module" src="./app.js?v=1"></script>
+        <section class="student-screen quiz-screen" id="studentQuizScreen">
+          <div class="quiz-topline">
+            <div>
+              <span class="student-kicker" id="studentGreeting">أهلًا</span>
+              <p id="studentClassLabel">—</p>
+            </div>
+            <div class="quiz-timer" aria-live="off">
+              <svg><use href="#icon-clock"></use></svg>
+              <span id="studentTimer">٠٠:٠٠٫٠</span>
+            </div>
+          </div>
+          <div class="quiz-progress"><i></i><span>سؤال واحد</span></div>
+          <form class="student-card quiz-card" id="studentAnswerForm">
+            <div class="quiz-question-meta">
+              <span id="studentQuestionType">اختيار متعدد</span>
+              <span>١ من ١</span>
+            </div>
+            <h1 id="studentQuestionPrompt">—</h1>
+            <div class="student-answer-editor" id="studentAnswerEditor"></div>
+            <p class="form-error" id="studentAnswerError" role="alert"></p>
+            <button class="button button-primary button-wide" id="submitAnswerButton" type="submit">
+              إرسال الإجابة
+              <svg><use href="#icon-arrow"></use></svg>
+            </button>
+          </form>
+          <p class="single-attempt-note">لا تتسرّع كثيرًا — الدقّة أولًا ثم السرعة ✦</p>
+        </section>
+
+        <section class="student-screen result-screen" id="studentResultScreen">
+          <div class="result-hero">
+            <div class="confetti" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="result-icon" id="resultIcon">
+              <svg><use href="#icon-check"></use></svg>
+            </div>
+            <span class="student-kicker" id="resultKicker">إجابة صحيحة!</span>
+            <h1 id="resultTitle">أبدعت!</h1>
+            <p id="resultMessage">سرعتك رفعتك إلى مقدمة المتصدرين.</p>
+          </div>
+
+          <div class="result-layout">
+            <article class="rank-card">
+              <span>ترتيبك الحالي</span>
+              <strong id="studentRank">#١</strong>
+              <p>من بين <b id="participantCount">١</b> مشاركين</p>
+              <div class="points-total">
+                <strong id="studentPoints">١٩٠</strong>
+                <span>نقطة</span>
+              </div>
+              <div class="points-breakdown">
+                <div><span>صحة الإجابة</span><b id="accuracyPoints">+١٠٠</b></div>
+                <div><span>سرعة الحل</span><b id="speedPoints">+٦٠</b></div>
+                <div><span>مكافأة الترتيب</span><b id="placePoints">+٣٠</b></div>
+              </div>
+            </article>
+
+            <article class="student-card student-leaderboard-card">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">لوحة المتصدرين</span>
+                  <h3>أبطال سؤال اليوم</h3>
+                </div>
+                <span class="updating-badge"><i></i> مباشر</span>
+              </div>
+              <div class="student-leader-list" id="studentLeaderboard"></div>
+            </article>
+          </div>
+
+          <div class="result-actions">
+            <button class="button button-secondary" id="tryAnotherStudent" type="button">دخول طالب آخر</button>
+            <button class="button button-primary" id="resultBackToAdmin" type="button">العودة للوحة المشرف</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="modal" id="studentModal">
+      <form class="modal-card" id="studentForm" novalidate>
+        <div class="modal-header">
+          <div>
+            <span class="section-label">طالب جديد</span>
+            <h2>إضافة طالب للفصل</h2>
+          </div>
+          <button class="modal-close" type="button" data-close-dialog="studentModal" aria-label="إغلاق">×</button>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="studentName">اسم الطالب</label>
+          <input id="studentName" name="name" type="text" maxlength="60" placeholder="مثال: سارة القحطاني" required />
+        </div>
+        <div class="form-row">
+          <div class="field-group">
+            <label class="field-label" for="studentClass">الصف</label>
+            <input id="studentClass" name="className" type="text" maxlength="20" placeholder="مثال: ٢ / أ" required />
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="newStudentPin">رمز الدخول</label>
+            <input
+              id="newStudentPin"
+              name="pin"
+              type="text"
+              inputmode="numeric"
+              maxlength="4"
+              placeholder="٤ أرقام"
+              required
+            />
+          </div>
+        </div>
+        <p class="form-error" id="studentFormError" role="alert"></p>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit">
+            <svg><use href="#icon-plus"></use></svg>
+            إضافة الطالب
+          </button>
+          <button class="button button-secondary" type="button" data-close-dialog="studentModal">إلغاء</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="shareModal">
+      <div class="modal-card share-modal-card">
+        <div class="modal-header">
+          <div>
+            <span class="section-label">جاهز للمشاركة</span>
+            <h2>رابط سؤال اليوم</h2>
+          </div>
+          <button class="modal-close" type="button" data-close-dialog="shareModal" aria-label="إغلاق">×</button>
+        </div>
+        <div class="share-success-icon">
+          <svg><use href="#icon-share"></use></svg>
+        </div>
+        <p>أرسل هذا الرابط إلى طلابك. سيدخل كل طالب باستخدام رمزه المكوّن من ٤ أرقام.</p>
+        <label class="field-label" for="shareLinkInput">رابط الطلاب</label>
+        <div class="copy-field">
+          <input id="shareLinkInput" type="text" readonly />
+          <button class="button button-primary" id="copyShareLink" type="button">
+            <svg><use href="#icon-copy"></use></svg>
+            نسخ
+          </button>
+        </div>
+        <div class="prototype-note">
+          <span>ⓘ</span>
+          <p>هذه النسخة التجريبية تحفظ النتائج على الجهاز. مزامنة النتائج بين أجهزة الطلاب تحتاج ربط قاعدة بيانات عند الإطلاق.</p>
+        </div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="toast-icon"><svg><use href="#icon-check"></use></svg></span>
+      <span id="toastMessage">تم الحفظ بنجاح</span>
+    </div>
+
+    <script type="module" src="./app.js?v=2"></script>
   </body>
 </html>

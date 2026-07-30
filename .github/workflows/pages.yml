@@ -1,4 +1,4 @@
-name: Deploy Notari to GitHub Pages
+name: Deploy Baynat to GitHub Pages
 
 on:
   push:
