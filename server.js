@@ -25,6 +25,12 @@ const MAX_BODY_BYTES = 128 * 1024;
 const MAX_STUDENTS = 80;
 const ACCESS_WINDOW_MS = 10 * 60 * 1000;
 const ACCESS_ATTEMPTS_LIMIT = 20;
+const ACCESS_GLOBAL_ATTEMPTS_LIMIT = 300;
+const DEVICE_ISSUE_WINDOW_MS = 60 * 60 * 1000;
+const DEVICE_ISSUE_IP_LIMIT = 100;
+const DEVICE_ISSUE_GLOBAL_LIMIT = 240;
+const SUPERVISOR_SESSION_MS = 12 * 60 * 60 * 1000;
+const SUPERVISOR_ATTEMPTS_LIMIT = 10;
 const QUIZ_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const QUIZ_CREATION_WINDOW_MS = 60 * 60 * 1000;
 const QUIZ_CREATION_IP_LIMIT = 5;
@@ -72,6 +78,18 @@ function validateStoredData(parsed) {
   }
 
   let migrated = false;
+  if (parsed.adminCredential === undefined) {
+    parsed.adminCredential = null;
+    migrated = true;
+  } else if (
+    parsed.adminCredential !== null &&
+    (!isRecord(parsed.adminCredential) ||
+      typeof parsed.adminCredential.salt !== "string" ||
+      typeof parsed.adminCredential.hash !== "string" ||
+      !Number.isFinite(new Date(parsed.adminCredential.createdAt).getTime()))
+  ) {
+    throw new Error("بيانات دخول المشرف في ملف بَيّنات غير صالحة.");
+  }
   for (const [quizId, quiz] of Object.entries(parsed.quizzes)) {
     const validQuiz =
       isRecord(quiz) &&
@@ -201,6 +219,7 @@ class JsonStore {
     this.data = {
       version: 1,
       secret: randomBytes(32).toString("base64url"),
+      adminCredential: null,
       quizzes: {},
     };
     try {
@@ -345,6 +364,53 @@ function verifyPin(pin, student) {
   return safeEqual(candidate, student.pinHash);
 }
 
+async function hashSupervisorPassword(password, salt = randomBytes(16).toString("base64url")) {
+  const derived = await new Promise((resolve, reject) => {
+    scrypt(String(password), salt, 32, (error, key) => {
+      if (error) reject(error);
+      else resolve(key);
+    });
+  });
+  return {
+    salt,
+    hash: derived.toString("hex"),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function verifySupervisorPassword(password, credential) {
+  if (!credential) return false;
+  const candidate = scryptSync(String(password), credential.salt, 32).toString("hex");
+  return safeEqual(candidate, credential.hash);
+}
+
+function issueSupervisorToken(secret) {
+  const expiresAt = Date.now() + SUPERVISOR_SESSION_MS;
+  const nonce = randomBytes(24).toString("base64url");
+  const payload = `${expiresAt}.${nonce}`;
+  const signature = createHmac("sha256", secret).update(`supervisor:${payload}`).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function verifySupervisorToken(token, secret) {
+  const [expiresAtValue, nonce, signature, ...extra] = String(token || "").split(".");
+  if (
+    extra.length ||
+    !/^\d{10,16}$/.test(expiresAtValue || "") ||
+    !/^[A-Za-z0-9_-]{20,80}$/.test(nonce || "") ||
+    !/^[A-Za-z0-9_-]{30,80}$/.test(signature || "")
+  ) {
+    return false;
+  }
+  const expiresAt = Number(expiresAtValue);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  const payload = `${expiresAtValue}.${nonce}`;
+  const expected = createHmac("sha256", secret)
+    .update(`supervisor:${payload}`)
+    .digest("base64url");
+  return safeEqual(signature, expected);
+}
+
 function publicStudent(student) {
   return { id: student.id, name: student.name, className: student.className };
 }
@@ -472,6 +538,29 @@ function requireAdmin(request, quiz) {
   }
 }
 
+function requireSupervisor(request, store) {
+  const token = request.headers["x-supervisor-token"];
+  if (!verifySupervisorToken(token, store.data.secret)) {
+    throw new HttpError(
+      401,
+      "سجّل دخول المشرف للمتابعة.",
+      "SUPERVISOR_UNAUTHORIZED"
+    );
+  }
+}
+
+function readSupervisorPassword(body) {
+  const password = String(body?.password || "");
+  if (password.length < 6 || password.length > 128) {
+    throw new HttpError(
+      400,
+      "اختر رمز مشرف لا يقل عن ٦ خانات.",
+      "INVALID_SUPERVISOR_PASSWORD"
+    );
+  }
+  return password;
+}
+
 function requireStudent(request, quiz) {
   const authorization = request.headers.authorization || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -494,21 +583,36 @@ function getClientIp(request, trustProxy) {
     .trim();
 }
 
-function getDeviceId(request) {
+function getDeviceId(request, quizId, secret) {
   const cookies = String(request.headers.cookie || "").split(";");
-  const value = cookies
+  const token = cookies
     .map((cookie) => cookie.trim().split("="))
     .find(([name]) => name === "baynat_device")?.[1];
-  return value && /^[A-Za-z0-9_-]{20,80}$/.test(value) ? value : "";
+  const [deviceId, signature, ...extra] = String(token || "").split(".");
+  if (
+    extra.length ||
+    !/^[A-Za-z0-9_-]{20,80}$/.test(deviceId || "") ||
+    !/^[A-Za-z0-9_-]{30,80}$/.test(signature || "")
+  ) {
+    return "";
+  }
+  const expected = createHmac("sha256", secret)
+    .update(`device:${quizId}:${deviceId}`)
+    .digest("base64url");
+  return safeEqual(signature, expected) ? deviceId : "";
 }
 
-function createDeviceCookie(request, quizId, trustProxy) {
-  if (getDeviceId(request)) return null;
+function createDeviceCookie(request, quizId, secret, trustProxy) {
+  if (getDeviceId(request, quizId, secret)) return null;
+  const deviceId = randomBytes(24).toString("base64url");
+  const signature = createHmac("sha256", secret)
+    .update(`device:${quizId}:${deviceId}`)
+    .digest("base64url");
   const secure =
     Boolean(request.socket.encrypted) ||
     (trustProxy && request.headers["x-forwarded-proto"] === "https");
   return [
-    `baynat_device=${randomBytes(24).toString("base64url")}`,
+    `baynat_device=${deviceId}.${signature}`,
     `Path=/api/quizzes/${quizId}`,
     "HttpOnly",
     "SameSite=Strict",
@@ -519,23 +623,65 @@ function createDeviceCookie(request, quizId, trustProxy) {
     .join("; ");
 }
 
-function createAccessLimiter(trustProxy) {
+function createAccessLimiter(trustProxy, secret) {
   const attempts = new Map();
+  const globalAttempts = new Map();
   return (request, quizId, recordFailure = false) => {
-    const deviceId = getDeviceId(request);
+    const deviceId = getDeviceId(request, quizId, secret);
     const client = deviceId ? `device:${deviceId}` : `ip:${getClientIp(request, trustProxy)}`;
     const key = `${quizId}:${client}`;
     const now = Date.now();
     const recent = (attempts.get(key) || []).filter((time) => now - time < ACCESS_WINDOW_MS);
-    if (recent.length >= ACCESS_ATTEMPTS_LIMIT) {
+    const globalRecent = (globalAttempts.get(quizId) || []).filter(
+      (time) => now - time < ACCESS_WINDOW_MS
+    );
+    if (
+      recent.length >= ACCESS_ATTEMPTS_LIMIT ||
+      globalRecent.length >= ACCESS_GLOBAL_ATTEMPTS_LIMIT
+    ) {
       throw new HttpError(
         429,
         "محاولات كثيرة. انتظر قليلًا ثم حاول مرة أخرى.",
         "TOO_MANY_ATTEMPTS"
       );
     }
-    if (recordFailure) recent.push(now);
+    if (recordFailure) {
+      recent.push(now);
+      globalRecent.push(now);
+    }
     attempts.set(key, recent);
+    globalAttempts.set(quizId, globalRecent);
+  };
+}
+
+function createDeviceIssuer(trustProxy) {
+  const byIp = new Map();
+  const globalByQuiz = new Map();
+  return (request, quizId, issueDevice = false) => {
+    const now = Date.now();
+    const ip = getClientIp(request, trustProxy);
+    const recentForIp = (byIp.get(ip) || []).filter(
+      (time) => now - time < DEVICE_ISSUE_WINDOW_MS
+    );
+    const globalRecent = (globalByQuiz.get(quizId) || []).filter(
+      (time) => now - time < DEVICE_ISSUE_WINDOW_MS
+    );
+    if (
+      recentForIp.length >= DEVICE_ISSUE_IP_LIMIT ||
+      globalRecent.length >= DEVICE_ISSUE_GLOBAL_LIMIT
+    ) {
+      throw new HttpError(
+        429,
+        "تعذّر فتح أجهزة جديدة لهذا السؤال مؤقتًا. حاول لاحقًا.",
+        "DEVICE_ISSUE_LIMIT"
+      );
+    }
+    if (issueDevice) {
+      recentForIp.push(now);
+      globalRecent.push(now);
+    }
+    byIp.set(ip, recentForIp);
+    globalByQuiz.set(quizId, globalRecent);
   };
 }
 
@@ -564,6 +710,27 @@ function createQuizCreationLimiter(trustProxy) {
       globalAttempts.push(now);
     }
     byIp.set(ip, recentForIp);
+  };
+}
+
+function createSupervisorLimiter(trustProxy) {
+  const attempts = new Map();
+  return (request, recordFailure = false) => {
+    const key = getClientIp(request, trustProxy);
+    const now = Date.now();
+    const recent = (attempts.get(key) || []).filter(
+      (time) => now - time < ACCESS_WINDOW_MS
+    );
+    if (recent.length >= SUPERVISOR_ATTEMPTS_LIMIT) {
+      throw new HttpError(
+        429,
+        "محاولات دخول كثيرة. انتظر قليلًا ثم حاول مرة أخرى.",
+        "SUPERVISOR_LOGIN_LIMIT"
+      );
+    }
+    if (recordFailure) recent.push(now);
+    else if (recent.length) recent.pop();
+    attempts.set(key, recent);
   };
 }
 
@@ -596,8 +763,10 @@ export async function createBaynatServer({
 } = {}) {
   const store = new JsonStore(dataFile);
   await store.init();
-  const recordAccessAttempt = createAccessLimiter(trustProxy);
+  const recordAccessAttempt = createAccessLimiter(trustProxy, store.data.secret);
+  const recordDeviceIssue = createDeviceIssuer(trustProxy);
   const recordQuizCreation = createQuizCreationLimiter(trustProxy);
+  const recordSupervisorAttempt = createSupervisorLimiter(trustProxy);
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -609,7 +778,70 @@ export async function createBaynatServer({
         return;
       }
 
+      if (pathname === "/api/admin/status" && request.method === "GET") {
+        json(
+          response,
+          200,
+          { configured: Boolean(store.data.adminCredential) },
+          securityHeaders()
+        );
+        return;
+      }
+
+      if (pathname === "/api/admin/session" && request.method === "GET") {
+        requireSupervisor(request, store);
+        json(response, 200, { ok: true }, securityHeaders());
+        return;
+      }
+
+      if (pathname === "/api/admin/setup" && request.method === "POST") {
+        if (request.headers["sec-fetch-site"] === "cross-site") {
+          throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
+        }
+        const password = readSupervisorPassword(await readJsonBody(request));
+        const credential = await hashSupervisorPassword(password);
+        await store.update((data) => {
+          if (data.adminCredential) {
+            throw new HttpError(
+              409,
+              "تم إعداد رمز المشرف مسبقًا.",
+              "SUPERVISOR_ALREADY_CONFIGURED"
+            );
+          }
+          data.adminCredential = credential;
+        });
+        json(
+          response,
+          201,
+          { token: issueSupervisorToken(store.data.secret) },
+          securityHeaders()
+        );
+        return;
+      }
+
+      if (pathname === "/api/admin/login" && request.method === "POST") {
+        recordSupervisorAttempt(request);
+        const password = readSupervisorPassword(await readJsonBody(request));
+        if (!verifySupervisorPassword(password, store.data.adminCredential)) {
+          recordSupervisorAttempt(request, true);
+          throw new HttpError(
+            401,
+            "رمز المشرف غير صحيح.",
+            "SUPERVISOR_LOGIN_REJECTED"
+          );
+        }
+        recordSupervisorAttempt(request, false);
+        json(
+          response,
+          200,
+          { token: issueSupervisorToken(store.data.secret) },
+          securityHeaders()
+        );
+        return;
+      }
+
       if (pathname === "/api/quizzes" && request.method === "POST") {
+        requireSupervisor(request, store);
         if (request.headers["sec-fetch-site"] === "cross-site") {
           throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
         }
@@ -877,7 +1109,14 @@ export async function createBaynatServer({
       const quizMatch = pathname.match(/^\/api\/quizzes\/([A-Za-z0-9_-]+)$/);
       if (quizMatch && request.method === "GET") {
         const quiz = requireQuiz(store, quizMatch[1]);
-        const deviceCookie = createDeviceCookie(request, quiz.id, trustProxy);
+        const hasDevice = Boolean(getDeviceId(request, quiz.id, store.data.secret));
+        if (!hasDevice) recordDeviceIssue(request, quiz.id, true);
+        const deviceCookie = createDeviceCookie(
+          request,
+          quiz.id,
+          store.data.secret,
+          trustProxy
+        );
         json(
           response,
           200,

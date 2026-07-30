@@ -5,6 +5,9 @@ import path from "node:path";
 import test from "node:test";
 import { createBaynatServer } from "../server.js";
 
+const supervisorTokens = new Map();
+const TEST_SUPERVISOR_PASSWORD = "baynat-test-admin";
+
 async function listen(dataFile) {
   const { server } = await createBaynatServer({
     dataFile,
@@ -12,9 +15,20 @@ async function listen(dataFile) {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const status = await fetch(`${baseUrl}/api/admin/status`).then((response) => response.json());
+  const authentication = await fetch(
+    `${baseUrl}/api/admin/${status.configured ? "login" : "setup"}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+    }
+  ).then((response) => response.json());
+  supervisorTokens.set(baseUrl, authentication.token);
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl,
   };
 }
 
@@ -29,6 +43,9 @@ async function request(baseUrl, pathname, options = {}) {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(supervisorTokens.get(baseUrl)
+        ? { "X-Supervisor-Token": supervisorTokens.get(baseUrl) }
+        : {}),
       ...(options.headers || {}),
     },
   });
@@ -231,6 +248,13 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
     await rm(directory, { recursive: true, force: true });
   });
 
+  const unauthenticatedCreation = await fetch(`${baseUrl}/api/quizzes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert.equal(unauthenticatedCreation.status, 401);
+
   const duplicateRoster = await request(baseUrl, "/api/quizzes", {
     method: "POST",
     body: JSON.stringify({
@@ -269,6 +293,14 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
   assert.equal(unauthorized.response.status, 401);
   assert.equal(unauthorized.payload.error.code, "ADMIN_UNAUTHORIZED");
 
+  const studentBootstrap = await fetch(
+    `${baseUrl}/api/quizzes/${created.payload.quizId}`
+  );
+  const legitimateDeviceCookie = (studentBootstrap.headers.get("set-cookie") || "").split(
+    ";"
+  )[0];
+  assert.match(legitimateDeviceCookie, /^baynat_device=/);
+
   for (let attempt = 0; attempt < 22; attempt += 1) {
     const validAccess = await request(
       baseUrl,
@@ -288,6 +320,10 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
       {
         method: "POST",
         headers: {
+          Cookie: `baynat_device=fabricated-device-${String(attempt).padStart(
+            4,
+            "0"
+          )}.${"A".repeat(43)}`,
           "X-Forwarded-For": `198.51.100.${attempt + 1}`,
         },
         body: JSON.stringify({ pin: "0000" }),
@@ -301,6 +337,7 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
     {
       method: "POST",
       headers: {
+        Cookie: `baynat_device=fabricated-device-final.${"A".repeat(43)}`,
         "X-Forwarded-For": "203.0.113.250",
       },
       body: JSON.stringify({ pin: "0000" }),
@@ -314,7 +351,7 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
     `/api/quizzes/${created.payload.quizId}/access`,
     {
       method: "POST",
-      headers: { Cookie: "baynat_device=legitimate-device-00000001" },
+      headers: { Cookie: legitimateDeviceCookie },
       body: JSON.stringify({ pin: "4821" }),
     }
   );

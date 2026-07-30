@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=3" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -627,6 +627,45 @@
       </main>
     </div>
 
+    <dialog class="modal auth-modal" id="adminAuthModal">
+      <form class="modal-card auth-modal-card" id="adminAuthForm" novalidate>
+        <div class="auth-lock" aria-hidden="true">🔐</div>
+        <span class="section-label">لوحة المشرف</span>
+        <h2 id="adminAuthTitle">دخول المشرف</h2>
+        <p id="adminAuthDescription">أدخل رمز المشرف للمتابعة إلى إدارة سؤال اليوم.</p>
+        <div class="field-group">
+          <label class="field-label" for="adminPassword">رمز المشرف</label>
+          <input
+            id="adminPassword"
+            name="password"
+            type="password"
+            minlength="6"
+            maxlength="128"
+            autocomplete="current-password"
+            placeholder="٦ خانات على الأقل"
+            required
+          />
+        </div>
+        <div class="field-group" id="adminPasswordConfirmGroup" hidden>
+          <label class="field-label" for="adminPasswordConfirm">تأكيد رمز المشرف</label>
+          <input
+            id="adminPasswordConfirm"
+            name="passwordConfirm"
+            type="password"
+            minlength="6"
+            maxlength="128"
+            autocomplete="new-password"
+            placeholder="أعد كتابة الرمز"
+          />
+        </div>
+        <p class="form-error" id="adminAuthError" role="alert"></p>
+        <button class="button button-primary button-wide" id="adminAuthSubmit" type="submit">
+          دخول لوحة المشرف
+        </button>
+        <p class="auth-note" id="adminAuthNote">هذا الرمز يحمي إنشاء الأسئلة من أي استخدام غير مصرح.</p>
+      </form>
+    </dialog>
+
     <dialog class="modal" id="studentModal">
       <form class="modal-card" id="studentForm" novalidate>
         <div class="modal-header">
@@ -703,6 +742,6 @@
       <span id="toastMessage">تم الحفظ بنجاح</span>
     </div>
 
-    <script type="module" src="./app.js?v=3"></script>
+    <script type="module" src="./app.js?v=4"></script>
   </body>
 </html>

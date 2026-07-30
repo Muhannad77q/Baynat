@@ -1,4 +1,5 @@
 export const STORAGE_KEY = "baynat.daily-question.v2";
+const SUPERVISOR_SESSION_KEY = "baynat.supervisor-session.v1";
 export const QUESTION_TYPES = Object.freeze({
   multiple: "اختيار متعدد",
   boolean: "صح أو خطأ",
@@ -324,6 +325,8 @@ let invalidSharedLink = false;
 let sharedStorageKey = "";
 let adminSyncInterval = null;
 let adminSyncInFlight = false;
+let supervisorToken = "";
+let supervisorAuthMode = "login";
 
 function loadAdminState() {
   try {
@@ -425,6 +428,16 @@ function cacheRefs() {
     shareModal: document.querySelector("#shareModal"),
     shareLinkInput: document.querySelector("#shareLinkInput"),
     copyShareLink: document.querySelector("#copyShareLink"),
+    adminAuthModal: document.querySelector("#adminAuthModal"),
+    adminAuthForm: document.querySelector("#adminAuthForm"),
+    adminAuthTitle: document.querySelector("#adminAuthTitle"),
+    adminAuthDescription: document.querySelector("#adminAuthDescription"),
+    adminPassword: document.querySelector("#adminPassword"),
+    adminPasswordConfirm: document.querySelector("#adminPasswordConfirm"),
+    adminPasswordConfirmGroup: document.querySelector("#adminPasswordConfirmGroup"),
+    adminAuthError: document.querySelector("#adminAuthError"),
+    adminAuthSubmit: document.querySelector("#adminAuthSubmit"),
+    adminAuthNote: document.querySelector("#adminAuthNote"),
     toast: document.querySelector("#toast"),
     toastMessage: document.querySelector("#toastMessage"),
     studentScreens: [...document.querySelectorAll(".student-screen")],
@@ -500,6 +513,13 @@ function bindEvents() {
   refs.studentForm.addEventListener("submit", addStudent);
   refs.studentSearch.addEventListener("input", renderStudents);
   refs.studentsTableBody.addEventListener("click", handleStudentTableAction);
+  refs.adminAuthForm.addEventListener("submit", submitSupervisorAccess);
+  [refs.adminPassword, refs.adminPasswordConfirm].forEach((input) =>
+    input.addEventListener("input", () => {
+      refs.adminAuthError.textContent = "";
+    })
+  );
+  refs.adminAuthModal.addEventListener("cancel", (event) => event.preventDefault());
 
   refs.copyShareLink.addEventListener("click", async () => {
     await copyText(refs.shareLinkInput.value);
@@ -1258,6 +1278,126 @@ async function requestJson(path, options = {}) {
   return payload;
 }
 
+function saveSupervisorToken(token) {
+  supervisorToken = token || "";
+  try {
+    if (supervisorToken) sessionStorage.setItem(SUPERVISOR_SESSION_KEY, supervisorToken);
+    else sessionStorage.removeItem(SUPERVISOR_SESSION_KEY);
+  } catch {
+    // The current tab still keeps the token even if browser storage is unavailable.
+  }
+}
+
+function showSupervisorModal(configured) {
+  supervisorAuthMode = configured ? "login" : "setup";
+  refs.adminAuthForm.reset();
+  refs.adminAuthError.textContent = "";
+  refs.adminPasswordConfirmGroup.hidden = configured;
+  refs.adminPassword.autocomplete = configured ? "current-password" : "new-password";
+  refs.adminAuthTitle.textContent = configured ? "دخول المشرف" : "أنشئ رمز المشرف";
+  refs.adminAuthDescription.textContent = configured
+    ? "أدخل رمز المشرف لفتح إدارة سؤال اليوم."
+    : "اختر رمزًا خاصًا بك من ٦ خانات على الأقل. ستستخدمه عند فتح لوحة المشرف من جديد.";
+  refs.adminAuthSubmit.textContent = configured ? "دخول لوحة المشرف" : "حفظ رمز المشرف";
+  refs.adminAuthNote.textContent = configured
+    ? "لا يطلب الطلاب هذا الرمز؛ هو خاص بلوحة المشرف فقط."
+    : "احفظ الرمز في مكان آمن. الطلاب لن يروه ولن يحتاجوا إليه.";
+  if (!refs.adminAuthModal.open) refs.adminAuthModal.showModal();
+  window.setTimeout(() => refs.adminPassword.focus(), 80);
+}
+
+async function initializeSupervisorAccess() {
+  try {
+    supervisorToken = sessionStorage.getItem(SUPERVISOR_SESSION_KEY) || "";
+  } catch {
+    supervisorToken = "";
+  }
+
+  if (supervisorToken) {
+    try {
+      await requestJson("/api/admin/session", {
+        headers: { "X-Supervisor-Token": supervisorToken },
+      });
+      return;
+    } catch {
+      saveSupervisorToken("");
+    }
+  }
+
+  try {
+    const status = await requestJson("/api/admin/status");
+    showSupervisorModal(status.configured);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function submitSupervisorAccess(event) {
+  event.preventDefault();
+  const password = refs.adminPassword.value;
+  if (password.length < 6) {
+    refs.adminAuthError.textContent = "اكتب رمزًا لا يقل عن ٦ خانات.";
+    return;
+  }
+  if (
+    supervisorAuthMode === "setup" &&
+    password !== refs.adminPasswordConfirm.value
+  ) {
+    refs.adminAuthError.textContent = "رمزا المشرف غير متطابقين.";
+    refs.adminPasswordConfirm.select();
+    return;
+  }
+
+  refs.adminAuthSubmit.disabled = true;
+  refs.adminAuthSubmit.textContent =
+    supervisorAuthMode === "setup" ? "جارٍ الحفظ..." : "جارٍ التحقق...";
+  try {
+    const payload = await requestJson(`/api/admin/${supervisorAuthMode}`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    saveSupervisorToken(payload.token);
+    refs.adminAuthModal.close();
+    showToast(
+      supervisorAuthMode === "setup" ? "تم تأمين لوحة المشرف" : "مرحبًا بعودتك"
+    );
+  } catch (error) {
+    if (error.code === "SUPERVISOR_ALREADY_CONFIGURED") {
+      showSupervisorModal(true);
+    } else {
+      refs.adminAuthError.textContent = error.message;
+      refs.adminPassword.select();
+    }
+  } finally {
+    refs.adminAuthSubmit.disabled = false;
+    refs.adminAuthSubmit.textContent =
+      supervisorAuthMode === "setup" ? "حفظ رمز المشرف" : "دخول لوحة المشرف";
+  }
+}
+
+async function supervisorRequest(path, options = {}) {
+  if (!supervisorToken) {
+    const status = await requestJson("/api/admin/status");
+    showSupervisorModal(status.configured);
+    throw new Error("سجّل دخول المشرف أولًا.");
+  }
+  try {
+    return await requestJson(path, {
+      ...options,
+      headers: {
+        "X-Supervisor-Token": supervisorToken,
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    if (error.code === "SUPERVISOR_UNAUTHORIZED") {
+      saveSupervisorToken("");
+      showSupervisorModal(true);
+    }
+    throw error;
+  }
+}
+
 function adminRequest(path, options = {}) {
   const token = state.currentQuestion.remote?.adminToken;
   return requestJson(path, {
@@ -1271,7 +1411,7 @@ function adminRequest(path, options = {}) {
 
 async function ensureRemoteQuiz() {
   if (state.currentQuestion.remote?.quizId) return state.currentQuestion.remote;
-  const payload = await requestJson("/api/quizzes", {
+  const payload = await supervisorRequest("/api/quizzes", {
     method: "POST",
     body: JSON.stringify({
       question: state.currentQuestion,
@@ -1588,6 +1728,7 @@ function initApp() {
   showAdminApp();
   switchAdminView("dashboard");
   startAdminSync();
+  initializeSupervisorAccess();
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
