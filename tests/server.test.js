@@ -609,6 +609,46 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
   });
   assert.equal(legitimateLogin.response.status, 200);
   assert.ok(legitimateLogin.payload.token);
+
+  const burst = await Promise.all(
+    Array.from({ length: 24 }, (_, index) =>
+      request(baseUrl, "/api/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ password: `wrong-burst-${index}` }),
+      })
+    )
+  );
+  const burstStatuses = burst.map((result) => result.response.status);
+  assert.equal(burstStatuses.filter((status) => status === 401).length, 10);
+  assert.equal(burstStatuses.filter((status) => status === 429).length, 14);
+  assert.ok(
+    burst
+      .filter((result) => result.response.status === 429)
+      .every(
+        (result) =>
+          result.payload.error.code === "SUPERVISOR_PROOF_REQUIRED" &&
+          result.payload.error.details.challengeToken
+      )
+  );
+
+  const postBurstStepUp = await request(baseUrl, "/api/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+  });
+  assert.equal(postBurstStepUp.response.status, 429);
+  const postBurstChallenge = postBurstStepUp.payload.error.details;
+  const postBurstLogin = await request(baseUrl, "/api/admin/login", {
+    method: "POST",
+    body: JSON.stringify({
+      password: TEST_SUPERVISOR_PASSWORD,
+      challengeToken: postBurstChallenge.challengeToken,
+      challengeCounter: solveChallenge(
+        postBurstChallenge.challengeToken,
+        postBurstChallenge.difficultyBits
+      ),
+    }),
+  });
+  assert.equal(postBurstLogin.response.status, 200);
 });
 
 test("never acknowledges a submission that failed to persist", async (context) => {

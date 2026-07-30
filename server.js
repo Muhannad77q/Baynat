@@ -804,23 +804,54 @@ function createQuizCreationLimiter(trustProxy) {
 
 function createSupervisorLimiter(trustProxy) {
   const attempts = new Map();
-  const recentAttempts = (request) => {
+  const currentState = (request) => {
     const key = getClientIp(request, trustProxy);
     const now = Date.now();
-    const recent = (attempts.get(key) || []).filter(
+    const stored = attempts.get(key) || { failures: [], inFlight: 0 };
+    const failures = stored.failures.filter(
       (time) => now - time < ACCESS_WINDOW_MS
     );
-    setBoundedMap(attempts, key, recent);
-    return { key, now, recent };
+    const state = {
+      failures,
+      inFlight: Math.max(0, Number(stored.inFlight) || 0),
+    };
+    setBoundedMap(attempts, key, state);
+    return { key, now, state };
   };
   return {
     isLimited(request) {
-      return recentAttempts(request).recent.length >= SUPERVISOR_ATTEMPTS_LIMIT;
+      const { state } = currentState(request);
+      return state.failures.length + state.inFlight >= SUPERVISOR_ATTEMPTS_LIMIT;
+    },
+    tryReserve(request) {
+      const { key, state } = currentState(request);
+      if (state.failures.length + state.inFlight >= SUPERVISOR_ATTEMPTS_LIMIT) {
+        return false;
+      }
+      state.inFlight += 1;
+      setBoundedMap(attempts, key, state);
+      return true;
     },
     recordFailure(request) {
-      const { key, now, recent } = recentAttempts(request);
-      if (recent.length < SUPERVISOR_ATTEMPTS_LIMIT) recent.push(now);
-      setBoundedMap(attempts, key, recent);
+      const { key, now, state } = currentState(request);
+      if (state.failures.length < SUPERVISOR_ATTEMPTS_LIMIT) {
+        state.failures.push(now);
+      }
+      setBoundedMap(attempts, key, state);
+    },
+    finishFailure(request) {
+      const { key, now, state } = currentState(request);
+      state.inFlight = Math.max(0, state.inFlight - 1);
+      if (state.failures.length < SUPERVISOR_ATTEMPTS_LIMIT) {
+        state.failures.push(now);
+      }
+      setBoundedMap(attempts, key, state);
+    },
+    release(request) {
+      const { key, state } = currentState(request);
+      state.inFlight = Math.max(0, state.inFlight - 1);
+      if (!state.failures.length && !state.inFlight) attempts.delete(key);
+      else setBoundedMap(attempts, key, state);
     },
     clear(request) {
       attempts.delete(getClientIp(request, trustProxy));
@@ -965,7 +996,8 @@ export async function createBaynatServer({
       if (pathname === "/api/admin/login" && request.method === "POST") {
         const body = await readJsonBody(request);
         const password = readSupervisorPassword(body);
-        if (supervisorLimiter.isLimited(request)) {
+        const reservedAttempt = supervisorLimiter.tryReserve(request);
+        if (!reservedAttempt) {
           const proof = verifyAccessProof({
             secret: challengeSecret,
             quizId: "supervisor-login",
@@ -992,8 +1024,18 @@ export async function createBaynatServer({
           }
           consumeProof(proof);
         }
-        if (!(await verifySupervisorPassword(password, store.data.adminCredential))) {
-          supervisorLimiter.recordFailure(request);
+        let validPassword;
+        try {
+          validPassword = await verifySupervisorPassword(
+            password,
+            store.data.adminCredential
+          );
+        } catch (error) {
+          if (reservedAttempt) supervisorLimiter.release(request);
+          throw error;
+        }
+        if (!validPassword) {
+          if (reservedAttempt) supervisorLimiter.finishFailure(request);
           throw new HttpError(
             401,
             "رمز المشرف غير صحيح.",
