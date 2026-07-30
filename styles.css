@@ -2486,7 +2486,7 @@ tbody tr:hover {
   text-align: right;
 }
 
-#studentFullName {
+:is(#studentFullName, #studentClassName) {
   width: 100%;
   height: 52px;
   border: 1px solid var(--border-strong);
@@ -2500,7 +2500,7 @@ tbody tr:hover {
   text-align: right;
 }
 
-#studentFullName:focus {
+:is(#studentFullName, #studentClassName):focus {
   border-color: var(--primary);
   background: white;
   box-shadow: 0 0 0 4px rgba(103, 89, 232, 0.08);

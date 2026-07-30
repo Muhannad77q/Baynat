@@ -72,6 +72,7 @@ function cacheRefs() {
     accessQuestionType: document.querySelector("#accessQuestionType"),
     accessForm: document.querySelector("#studentAccessForm"),
     studentName: document.querySelector("#studentFullName"),
+    studentClassName: document.querySelector("#studentClassName"),
     studentPin: document.querySelector("#studentPin"),
     pinError: document.querySelector("#pinError"),
     startChallengeButton: document.querySelector("#startChallengeButton"),
@@ -103,9 +104,11 @@ function cacheRefs() {
 
 function bindEvents() {
   refs.retryButton.addEventListener("click", loadQuiz);
-  refs.studentName.addEventListener("input", () => {
-    refs.pinError.textContent = "";
-  });
+  [refs.studentName, refs.studentClassName].forEach((input) =>
+    input.addEventListener("input", () => {
+      refs.pinError.textContent = "";
+    })
+  );
   refs.studentPin.addEventListener("input", () => {
     refs.studentPin.value = normalizeDigits(refs.studentPin.value).replace(/\D/g, "").slice(0, 4);
     refs.pinError.textContent = "";
@@ -167,6 +170,32 @@ async function requestJson(path, options = {}) {
   return payload;
 }
 
+function solveAccessChallenge(token, difficultyBits) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./pow-worker.js?v=1", import.meta.url));
+    const timeout = window.setTimeout(() => {
+      worker.terminate();
+      reject(new Error("استغرق تأمين الدخول وقتًا طويلًا. حاول مرة أخرى."));
+    }, 80_000);
+    const finish = (callback) => {
+      window.clearTimeout(timeout);
+      worker.terminate();
+      callback();
+    };
+    worker.addEventListener("message", (event) => {
+      if (Number.isSafeInteger(event.data?.counter)) {
+        finish(() => resolve(event.data.counter));
+      } else {
+        finish(() => reject(new Error("تعذّر تأمين محاولة الدخول.")));
+      }
+    });
+    worker.addEventListener("error", () => {
+      finish(() => reject(new Error("تعذّر تشغيل التحقق الآمن على هذا الجهاز.")));
+    });
+    worker.postMessage({ token, difficultyBits });
+  });
+}
+
 async function loadQuiz() {
   showScreen(refs.loadingScreen);
   if (!/^[A-Za-z0-9_-]{6,80}$/.test(quizId)) {
@@ -191,10 +220,16 @@ async function loadQuiz() {
 async function accessQuiz(event) {
   event.preventDefault();
   const name = refs.studentName.value.trim();
+  const className = refs.studentClassName.value.trim();
   const pin = normalizeDigits(refs.studentPin.value);
   if (name.length < 2) {
     refs.pinError.textContent = "اكتب اسمك كما سجّله المشرف.";
     refs.studentName.focus();
+    return;
+  }
+  if (!className) {
+    refs.pinError.textContent = "اكتب صفك كما سجّله المشرف.";
+    refs.studentClassName.focus();
     return;
   }
   if (!/^\d{4}$/.test(pin)) {
@@ -205,9 +240,25 @@ async function accessQuiz(event) {
   setButtonLoading(refs.startChallengeButton, true, "جاري التحقق...");
   refs.pinError.textContent = "";
   try {
+    const credentials = { name, className, pin };
+    const challenge = await requestJson(
+      `/api/quizzes/${encodeURIComponent(quizId)}/access/challenge`,
+      {
+        method: "POST",
+        body: JSON.stringify(credentials),
+      }
+    );
+    const challengeCounter = await solveAccessChallenge(
+      challenge.token,
+      challenge.difficultyBits
+    );
     const payload = await requestJson(`/api/quizzes/${encodeURIComponent(quizId)}/access`, {
       method: "POST",
-      body: JSON.stringify({ name, pin }),
+      body: JSON.stringify({
+        ...credentials,
+        challengeToken: challenge.token,
+        challengeCounter,
+      }),
     });
     studentToken = payload.token;
     currentStudent = payload.student;

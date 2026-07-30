@@ -25,9 +25,10 @@ const DEFAULT_DATA_FILE = path.join(ROOT_DIR, ".data", "baynat.json");
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_STUDENTS = 80;
 const ACCESS_WINDOW_MS = 10 * 60 * 1000;
-const ACCESS_ATTEMPTS_LIMIT = 6;
 const SUPERVISOR_SESSION_MS = 12 * 60 * 60 * 1000;
 const SUPERVISOR_ATTEMPTS_LIMIT = 10;
+const ACCESS_CHALLENGE_MS = 90 * 1000;
+const MAX_RATE_LIMIT_KEYS = 2_000;
 const QUIZ_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const QUIZ_CREATION_WINDOW_MS = 60 * 60 * 1000;
 const QUIZ_CREATION_IP_LIMIT = 5;
@@ -38,6 +39,7 @@ const PUBLIC_FILES = new Map([
   ["/student.html", "student.html"],
   ["/app.js", "app.js"],
   ["/student.js", "student.js"],
+  ["/pow-worker.js", "pow-worker.js"],
   ["/styles.css", "styles.css"],
   ["/logo.svg", "logo.svg"],
 ]);
@@ -107,6 +109,23 @@ function validateStoredData(parsed, initialSetupKey) {
       isRecord(quiz.sessions) &&
       typeof quiz.adminTokenHash === "string" &&
       Number.isFinite(new Date(quiz.createdAt).getTime());
+    if (validQuiz) {
+      for (const student of quiz.students) {
+        if (
+          isRecord(student) &&
+          typeof student.name === "string" &&
+          typeof student.className === "string" &&
+          !student.identityLookup
+        ) {
+          student.identityLookup = studentIdentityLookup(
+            parsed.secret,
+            student.name,
+            student.className
+          );
+          migrated = true;
+        }
+      }
+    }
     const validStudents =
       validQuiz &&
       quiz.students.every(
@@ -114,6 +133,7 @@ function validateStoredData(parsed, initialSetupKey) {
           typeof student?.id === "string" &&
           typeof student.name === "string" &&
           typeof student.className === "string" &&
+          typeof student.identityLookup === "string" &&
           typeof student.pinLookup === "string" &&
           typeof student.pinSalt === "string" &&
           typeof student.pinHash === "string"
@@ -142,6 +162,10 @@ function validateStoredData(parsed, initialSetupKey) {
       validStudents &&
       new Set(quiz.students.map((student) => student.id)).size === quiz.students.length &&
       new Set(quiz.students.map((student) => student.pinLookup)).size === quiz.students.length;
+    const uniqueStudentIdentities =
+      validStudents &&
+      new Set(quiz.students.map((student) => student.identityLookup)).size ===
+        quiz.students.length;
     const uniqueSubmissions =
       validSubmissions &&
       new Set(quiz.submissions.map((submission) => submission.id)).size ===
@@ -154,6 +178,7 @@ function validateStoredData(parsed, initialSetupKey) {
       !validSubmissions ||
       !validSessions ||
       !uniqueStudents ||
+      !uniqueStudentIdentities ||
       !uniqueSubmissions
     ) {
       throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
@@ -420,6 +445,88 @@ function verifySupervisorToken(token, secret) {
   return safeEqual(signature, expected);
 }
 
+function canonicalStudentIdentity(name, className) {
+  return `${normalizeAnswer(name)}|${normalizeAnswer(className)}`;
+}
+
+function studentIdentityLookup(secret, name, className) {
+  return createHmac("sha256", secret)
+    .update(`student:${canonicalStudentIdentity(name, className)}`)
+    .digest("base64url");
+}
+
+function canonicalAccessCredential(name, className, pin) {
+  return `${canonicalStudentIdentity(name, className)}|${normalizeDigits(pin)}`;
+}
+
+function issueAccessChallenge(secret, quizId, credential, difficultyBits) {
+  const expiresAt = Date.now() + ACCESS_CHALLENGE_MS;
+  const nonce = randomBytes(16).toString("base64url");
+  const credentialTag = createHmac("sha256", secret)
+    .update(`credential:${quizId}:${credential}`)
+    .digest("base64url");
+  const payload = `${expiresAt}.${nonce}.${difficultyBits}.${credentialTag}`;
+  const signature = createHmac("sha256", secret)
+    .update(`access-proof:${quizId}:${payload}`)
+    .digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function hasLeadingZeroBits(buffer, difficultyBits) {
+  let remaining = difficultyBits;
+  for (const byte of buffer) {
+    if (remaining >= 8) {
+      if (byte !== 0) return false;
+      remaining -= 8;
+      continue;
+    }
+    if (remaining === 0) return true;
+    return (byte >>> (8 - remaining)) === 0;
+  }
+  return remaining === 0;
+}
+
+function verifyAccessProof({
+  secret,
+  quizId,
+  credential,
+  token,
+  counter,
+  difficultyBits,
+}) {
+  const [expiresAtValue, nonce, tokenDifficultyValue, credentialTag, signature, ...extra] =
+    String(token || "").split(".");
+  const tokenDifficulty = Number(tokenDifficultyValue);
+  const numericCounter = Number(counter);
+  if (
+    extra.length ||
+    !/^\d{10,16}$/.test(expiresAtValue || "") ||
+    !/^[A-Za-z0-9_-]{16,80}$/.test(nonce || "") ||
+    !/^[A-Za-z0-9_-]{30,80}$/.test(credentialTag || "") ||
+    !/^[A-Za-z0-9_-]{30,80}$/.test(signature || "") ||
+    tokenDifficulty !== difficultyBits ||
+    !Number.isSafeInteger(numericCounter) ||
+    numericCounter < 0
+  ) {
+    return false;
+  }
+  const expiresAt = Number(expiresAtValue);
+  if (expiresAt <= Date.now() || expiresAt > Date.now() + ACCESS_CHALLENGE_MS + 5_000) {
+    return false;
+  }
+  const expectedCredentialTag = createHmac("sha256", secret)
+    .update(`credential:${quizId}:${credential}`)
+    .digest("base64url");
+  if (!safeEqual(credentialTag, expectedCredentialTag)) return false;
+  const payload = `${expiresAtValue}.${nonce}.${tokenDifficultyValue}.${credentialTag}`;
+  const expectedSignature = createHmac("sha256", secret)
+    .update(`access-proof:${quizId}:${payload}`)
+    .digest("base64url");
+  if (!safeEqual(signature, expectedSignature)) return false;
+  const digest = createHash("sha256").update(`${token}.${numericCounter}`).digest();
+  return hasLeadingZeroBits(digest, tokenDifficulty);
+}
+
 function publicStudent(student) {
   return { id: student.id, name: student.name, className: student.className };
 }
@@ -501,6 +608,18 @@ function sanitizeStudentInputs(students, secret, quizId) {
       throw new HttpError(400, "معرّف الطالب مكرر.", "INVALID_STUDENT");
     }
     const lookup = pinLookup(secret, quizId, validation.value.pin);
+    const identityLookup = studentIdentityLookup(
+      secret,
+      validation.value.name,
+      validation.value.className
+    );
+    if (accepted.some((item) => item.identityLookup === identityLookup)) {
+      throw new HttpError(
+        400,
+        "يوجد طالب بالاسم والصف نفسيهما. أضف وصفًا مميزًا للاسم.",
+        "DUPLICATE_STUDENT_IDENTITY"
+      );
+    }
     if (accepted.some((item) => item.pinLookup === lookup)) {
       throw new HttpError(
         400,
@@ -514,6 +633,7 @@ function sanitizeStudentInputs(students, secret, quizId) {
       className: validation.value.className,
       pin: validation.value.pin,
       pinLookup: lookup,
+      identityLookup,
     });
   }
   return accepted;
@@ -570,6 +690,27 @@ function readSupervisorPassword(body) {
   return password;
 }
 
+function readStudentAccessInput(body) {
+  const name = String(body?.name || "").trim();
+  const className = String(body?.className || "").trim();
+  const pin = normalizeDigits(body?.pin || "").trim();
+  if (normalizeAnswer(name).length < 2) {
+    throw new HttpError(400, "اكتب اسم الطالب كما سجّله المشرف.", "INVALID_STUDENT_NAME");
+  }
+  if (!normalizeAnswer(className)) {
+    throw new HttpError(400, "اكتب صف الطالب كما سجّله المشرف.", "INVALID_STUDENT_CLASS");
+  }
+  if (!/^\d{4}$/.test(pin)) {
+    throw new HttpError(400, "أدخل رمزًا صحيحًا من ٤ أرقام.", "INVALID_PIN");
+  }
+  return {
+    name,
+    className,
+    pin,
+    credential: canonicalAccessCredential(name, className, pin),
+  };
+}
+
 function requireStudent(request, quiz) {
   const authorization = request.headers.authorization || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -592,23 +733,12 @@ function getClientIp(request, trustProxy) {
     .trim();
 }
 
-function createAccessLimiter() {
-  const attempts = new Map();
-  return (quizId, identityKey, action = "check") => {
-    const key = `${quizId}:${identityKey}`;
-    const now = Date.now();
-    const recent = (attempts.get(key) || []).filter((time) => now - time < ACCESS_WINDOW_MS);
-    if (recent.length >= ACCESS_ATTEMPTS_LIMIT) {
-      throw new HttpError(
-        429,
-        "محاولات كثيرة لهذا الاسم. انتظر قليلًا أو راجع المشرف.",
-        "TOO_MANY_ATTEMPTS"
-      );
-    }
-    if (action === "failure") recent.push(now);
-    if (action === "success") attempts.delete(key);
-    else attempts.set(key, recent);
-  };
+function setBoundedMap(map, key, value) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  while (map.size > MAX_RATE_LIMIT_KEYS) {
+    map.delete(map.keys().next().value);
+  }
 }
 
 function createQuizCreationLimiter(trustProxy) {
@@ -635,7 +765,7 @@ function createQuizCreationLimiter(trustProxy) {
       recentForIp.push(now);
       globalAttempts.push(now);
     }
-    byIp.set(ip, recentForIp);
+    setBoundedMap(byIp, ip, recentForIp);
   };
 }
 
@@ -656,7 +786,7 @@ function createSupervisorLimiter(trustProxy) {
     }
     if (action === "failure") recent.push(now);
     if (action === "success") attempts.delete(key);
-    else attempts.set(key, recent);
+    else setBoundedMap(attempts, key, recent);
   };
 }
 
@@ -686,11 +816,19 @@ export async function createBaynatServer({
   dataFile = DEFAULT_DATA_FILE,
   trustProxy = process.env.TRUST_PROXY === "true",
   setupKey = process.env.BAYNAT_SETUP_KEY || "",
+  accessDifficultyBits = Number(process.env.BAYNAT_ACCESS_DIFFICULTY || 16),
   logger = console,
 } = {}) {
+  if (
+    !Number.isInteger(accessDifficultyBits) ||
+    accessDifficultyBits < 8 ||
+    accessDifficultyBits > 24 ||
+    (process.env.NODE_ENV === "production" && accessDifficultyBits < 16)
+  ) {
+    throw new Error("قيمة BAYNAT_ACCESS_DIFFICULTY يجب أن تكون بين 16 و24 في الإنتاج.");
+  }
   const store = new JsonStore(dataFile, setupKey);
   await store.init();
-  const recordAccessAttempt = createAccessLimiter();
   const recordQuizCreation = createQuizCreationLimiter(trustProxy);
   const recordSupervisorAttempt = createSupervisorLimiter(trustProxy);
 
@@ -872,11 +1010,23 @@ export async function createBaynatServer({
           throw new HttpError(400, validation.error, "INVALID_STUDENT");
         }
         const lookup = pinLookup(store.data.secret, quiz.id, validation.value.pin);
+        const identityLookup = studentIdentityLookup(
+          store.data.secret,
+          validation.value.name,
+          validation.value.className
+        );
         if (quiz.students.some((student) => student.pinLookup === lookup)) {
           throw new HttpError(
             409,
             "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا.",
             "DUPLICATE_PIN"
+          );
+        }
+        if (quiz.students.some((student) => student.identityLookup === identityLookup)) {
+          throw new HttpError(
+            409,
+            "يوجد طالب بالاسم والصف نفسيهما. أضف وصفًا مميزًا للاسم.",
+            "DUPLICATE_STUDENT_IDENTITY"
           );
         }
         const student = {
@@ -887,6 +1037,7 @@ export async function createBaynatServer({
           name: validation.value.name,
           className: validation.value.className,
           pinLookup: lookup,
+          identityLookup,
           ...(await hashPin(validation.value.pin)),
         };
         await store.update((data) => {
@@ -894,7 +1045,9 @@ export async function createBaynatServer({
           if (
             draftQuiz.students.some(
               (existing) =>
-                existing.id === student.id || existing.pinLookup === student.pinLookup
+                existing.id === student.id ||
+                existing.pinLookup === student.pinLookup ||
+                existing.identityLookup === student.identityLookup
             )
           ) {
             throw new HttpError(
@@ -935,43 +1088,69 @@ export async function createBaynatServer({
         return;
       }
 
+      const challengeMatch = pathname.match(
+        /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/access\/challenge$/
+      );
+      if (challengeMatch && request.method === "POST") {
+        const quiz = requireQuiz(store, challengeMatch[1]);
+        const input = readStudentAccessInput(await readJsonBody(request));
+        json(
+          response,
+          200,
+          {
+            token: issueAccessChallenge(
+              store.data.secret,
+              quiz.id,
+              input.credential,
+              accessDifficultyBits
+            ),
+            difficultyBits: accessDifficultyBits,
+          },
+          securityHeaders()
+        );
+        return;
+      }
+
       const accessMatch = pathname.match(/^\/api\/quizzes\/([A-Za-z0-9_-]+)\/access$/);
       if (accessMatch && request.method === "POST") {
         let quiz = requireQuiz(store, accessMatch[1]);
         const body = await readJsonBody(request);
-        const claimedName = normalizeAnswer(body.name || "");
-        const pin = normalizeDigits(body.pin || "");
-        if (claimedName.length < 2) {
-          throw new HttpError(400, "اكتب اسم الطالب كما سجّله المشرف.", "INVALID_STUDENT_NAME");
+        const input = readStudentAccessInput(body);
+        if (
+          !verifyAccessProof({
+            secret: store.data.secret,
+            quizId: quiz.id,
+            credential: input.credential,
+            token: body.challengeToken,
+            counter: body.challengeCounter,
+            difficultyBits: accessDifficultyBits,
+          })
+        ) {
+          throw new HttpError(
+            400,
+            "انتهى تحقق الدخول أو لم يكتمل. حاول مرة أخرى.",
+            "INVALID_ACCESS_PROOF"
+          );
         }
-        if (!/^\d{4}$/.test(pin)) {
-          throw new HttpError(400, "أدخل رمزًا صحيحًا من ٤ أرقام.", "INVALID_PIN");
-        }
-        const candidates = quiz.students.filter(
-          (item) => normalizeAnswer(item.name) === claimedName
+        const identityLookup = studentIdentityLookup(
+          store.data.secret,
+          input.name,
+          input.className
         );
-        const identityKey = candidates.length
-          ? `students:${candidates
-              .map((student) => student.id)
-              .sort()
-              .join(",")}`
-          : `unknown:${createHmac("sha256", store.data.secret)
-              .update(`${quiz.id}:${claimedName}`)
-              .digest("base64url")}`;
-        recordAccessAttempt(quiz.id, identityKey);
-        const lookup = pinLookup(store.data.secret, quiz.id, pin);
-        const student = candidates.find(
-          (item) => item.pinLookup === lookup && verifyPin(pin, item)
+        const lookup = pinLookup(store.data.secret, quiz.id, input.pin);
+        const student = quiz.students.find(
+          (item) =>
+            item.identityLookup === identityLookup &&
+            item.pinLookup === lookup &&
+            verifyPin(input.pin, item)
         );
         if (!student) {
-          recordAccessAttempt(quiz.id, identityKey, "failure");
           throw new HttpError(
             401,
-            "الاسم أو الرمز غير صحيح. تأكد منهما أو راجع المشرف.",
+            "الاسم أو الصف أو الرمز غير صحيح. تأكد منها أو راجع المشرف.",
             "PIN_REJECTED"
           );
         }
-        recordAccessAttempt(quiz.id, identityKey, "success");
         const token = randomBytes(32).toString("base64url");
         const startedAt = quiz.starts?.[student.id] || Date.now();
         await store.update((data) => {
