@@ -1,0 +1,15 @@
+{
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "frameCount": 540,
+  "duration": 18,
+  "videoCodec": "h264",
+  "pixelFormat": "yuv420p",
+  "audioCodec": "aac",
+  "audioSampleRate": 48000,
+  "audioChannels": 2,
+  "sha256": "228f6df6fe7a33b9d19d983f2df8780218980aa6d712a030ad29360b8c57a815",
+  "timelineDurationMs": 18000,
+  "renderer": "Chrome canvas frame sequence + ffmpeg"
+}

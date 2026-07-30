@@ -1,3 +1,18 @@
-# Search Trail
+# إعلان كيكة الفراولة — لَذَّة
 
-Dark AI search website concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight.
+إعلان عمودي متحرك بنسبة `9:16` يقدّم المكونات، تركيب الكيكة، اللمسات الأخيرة، وطريقة التقديم خلال 18 ثانية.
+
+```bash
+npm run dev
+```
+
+تتضمن المعاينة تحكمًا بالمشاهد وصوتًا مصممًا داخل المتصفح. زر التنزيل يقدّم نسخة MP4 مُسبقة الرندر بدل ترميز الفيديو في الزمن الحقيقي داخل الصفحة.
+
+لبناء النسخة النهائية حتميًا عبر Chrome Canvas و`ffmpeg`:
+
+```bash
+npm run render
+npm run verify:video
+```
+
+ينتج renderer فيديو H.264/AAC بدقة `1080×1920`، ومعدل ثابت `30fps`، ومدة `18s`، و`540` إطارًا. يلزم توفر Chrome و`ffmpeg` و`ffprobe`.
