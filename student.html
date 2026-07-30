@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="بوابة الطالب لسؤال اليوم في بَيّنات." />
+    <meta name="theme-color" content="#f8f8fd" />
+    <title>بَيّنات | بوابة الطالب</title>
+    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=3" />
+  </head>
+  <body class="student-mode">
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-arrow" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6"></path>
+      </symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M12 7v5l3 2"></path>
+      </symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6"></path>
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14"></path>
+      </symbol>
+      <symbol id="icon-link" viewBox="0 0 24 24">
+        <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"></path>
+        <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"></path>
+      </symbol>
+    </svg>
+
+    <div class="ambient-shape ambient-shape-one" aria-hidden="true"></div>
+    <div class="ambient-shape ambient-shape-two" aria-hidden="true"></div>
+
+    <div class="student-app">
+      <header class="student-header">
+        <div class="brand">
+          <img src="./logo.svg" alt="" />
+          <div>
+            <strong>بَيّنات</strong>
+            <span>سؤال اليوم</span>
+          </div>
+        </div>
+        <span class="student-portal-badge">
+          <svg><use href="#icon-link"></use></svg>
+          رابط الطالب
+        </span>
+      </header>
+
+      <main class="student-main">
+        <section class="student-screen access-screen active" id="loadingScreen">
+          <div class="student-card access-card student-state-card">
+            <span class="state-spinner" aria-hidden="true"></span>
+            <span class="student-kicker">بَيّنات</span>
+            <h1>نجهّز سؤال اليوم...</h1>
+            <p>لحظات ويظهر لك التحدّي.</p>
+          </div>
+        </section>
+
+        <section class="student-screen access-screen" id="errorScreen">
+          <div class="student-card access-card student-state-card">
+            <span class="state-symbol state-symbol-error">!</span>
+            <span class="student-kicker">تعذّر فتح السؤال</span>
+            <h1 id="errorTitle">رابط السؤال غير صالح</h1>
+            <p id="errorMessage">اطلب من المشرف إرسال رابط جديد، ثم حاول مرة أخرى.</p>
+            <button class="button button-secondary button-wide" id="retryButton" type="button">
+              المحاولة مرة أخرى
+            </button>
+          </div>
+        </section>
+
+        <section class="student-screen access-screen" id="studentAccessScreen">
+          <div class="access-decoration" aria-hidden="true">
+            <span>؟</span><i></i><b>✦</b>
+          </div>
+          <div class="student-card access-card">
+            <span class="student-kicker">مرحبًا بك 👋</span>
+            <h1>جاهز لسؤال اليوم؟</h1>
+            <p>أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.</p>
+            <div class="question-ready-chip">
+              <span></span>
+              <b id="accessQuestionType">سؤال اليوم متاح</b>
+            </div>
+            <form id="studentAccessForm" novalidate>
+              <label for="studentPin">رمز الدخول</label>
+              <input
+                id="studentPin"
+                name="pin"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9٠-٩]{4}"
+                maxlength="4"
+                autocomplete="one-time-code"
+                placeholder="• • • •"
+                aria-describedby="pinError"
+              />
+              <p class="form-error" id="pinError" role="alert"></p>
+              <button class="button button-primary button-wide" id="startChallengeButton" type="submit">
+                ابدأ التحدّي
+                <svg><use href="#icon-arrow"></use></svg>
+              </button>
+            </form>
+          </div>
+          <div class="access-features" aria-label="مميزات التحدي">
+            <span>⚡ نقاط للسرعة</span>
+            <span>🏆 ترتيب مشترك</span>
+            <span>🎯 محاولة واحدة</span>
+          </div>
+        </section>
+
+        <section class="student-screen quiz-screen" id="studentQuizScreen">
+          <div class="quiz-topline">
+            <div>
+              <span class="student-kicker" id="studentGreeting">أهلًا</span>
+              <p id="studentClassLabel">—</p>
+            </div>
+            <div class="quiz-timer" aria-live="off">
+              <svg><use href="#icon-clock"></use></svg>
+              <span id="studentTimer">٠٠:٠٠٫٠</span>
+            </div>
+          </div>
+          <div class="quiz-progress"><i></i><span>سؤال واحد</span></div>
+          <form class="student-card quiz-card" id="studentAnswerForm">
+            <div class="quiz-question-meta">
+              <span id="studentQuestionType">اختيار متعدد</span>
+              <span>١ من ١</span>
+            </div>
+            <h1 id="studentQuestionPrompt">—</h1>
+            <div class="student-answer-editor" id="studentAnswerEditor"></div>
+            <p class="form-error" id="studentAnswerError" role="alert"></p>
+            <button class="button button-primary button-wide" id="submitAnswerButton" type="submit">
+              إرسال الإجابة
+              <svg><use href="#icon-arrow"></use></svg>
+            </button>
+          </form>
+          <p class="single-attempt-note">لا تتسرّع كثيرًا — الدقّة أولًا ثم السرعة ✦</p>
+        </section>
+
+        <section class="student-screen result-screen" id="studentResultScreen">
+          <div class="result-hero">
+            <div class="confetti" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="result-icon" id="resultIcon">
+              <svg><use href="#icon-check"></use></svg>
+            </div>
+            <span class="student-kicker" id="resultKicker">إجابة صحيحة!</span>
+            <h1 id="resultTitle">أبدعت!</h1>
+            <p id="resultMessage">سرعتك رفعتك إلى مقدمة المتصدرين.</p>
+          </div>
+
+          <div class="result-layout">
+            <article class="rank-card">
+              <span>ترتيبك الحالي</span>
+              <strong id="studentRank">#١</strong>
+              <p>من بين <b id="participantCount">١</b> مشاركين</p>
+              <div class="points-total">
+                <strong id="studentPoints">١٩٠</strong>
+                <span>نقطة</span>
+              </div>
+              <div class="points-breakdown">
+                <div><span>صحة الإجابة</span><b id="accuracyPoints">+١٠٠</b></div>
+                <div><span>سرعة الحل</span><b id="speedPoints">+٦٠</b></div>
+                <div><span>مكافأة الترتيب</span><b id="placePoints">+٣٠</b></div>
+              </div>
+            </article>
+
+            <article class="student-card student-leaderboard-card">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">لوحة المتصدرين</span>
+                  <h3>أبطال سؤال اليوم</h3>
+                </div>
+                <span class="updating-badge"><i></i> تتحدّث للجميع</span>
+              </div>
+              <div class="student-leader-list" id="studentLeaderboard"></div>
+            </article>
+          </div>
+
+          <div class="result-actions">
+            <button class="button button-secondary" id="refreshLeaderboard" type="button">
+              تحديث المتصدرين
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">
+      <span class="toast-icon"><svg><use href="#icon-check"></use></svg></span>
+      <span id="toastMessage">تم تحديث الترتيب</span>
+    </div>
+
+    <script type="module" src="./student.js?v=1"></script>
+  </body>
+</html>

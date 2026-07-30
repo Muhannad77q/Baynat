@@ -322,6 +322,8 @@ let toastTimer = null;
 let sharedMode = false;
 let invalidSharedLink = false;
 let sharedStorageKey = "";
+let adminSyncInterval = null;
+let adminSyncInFlight = false;
 
 function loadAdminState() {
   try {
@@ -467,7 +469,7 @@ function bindEvents() {
   });
 
   document.querySelectorAll(".preview-student-button").forEach((button) => {
-    button.addEventListener("click", () => showStudentApp("access"));
+    button.addEventListener("click", openStudentPortal);
   });
   document.querySelectorAll(".share-question-button").forEach((button) => {
     button.addEventListener("click", openShareModal);
@@ -971,7 +973,7 @@ function hasSameQuestionContent(first, second) {
   );
 }
 
-function saveQuestion(event) {
+async function saveQuestion(event) {
   event.preventDefault();
   editorState.prompt = refs.questionPrompt.value;
   const question = editorQuestion();
@@ -989,7 +991,7 @@ function saveQuestion(event) {
     contentChanged &&
     currentSubmissions.length > 0 &&
     !window.confirm(
-      "نشر هذا السؤال سيبدأ تحدّيًا جديدًا ويصفّر نتائج السؤال الحالي على هذا الجهاز. هل تريد المتابعة؟"
+      "نشر هذا السؤال سيبدأ تحدّيًا جديدًا ويصفّر نتائج السؤال الحالي عند جميع الطلاب. هل تريد المتابعة؟"
     )
   ) {
     return;
@@ -998,8 +1000,13 @@ function saveQuestion(event) {
   if (!contentChanged) {
     state.currentQuestion.published = true;
     persistState();
-    showToast("السؤال منشور بالفعل");
-    window.setTimeout(openShareModal, 250);
+    try {
+      await ensureRemoteQuiz();
+      showToast("السؤال منشور ورابط الطلاب جاهز");
+      openShareModal();
+    } catch (error) {
+      refs.questionFormError.textContent = error.message;
+    }
     return;
   }
 
@@ -1009,17 +1016,25 @@ function saveQuestion(event) {
     id: `question-${Date.now().toString(36)}`,
     createdAt: new Date().toISOString(),
     published: true,
+    remote: null,
   };
   state.submissions = [];
   persistState();
   refs.questionFormError.textContent = "";
   hydrateQuestionEditor(state.currentQuestion);
   renderAll();
-  showToast("تم حفظ سؤال اليوم ونشره");
-  window.setTimeout(openShareModal, 350);
+  showToast("تم حفظ السؤال، وجارٍ تجهيز رابط الطلاب...");
+  try {
+    await ensureRemoteQuiz();
+    showToast("تم النشر وأصبح الرابط جاهزًا لأي جوال");
+    openShareModal();
+  } catch (error) {
+    refs.questionFormError.textContent = error.message;
+    showToast("تم الحفظ، لكن تعذّر إنشاء رابط الطلاب", true);
+  }
 }
 
-function addStudent(event) {
+async function addStudent(event) {
   event.preventDefault();
   const validation = validateStudentInput(
     {
@@ -1034,10 +1049,25 @@ function addStudent(event) {
     return;
   }
 
-  state.students.push({
+  const student = {
     id: `student-${Date.now().toString(36)}`,
     ...validation.value,
-  });
+  };
+  if (state.currentQuestion.remote) {
+    try {
+      await adminRequest(
+        `/api/quizzes/${encodeURIComponent(state.currentQuestion.remote.quizId)}/students`,
+        {
+          method: "POST",
+          body: JSON.stringify(student),
+        }
+      );
+    } catch (error) {
+      refs.studentFormError.textContent = error.message;
+      return;
+    }
+  }
+  state.students.push(student);
   persistState();
   refs.studentModal.close();
   refs.studentForm.reset();
@@ -1045,13 +1075,26 @@ function addStudent(event) {
   showToast(`تمت إضافة ${validation.value.name}`);
 }
 
-function handleStudentTableAction(event) {
+async function handleStudentTableAction(event) {
   const button = event.target.closest("[data-delete-student]");
   if (!button) return;
   const student = state.students.find((item) => item.id === button.dataset.deleteStudent);
   if (!student) return;
   if (!window.confirm(`هل تريد حذف ${student.name} من الفصل؟`)) return;
 
+  if (state.currentQuestion.remote) {
+    try {
+      await adminRequest(
+        `/api/quizzes/${encodeURIComponent(
+          state.currentQuestion.remote.quizId
+        )}/students/${encodeURIComponent(student.id)}`,
+        { method: "DELETE" }
+      );
+    } catch (error) {
+      showToast(error.message, true);
+      return;
+    }
+  }
   state.students = state.students.filter((item) => item.id !== student.id);
   state.submissions = state.submissions.filter((submission) => submission.studentId !== student.id);
   persistState();
@@ -1175,18 +1218,133 @@ function renderAdminLeaderboard() {
   );
 }
 
-function buildShareUrl() {
-  const url = new URL(window.location.href);
-  url.search = "";
-  url.hash = "";
-  url.searchParams.set("quiz", encodeSharePayload(createSharePayload(state)));
-  return url.toString();
+async function requestJson(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
+  } catch {
+    throw new Error("تعذّر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.");
+  }
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    // Keep the user-facing fallback below.
+  }
+  if (!response.ok) {
+    const error = new Error(payload.error?.message || "تعذّر إكمال الطلب.");
+    error.code = payload.error?.code;
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
 }
 
-function openShareModal() {
-  refs.shareLinkInput.value = buildShareUrl();
-  refs.shareModal.showModal();
-  refs.shareLinkInput.select();
+function adminRequest(path, options = {}) {
+  const token = state.currentQuestion.remote?.adminToken;
+  return requestJson(path, {
+    ...options,
+    headers: {
+      "X-Admin-Token": token || "",
+      ...(options.headers || {}),
+    },
+  });
+}
+
+async function ensureRemoteQuiz() {
+  if (state.currentQuestion.remote?.quizId) return state.currentQuestion.remote;
+  const payload = await requestJson("/api/quizzes", {
+    method: "POST",
+    body: JSON.stringify({
+      question: state.currentQuestion,
+      students: state.students,
+    }),
+  });
+  state.currentQuestion.id = payload.questionId;
+  state.currentQuestion.remote = {
+    quizId: payload.quizId,
+    adminToken: payload.adminToken,
+    studentPath: payload.studentPath,
+  };
+  state.submissions = [];
+  persistState();
+  renderAll();
+  startAdminSync();
+  return state.currentQuestion.remote;
+}
+
+function buildShareUrl() {
+  const studentPath = state.currentQuestion.remote?.studentPath;
+  return studentPath ? new URL(studentPath, window.location.href).toString() : "";
+}
+
+async function openShareModal() {
+  try {
+    await ensureRemoteQuiz();
+    refs.shareLinkInput.value = buildShareUrl();
+    if (!refs.shareModal.open) refs.shareModal.showModal();
+    refs.shareLinkInput.select();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function openStudentPortal() {
+  const portal = window.open("about:blank", "_blank");
+  try {
+    await ensureRemoteQuiz();
+    const link = buildShareUrl();
+    if (portal) {
+      portal.opener = null;
+      portal.location.replace(link);
+    } else {
+      window.location.assign(link);
+    }
+  } catch (error) {
+    if (portal) portal.close();
+    showToast(error.message, true);
+  }
+}
+
+async function syncAdminResults() {
+  const remote = state.currentQuestion.remote;
+  if (!remote || adminSyncInFlight) return;
+  adminSyncInFlight = true;
+  try {
+    const payload = await adminRequest(
+      `/api/quizzes/${encodeURIComponent(remote.quizId)}/admin`
+    );
+    state.submissions = payload.quiz.submissions;
+    persistState();
+    renderAll();
+  } catch (error) {
+    if (error.code === "ADMIN_UNAUTHORIZED") {
+      stopAdminSync();
+      showToast("انتهت جلسة السؤال. انشر السؤال مرة أخرى.", true);
+    }
+  } finally {
+    adminSyncInFlight = false;
+  }
+}
+
+function startAdminSync() {
+  stopAdminSync();
+  if (!state.currentQuestion.remote) return;
+  syncAdminResults();
+  adminSyncInterval = window.setInterval(syncAdminResults, 3_000);
+}
+
+function stopAdminSync() {
+  if (adminSyncInterval) window.clearInterval(adminSyncInterval);
+  adminSyncInterval = null;
 }
 
 async function copyText(text) {
@@ -1413,27 +1571,13 @@ function renderStudentLeaderboard(leaderboard, currentStudentId) {
 
 function initApp() {
   cacheRefs();
-  const currentUrl = new URL(window.location.href);
-  const hasQuizParameter = currentUrl.searchParams.has("quiz");
-  const quizPayload = currentUrl.searchParams.get("quiz");
-  const sharedPayload = quizPayload ? decodeSharePayload(quizPayload) : null;
-  invalidSharedLink = hasQuizParameter && !sharedPayload;
-  sharedMode = hasQuizParameter;
-  state = sharedPayload
-    ? createStateFromSharedPayload(sharedPayload)
-    : invalidSharedLink
-      ? createInitialState()
-      : loadAdminState();
+  state = loadAdminState();
   bindEvents();
   hydrateQuestionEditor(state.currentQuestion);
   renderAll();
-
-  if (sharedMode) {
-    showStudentApp("access");
-  } else {
-    showAdminApp();
-    switchAdminView("dashboard");
-  }
+  showAdminApp();
+  switchAdminView("dashboard");
+  startAdminSync();
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
