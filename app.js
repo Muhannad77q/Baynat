@@ -47,25 +47,6 @@ const COLORS = {
   berry: "#4c405d",
 };
 
-function agentDebugLog({ hypothesisId, location, message, data }) {
-  void fetch("/__debug_log", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() }),
-    keepalive: true,
-  }).catch(() => {});
-}
-
-const visualDebugLogged = new Set();
-
-function readAnalyserRms(analyser) {
-  if (!analyser) return null;
-  const samples = new Float32Array(analyser.fftSize);
-  analyser.getFloatTimeDomainData(samples);
-  const meanSquare = samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length;
-  return Math.sqrt(meanSquare);
-}
-
 const BLUEBERRIES = [
   [-185, -46, 17], [-145, -78, 14], [-93, -82, 17], [-35, -88, 14], [27, -76, 16],
   [87, -67, 13], [142, -42, 17], [184, -11, 13], [173, 31, 17], [132, 58, 14],
@@ -284,17 +265,6 @@ function drawIntro(ctx, time) {
   const first = easeOutCubic(progressBetween(time, 160, 1_050));
   const second = easeOutCubic(progressBetween(time, 620, 1_500));
   const third = easeOutBack(progressBetween(time, 1_250, 2_180));
-  if (time >= 1_600 && time < 1_601 && !visualDebugLogged.has("intro-copy")) {
-    visualDebugLogged.add("intro-copy");
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: "V3",
-      location: "app.js:drawIntro-copy",
-      message: "Opening forget word rendered",
-      data: { timeMs: Math.round(time), word: INTRO_FORGET_WORD },
-    });
-    // #endregion
-  }
 
   ctx.save();
   ctx.globalAlpha *= alpha;
@@ -812,46 +782,6 @@ function drawAssemblyScene(ctx, time) {
 
   const build = easeInOutCubic(progressBetween(time, 5_750, 11_350));
   const { titleOut, heroIn } = assemblyTextTransition(time);
-  if (time >= 6_200 && time < 6_201 && !visualDebugLogged.has("step-order")) {
-    visualDebugLogged.add("step-order");
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: "V2",
-      location: "app.js:drawAssemblyScene-step-order",
-      message: "Assembly step positions rendered",
-      data: {
-        timeMs: Math.round(time),
-        steps: ASSEMBLY_STEPS.map(([number, label], index) => ({
-          number,
-          label,
-          x: assemblyStepPillX(index),
-        })),
-      },
-    });
-    // #endregion
-  }
-  if (time >= 11_333 && time < 11_334 && !visualDebugLogged.has("transition-before")) {
-    visualDebugLogged.add("transition-before");
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: "V1,V4",
-      location: "app.js:drawAssemblyScene-transition-before",
-      message: "Assembly copy transition before handoff",
-      data: { timeMs: Math.round(time), titleOut, heroIn, overlap: titleOut > 0 && heroIn > 0 },
-    });
-    // #endregion
-  }
-  if (time >= 11_366 && time < 11_367 && !visualDebugLogged.has("transition-after")) {
-    visualDebugLogged.add("transition-after");
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: "V1,V4",
-      location: "app.js:drawAssemblyScene-transition-after",
-      message: "Assembly copy transition after handoff",
-      data: { timeMs: Math.round(time), titleOut, heroIn, overlap: titleOut > 0 && heroIn > 0 },
-    });
-    // #endregion
-  }
 
   ctx.save();
   ctx.globalAlpha *= alpha;
@@ -1164,20 +1094,12 @@ function initializeApp() {
     playing: !renderMode && !prefersReducedMotion,
     startedAt: performance.now(),
     offset: renderMode ? 0 : (prefersReducedMotion ? 11_900 : 0),
-    exporting: false,
-    exportStartedAt: 0,
-    exportTimelineStarted: false,
     soundEnabled: false,
     audioContext: null,
     audioTimer: null,
   };
-  let activeExportDebug = null;
 
   function currentTime(now = performance.now()) {
-    if (state.exporting) {
-      if (!state.exportTimelineStarted) return 0;
-      return Math.min(AD_DURATION - 1, now - state.exportStartedAt);
-    }
     if (!state.playing) return state.offset;
     return (state.offset + now - state.startedAt) % AD_DURATION;
   }
@@ -1207,7 +1129,7 @@ function initializeApp() {
     state.audioContext = audioContext;
     scheduleSoundtrack(audioContext, audioContext.destination, audioContext.currentTime + 0.04);
     state.audioTimer = window.setTimeout(() => {
-      if (state.soundEnabled && state.playing && !state.exporting) {
+      if (state.soundEnabled && state.playing) {
         state.offset = 0;
         state.startedAt = performance.now();
         startLiveSoundtrack();
@@ -1239,7 +1161,6 @@ function initializeApp() {
   }
 
   playButton.addEventListener("click", () => {
-    if (state.exporting) return;
     if (!state.playing && state.audioContext?.state === "suspended") {
       state.audioContext.resume();
       state.startedAt = performance.now();
@@ -1251,7 +1172,6 @@ function initializeApp() {
   });
 
   replayButton.addEventListener("click", () => {
-    if (state.exporting) return;
     state.offset = 0;
     state.startedAt = performance.now();
     state.playing = true;
@@ -1260,7 +1180,6 @@ function initializeApp() {
   });
 
   soundButton.addEventListener("click", () => {
-    if (state.exporting) return;
     state.soundEnabled = !state.soundEnabled;
     soundButton.classList.toggle("active", state.soundEnabled);
     soundButton.querySelector("span:last-child").textContent = state.soundEnabled ? "صوت شغّال" : "الصوت";
@@ -1274,7 +1193,6 @@ function initializeApp() {
 
   timelineButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      if (state.exporting) return;
       seek(button.dataset.seek);
     });
   });
@@ -1289,281 +1207,16 @@ function initializeApp() {
     exportStatus.textContent = "بدأ تنزيل MP4 المُعتمد ✓ 540 إطارًا مع الصوت";
   }
 
-  async function exportVideoRealtime() {
-    const invocationAt = performance.now();
-    // #region agent log
-    agentDebugLog({
-      hypothesisId: "C",
-      location: "app.js:exportVideo-entry",
-      message: "Export function entered",
-      data: {
-        invocationAt: Math.round(invocationAt),
-        previewTimeMs: Math.round(currentTime(invocationAt)),
-        alreadyExporting: state.exporting,
-        mediaRecorderAvailable: Boolean(window.MediaRecorder),
-        captureStreamAvailable: typeof canvas.captureStream === "function",
-        visibilityState: document.visibilityState,
-      },
-    });
-    // #endregion
-    if (state.exporting || !window.MediaRecorder || !canvas.captureStream) {
-      if (!window.MediaRecorder || !canvas.captureStream) exportStatus.textContent = "المتصفح لا يدعم التصدير المباشر.";
-      return;
-    }
-
-    activeExportDebug = {
-      invocationAt,
-      recorderStartCalledAt: null,
-      lastRenderAt: null,
-      renderedFrames: 0,
-      maxRenderGapMs: 0,
-      firstRenderLogged: false,
-      largeGapLogged: false,
-      firstChunkLogged: false,
-      chunkEvents: 0,
-      totalChunkBytes: 0,
-      firstTimelineMs: null,
-      lastTimelineMs: null,
-      audioAnalyser: null,
-      maxAudioRms: 0,
-    };
-    const mimeTypes = [
-      "video/webm;codecs=vp8,opus",
-      "video/webm;codecs=vp9,opus",
-      "video/webm",
-    ];
-    const mimeType = mimeTypes.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
-    const stream = canvas.captureStream(30);
-    let exportAudioContext = null;
-    let exportSoundtrackDestination = null;
-
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioContextClass) {
-        exportAudioContext = new AudioContextClass();
-        const destination = exportAudioContext.createMediaStreamDestination();
-        exportSoundtrackDestination = exportAudioContext.createGain();
-        exportSoundtrackDestination.connect(destination);
-        const analyser = exportAudioContext.createAnalyser();
-        analyser.fftSize = 2_048;
-        exportSoundtrackDestination.connect(analyser);
-        activeExportDebug.audioAnalyser = analyser;
-        const audioTrack = destination.stream.getAudioTracks()[0];
-        if (audioTrack) stream.addTrack(audioTrack);
-        // #region agent log
-        agentDebugLog({
-          hypothesisId: "D",
-          location: "app.js:export-audio-setup",
-          message: "Export audio graph and track created",
-          data: {
-            contextState: exportAudioContext.state,
-            contextTime: exportAudioContext.currentTime,
-            sampleRate: exportAudioContext.sampleRate,
-            baseLatency: exportAudioContext.baseLatency ?? null,
-            trackPresent: Boolean(audioTrack),
-            trackReadyState: audioTrack?.readyState ?? null,
-            trackMuted: audioTrack?.muted ?? null,
-            trackEnabled: audioTrack?.enabled ?? null,
-          },
-        });
-        // #endregion
-      }
-
-      stopSound();
-      state.exporting = true;
-      state.exportTimelineStarted = false;
-      state.exportStartedAt = performance.now();
-      exportButton.disabled = true;
-      exportStatus.textContent = "جارٍ تهيئة محرّك الفيديو...";
-
-      const recorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: 12_000_000,
-        audioBitsPerSecond: 192_000,
-      });
-      const chunks = [];
-      recorder.addEventListener("start", () => {
-        state.exportStartedAt = performance.now();
-        state.exportTimelineStarted = true;
-        if (exportAudioContext && exportSoundtrackDestination) {
-          scheduleSoundtrack(exportAudioContext, exportSoundtrackDestination, exportAudioContext.currentTime);
-        }
-        window.setTimeout(() => {
-          if (recorder.state !== "inactive") recorder.stop();
-        }, AD_DURATION);
-        // #region agent log
-        agentDebugLog({
-          hypothesisId: "C",
-          location: "app.js:recorder-start-event",
-          message: "MediaRecorder emitted start",
-          data: {
-            lagFromStartCallMs: activeExportDebug?.recorderStartCalledAt == null
-              ? null
-              : Math.round(performance.now() - activeExportDebug.recorderStartCalledAt),
-            elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
-            recorderState: recorder.state,
-            exportTimelineMs: Math.round(currentTime()),
-          },
-        });
-        // #endregion
-      });
-      recorder.addEventListener("dataavailable", (event) => {
-        if (activeExportDebug) {
-          activeExportDebug.chunkEvents += 1;
-          activeExportDebug.totalChunkBytes += event.data.size;
-          const audioRms = readAnalyserRms(activeExportDebug.audioAnalyser);
-          if (audioRms != null) activeExportDebug.maxAudioRms = Math.max(activeExportDebug.maxAudioRms, audioRms);
-          if (!activeExportDebug.firstChunkLogged) {
-            activeExportDebug.firstChunkLogged = true;
-            // #region agent log
-            agentDebugLog({
-              hypothesisId: "A,B,D",
-              location: "app.js:first-dataavailable",
-              message: "First recorder chunk became available",
-              data: {
-                elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
-                chunkSize: event.data.size,
-                chunkType: event.data.type,
-                renderedFrames: activeExportDebug.renderedFrames,
-                maxRenderGapMs: Math.round(activeExportDebug.maxRenderGapMs),
-                audioRms,
-              },
-            });
-            // #endregion
-          }
-        }
-        if (event.data.size) chunks.push(event.data);
-      });
-
-      recorder.addEventListener("stop", () => {
-        // #region agent log
-        agentDebugLog({
-          hypothesisId: "A,B,D",
-          location: "app.js:recorder-stop-summary",
-          message: "Export runtime summary before cleanup",
-          data: {
-            elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
-            renderedFrames: activeExportDebug?.renderedFrames ?? null,
-            maxRenderGapMs: Math.round(activeExportDebug?.maxRenderGapMs ?? 0),
-            firstTimelineMs: activeExportDebug?.firstTimelineMs ?? null,
-            lastTimelineMs: activeExportDebug?.lastTimelineMs ?? null,
-            chunkEvents: activeExportDebug?.chunkEvents ?? null,
-            totalChunkBytes: activeExportDebug?.totalChunkBytes ?? null,
-            maxAudioRms: activeExportDebug?.maxAudioRms ?? null,
-            audioContextState: exportAudioContext?.state ?? null,
-            recorderState: recorder.state,
-          },
-        });
-        // #endregion
-        const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "laththa-cake-ad-1080x1920.webm";
-        document.body.append(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(url), 12_000);
-        exportAudioContext?.close();
-        stream.getTracks().forEach((track) => track.stop());
-        state.exporting = false;
-        state.exportTimelineStarted = false;
-        state.offset = 0;
-        state.startedAt = performance.now();
-        state.playing = true;
-        exportButton.disabled = false;
-        exportStatus.textContent = "تم التصدير ✓ الفيديو في مجلد التنزيلات";
-        if (state.soundEnabled) startLiveSoundtrack();
-        activeExportDebug = null;
-      });
-
-      state.exportStartedAt = performance.now();
-      recorder.start(250);
-      activeExportDebug.recorderStartCalledAt = performance.now();
-      const videoTrack = stream.getVideoTracks()[0];
-      // #region agent log
-      agentDebugLog({
-        hypothesisId: "B,C",
-        location: "app.js:recorder-start-called",
-        message: "Recorder start requested with capture tracks",
-        data: {
-          elapsedFromInvocationMs: Math.round(performance.now() - invocationAt),
-          recorderState: recorder.state,
-          recorderMimeType: recorder.mimeType,
-          streamTrackCount: stream.getTracks().length,
-          videoTrackReadyState: videoTrack?.readyState ?? null,
-          videoTrackMuted: videoTrack?.muted ?? null,
-          videoTrackEnabled: videoTrack?.enabled ?? null,
-          requestedFrameRate: 30,
-          captureFrameRate: videoTrack?.getSettings().frameRate ?? null,
-        },
-      });
-      // #endregion
-    } catch (error) {
-      exportAudioContext?.close();
-      stream.getTracks().forEach((track) => track.stop());
-      state.exporting = false;
-      state.exportTimelineStarted = false;
-      exportButton.disabled = false;
-      exportStatus.textContent = "تعذّر التصدير. جرّب Chrome أو Edge.";
-      activeExportDebug = null;
-      console.error(error);
-    }
-  }
-
   exportButton.addEventListener("click", downloadRenderedVideo);
 
   function render(now) {
     const time = currentTime(now);
-    if (state.exporting && activeExportDebug) {
-      activeExportDebug.renderedFrames += 1;
-      activeExportDebug.firstTimelineMs ??= Math.round(time);
-      activeExportDebug.lastTimelineMs = Math.round(time);
-      const renderGapMs = activeExportDebug.lastRenderAt == null ? 0 : now - activeExportDebug.lastRenderAt;
-      activeExportDebug.maxRenderGapMs = Math.max(activeExportDebug.maxRenderGapMs, renderGapMs);
-      if (!activeExportDebug.firstRenderLogged) {
-        activeExportDebug.firstRenderLogged = true;
-        // #region agent log
-        agentDebugLog({
-          hypothesisId: "A,C",
-          location: "app.js:first-export-render",
-          message: "First animation frame rendered during export",
-          data: {
-            elapsedFromExportStartMs: Math.round(now - state.exportStartedAt),
-            timelineMs: Math.round(time),
-            renderGapMs: Math.round(renderGapMs),
-          },
-        });
-        // #endregion
-      }
-      if (renderGapMs > 250 && !activeExportDebug.largeGapLogged) {
-        activeExportDebug.largeGapLogged = true;
-        // #region agent log
-        agentDebugLog({
-          hypothesisId: "A",
-          location: "app.js:export-render-gap",
-          message: "Large requestAnimationFrame gap detected",
-          data: {
-            renderGapMs: Math.round(renderGapMs),
-            timelineMs: Math.round(time),
-            renderedFrames: activeExportDebug.renderedFrames,
-            elapsedFromExportStartMs: Math.round(now - state.exportStartedAt),
-          },
-        });
-        // #endregion
-      }
-      activeExportDebug.lastRenderAt = now;
-    }
     drawFrame(context, time);
     timelineProgress.style.width = `${(time / AD_DURATION) * 100}%`;
     const activeScene = sceneAt(time);
     timelineButtons.forEach((button) => {
       button.classList.toggle("active", Number(button.dataset.seek) === activeScene.start);
     });
-    if (state.exporting) {
-      const percentage = Math.min(99, Math.floor((time / AD_DURATION) * 100));
-      exportStatus.textContent = `جارٍ بناء الفيديو والصوت... ${percentage}%`;
-    }
     window.requestAnimationFrame(render);
   }
 
@@ -1575,7 +1228,6 @@ function initializeApp() {
     drawFrame: (time) => drawFrame(context, clamp(Number(time), 0, AD_DURATION - (1_000 / EXPORT_FPS))),
     renderSoundtrackWavBase64,
     exportVideo: downloadRenderedVideo,
-    exportVideoRealtime,
     seek,
     getState: () => ({ ...state, audioContext: undefined, audioTimer: undefined }),
   };

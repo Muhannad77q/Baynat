@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 debug_server.py",
+    "dev": "python3 -m http.server 5173",
     "render": "node scripts/render-ad.mjs",
     "test": "node --test tests/*.test.js",
     "verify:video": "node scripts/render-ad.mjs --verify-only"
