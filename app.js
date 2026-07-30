@@ -1275,9 +1275,36 @@ async function requestJson(path, options = {}) {
     const error = new Error(payload.error?.message || "تعذّر إكمال الطلب.");
     error.code = payload.error?.code;
     error.status = response.status;
+    error.details = payload.error?.details || null;
     throw error;
   }
   return payload;
+}
+
+function solveBrowserChallenge(token, difficultyBits) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./pow-worker.js?v=1", import.meta.url));
+    const timeout = window.setTimeout(() => {
+      worker.terminate();
+      reject(new Error("استغرق التحقق الآمن وقتًا طويلًا. حاول مرة أخرى."));
+    }, 110_000);
+    const finish = (callback) => {
+      window.clearTimeout(timeout);
+      worker.terminate();
+      callback();
+    };
+    worker.addEventListener("message", (event) => {
+      if (Number.isSafeInteger(event.data?.counter)) {
+        finish(() => resolve(event.data.counter));
+      } else {
+        finish(() => reject(new Error("تعذّر إكمال التحقق الآمن.")));
+      }
+    });
+    worker.addEventListener("error", () => {
+      finish(() => reject(new Error("تعذّر تشغيل التحقق الآمن على هذا الجهاز.")));
+    });
+    worker.postMessage({ token, difficultyBits });
+  });
 }
 
 function saveSupervisorToken(token) {
@@ -1361,10 +1388,38 @@ async function submitSupervisorAccess(event) {
   refs.adminAuthSubmit.textContent =
     supervisorAuthMode === "setup" ? "جارٍ الحفظ..." : "جارٍ التحقق...";
   try {
-    const payload = await requestJson(`/api/admin/${supervisorAuthMode}`, {
-      method: "POST",
-      body: JSON.stringify({ password, setupKey }),
-    });
+    const endpoint = `/api/admin/${supervisorAuthMode}`;
+    const credentials = { password, setupKey };
+    let payload;
+    try {
+      payload = await requestJson(endpoint, {
+        method: "POST",
+        body: JSON.stringify(credentials),
+      });
+    } catch (error) {
+      const challengeToken = error.details?.challengeToken;
+      const difficultyBits = error.details?.difficultyBits;
+      if (
+        error.code !== "SUPERVISOR_PROOF_REQUIRED" ||
+        typeof challengeToken !== "string" ||
+        !Number.isInteger(difficultyBits)
+      ) {
+        throw error;
+      }
+      refs.adminAuthSubmit.textContent = "جارٍ تأمين الدخول...";
+      const challengeCounter = await solveBrowserChallenge(
+        challengeToken,
+        difficultyBits
+      );
+      payload = await requestJson(endpoint, {
+        method: "POST",
+        body: JSON.stringify({
+          ...credentials,
+          challengeToken,
+          challengeCounter,
+        }),
+      });
+    }
     saveSupervisorToken(payload.token);
     refs.adminAuthModal.close();
     showToast(

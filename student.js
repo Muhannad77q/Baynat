@@ -176,7 +176,7 @@ function solveAccessChallenge(token, difficultyBits) {
     const timeout = window.setTimeout(() => {
       worker.terminate();
       reject(new Error("استغرق تأمين الدخول وقتًا طويلًا. حاول مرة أخرى."));
-    }, 80_000);
+    }, 110_000);
     const finish = (callback) => {
       window.clearTimeout(timeout);
       worker.terminate();

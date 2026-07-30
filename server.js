@@ -3,7 +3,6 @@ import {
   createHmac,
   randomBytes,
   scrypt,
-  scryptSync,
   timingSafeEqual,
 } from "node:crypto";
 import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
@@ -27,8 +26,9 @@ const MAX_STUDENTS = 80;
 const ACCESS_WINDOW_MS = 10 * 60 * 1000;
 const SUPERVISOR_SESSION_MS = 12 * 60 * 60 * 1000;
 const SUPERVISOR_ATTEMPTS_LIMIT = 10;
-const ACCESS_CHALLENGE_MS = 90 * 1000;
+const ACCESS_CHALLENGE_MS = 2 * 60 * 1000;
 const MAX_RATE_LIMIT_KEYS = 2_000;
+const MAX_CONSUMED_PROOFS = 10_000;
 const QUIZ_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const QUIZ_CREATION_WINDOW_MS = 60 * 60 * 1000;
 const QUIZ_CREATION_IP_LIMIT = 5;
@@ -55,10 +55,11 @@ const MIME_TYPES = {
 };
 
 class HttpError extends Error {
-  constructor(status, message, code = "REQUEST_FAILED") {
+  constructor(status, message, code = "REQUEST_FAILED", details = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -162,10 +163,6 @@ function validateStoredData(parsed, initialSetupKey) {
       validStudents &&
       new Set(quiz.students.map((student) => student.id)).size === quiz.students.length &&
       new Set(quiz.students.map((student) => student.pinLookup)).size === quiz.students.length;
-    const uniqueStudentIdentities =
-      validStudents &&
-      new Set(quiz.students.map((student) => student.identityLookup)).size ===
-        quiz.students.length;
     const uniqueSubmissions =
       validSubmissions &&
       new Set(quiz.submissions.map((submission) => submission.id)).size ===
@@ -178,7 +175,6 @@ function validateStoredData(parsed, initialSetupKey) {
       !validSubmissions ||
       !validSessions ||
       !uniqueStudents ||
-      !uniqueStudentIdentities ||
       !uniqueSubmissions
     ) {
       throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
@@ -393,9 +389,14 @@ function hashPin(pin, salt = randomBytes(16).toString("base64url")) {
   });
 }
 
-function verifyPin(pin, student) {
-  const candidate = scryptSync(normalizeDigits(pin), student.pinSalt, 32).toString("hex");
-  return safeEqual(candidate, student.pinHash);
+async function verifyPin(pin, student) {
+  const candidate = await new Promise((resolve, reject) => {
+    scrypt(normalizeDigits(pin), student.pinSalt, 32, (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+  return safeEqual(candidate.toString("hex"), student.pinHash);
 }
 
 async function hashSupervisorPassword(password, salt = randomBytes(16).toString("base64url")) {
@@ -412,10 +413,15 @@ async function hashSupervisorPassword(password, salt = randomBytes(16).toString(
   };
 }
 
-function verifySupervisorPassword(password, credential) {
+async function verifySupervisorPassword(password, credential) {
   if (!credential) return false;
-  const candidate = scryptSync(String(password), credential.salt, 32).toString("hex");
-  return safeEqual(candidate, credential.hash);
+  const candidate = await new Promise((resolve, reject) => {
+    scrypt(String(password), credential.salt, 32, (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+  return safeEqual(candidate.toString("hex"), credential.hash);
 }
 
 function issueSupervisorToken(secret) {
@@ -508,23 +514,53 @@ function verifyAccessProof({
     !Number.isSafeInteger(numericCounter) ||
     numericCounter < 0
   ) {
-    return false;
+    return null;
   }
   const expiresAt = Number(expiresAtValue);
   if (expiresAt <= Date.now() || expiresAt > Date.now() + ACCESS_CHALLENGE_MS + 5_000) {
-    return false;
+    return null;
   }
   const expectedCredentialTag = createHmac("sha256", secret)
     .update(`credential:${quizId}:${credential}`)
     .digest("base64url");
-  if (!safeEqual(credentialTag, expectedCredentialTag)) return false;
+  if (!safeEqual(credentialTag, expectedCredentialTag)) return null;
   const payload = `${expiresAtValue}.${nonce}.${tokenDifficultyValue}.${credentialTag}`;
   const expectedSignature = createHmac("sha256", secret)
     .update(`access-proof:${quizId}:${payload}`)
     .digest("base64url");
-  if (!safeEqual(signature, expectedSignature)) return false;
+  if (!safeEqual(signature, expectedSignature)) return null;
   const digest = createHash("sha256").update(`${token}.${numericCounter}`).digest();
-  return hasLeadingZeroBits(digest, tokenDifficulty);
+  if (!hasLeadingZeroBits(digest, tokenDifficulty)) return null;
+  return { expiresAt, tokenHash: hashToken(token) };
+}
+
+function createProofReplayGuard() {
+  const consumed = new Map();
+  let nextCleanupAt = 0;
+  return ({ tokenHash, expiresAt }) => {
+    const now = Date.now();
+    if (now >= nextCleanupAt) {
+      for (const [key, expiry] of consumed) {
+        if (expiry <= now) consumed.delete(key);
+      }
+      nextCleanupAt = now + 1_000;
+    }
+    if (consumed.has(tokenHash)) {
+      throw new HttpError(
+        409,
+        "استُخدم تحقق الدخول مسبقًا. أعد المحاولة للحصول على تحقق جديد.",
+        "ACCESS_PROOF_REPLAYED"
+      );
+    }
+    if (consumed.size >= MAX_CONSUMED_PROOFS) {
+      throw new HttpError(
+        503,
+        "تعذّر بدء محاولة جديدة الآن. انتظر قليلًا ثم حاول مرة أخرى.",
+        "ACCESS_PROOF_CAPACITY"
+      );
+    }
+    consumed.set(tokenHash, expiresAt);
+  };
 }
 
 function publicStudent(student) {
@@ -534,6 +570,10 @@ function publicStudent(student) {
 function publicQuestion(quiz) {
   const { type, prompt, options, createdAt } = quiz.question;
   return { id: quiz.question.id, type, prompt, options, createdAt };
+}
+
+function publicQuestionSummary(quiz) {
+  return { type: quiz.question.type };
 }
 
 function acceptedAnswer(question) {
@@ -613,13 +653,6 @@ function sanitizeStudentInputs(students, secret, quizId) {
       validation.value.name,
       validation.value.className
     );
-    if (accepted.some((item) => item.identityLookup === identityLookup)) {
-      throw new HttpError(
-        400,
-        "يوجد طالب بالاسم والصف نفسيهما. أضف وصفًا مميزًا للاسم.",
-        "DUPLICATE_STUDENT_IDENTITY"
-      );
-    }
     if (accepted.some((item) => item.pinLookup === lookup)) {
       throw new HttpError(
         400,
@@ -771,22 +804,27 @@ function createQuizCreationLimiter(trustProxy) {
 
 function createSupervisorLimiter(trustProxy) {
   const attempts = new Map();
-  return (request, action = "check") => {
+  const recentAttempts = (request) => {
     const key = getClientIp(request, trustProxy);
     const now = Date.now();
     const recent = (attempts.get(key) || []).filter(
       (time) => now - time < ACCESS_WINDOW_MS
     );
-    if (recent.length >= SUPERVISOR_ATTEMPTS_LIMIT) {
-      throw new HttpError(
-        429,
-        "محاولات دخول كثيرة. انتظر قليلًا ثم حاول مرة أخرى.",
-        "SUPERVISOR_LOGIN_LIMIT"
-      );
-    }
-    if (action === "failure") recent.push(now);
-    if (action === "success") attempts.delete(key);
-    else setBoundedMap(attempts, key, recent);
+    setBoundedMap(attempts, key, recent);
+    return { key, now, recent };
+  };
+  return {
+    isLimited(request) {
+      return recentAttempts(request).recent.length >= SUPERVISOR_ATTEMPTS_LIMIT;
+    },
+    recordFailure(request) {
+      const { key, now, recent } = recentAttempts(request);
+      if (recent.length < SUPERVISOR_ATTEMPTS_LIMIT) recent.push(now);
+      setBoundedMap(attempts, key, recent);
+    },
+    clear(request) {
+      attempts.delete(getClientIp(request, trustProxy));
+    },
   };
 }
 
@@ -816,21 +854,33 @@ export async function createBaynatServer({
   dataFile = DEFAULT_DATA_FILE,
   trustProxy = process.env.TRUST_PROXY === "true",
   setupKey = process.env.BAYNAT_SETUP_KEY || "",
-  accessDifficultyBits = Number(process.env.BAYNAT_ACCESS_DIFFICULTY || 16),
+  accessDifficultyBits = Number(process.env.BAYNAT_ACCESS_DIFFICULTY || 20),
+  supervisorDifficultyBits = Number(process.env.BAYNAT_SUPERVISOR_DIFFICULTY || 16),
+  nodeEnvironment = process.env.NODE_ENV || "",
   logger = console,
 } = {}) {
   if (
     !Number.isInteger(accessDifficultyBits) ||
     accessDifficultyBits < 8 ||
     accessDifficultyBits > 24 ||
-    (process.env.NODE_ENV === "production" && accessDifficultyBits < 16)
+    (nodeEnvironment === "production" && accessDifficultyBits < 20)
   ) {
-    throw new Error("قيمة BAYNAT_ACCESS_DIFFICULTY يجب أن تكون بين 16 و24 في الإنتاج.");
+    throw new Error("قيمة BAYNAT_ACCESS_DIFFICULTY يجب أن تكون بين 20 و24 في الإنتاج.");
+  }
+  if (
+    !Number.isInteger(supervisorDifficultyBits) ||
+    supervisorDifficultyBits < 8 ||
+    supervisorDifficultyBits > 24 ||
+    (nodeEnvironment === "production" && supervisorDifficultyBits < 16)
+  ) {
+    throw new Error("قيمة BAYNAT_SUPERVISOR_DIFFICULTY يجب أن تكون بين 16 و24 في الإنتاج.");
   }
   const store = new JsonStore(dataFile, setupKey);
   await store.init();
+  const challengeSecret = randomBytes(32).toString("base64url");
+  const consumeProof = createProofReplayGuard();
   const recordQuizCreation = createQuizCreationLimiter(trustProxy);
-  const recordSupervisorAttempt = createSupervisorLimiter(trustProxy);
+  const supervisorLimiter = createSupervisorLimiter(trustProxy);
 
   const server = http.createServer(async (request, response) => {
     try {
@@ -872,10 +922,17 @@ export async function createBaynatServer({
             "SUPERVISOR_ALREADY_CONFIGURED"
           );
         }
-        recordSupervisorAttempt(request);
         const body = await readJsonBody(request);
         if (!store.data.setupKey || !safeEqual(body.setupKey, store.data.setupKey)) {
-          recordSupervisorAttempt(request, "failure");
+          const limited = supervisorLimiter.isLimited(request);
+          supervisorLimiter.recordFailure(request);
+          if (limited) {
+            throw new HttpError(
+              429,
+              "محاولات تهيئة كثيرة. أدخل مفتاح التهيئة الصحيح للمتابعة.",
+              "SUPERVISOR_SETUP_LIMIT"
+            );
+          }
           throw new HttpError(
             401,
             "مفتاح التهيئة غير صحيح. راجعه في سجل تشغيل الخادم.",
@@ -895,7 +952,7 @@ export async function createBaynatServer({
           data.adminCredential = credential;
           data.setupKey = null;
         });
-        recordSupervisorAttempt(request, "success");
+        supervisorLimiter.clear(request);
         json(
           response,
           201,
@@ -906,17 +963,44 @@ export async function createBaynatServer({
       }
 
       if (pathname === "/api/admin/login" && request.method === "POST") {
-        recordSupervisorAttempt(request);
-        const password = readSupervisorPassword(await readJsonBody(request));
-        if (!verifySupervisorPassword(password, store.data.adminCredential)) {
-          recordSupervisorAttempt(request, "failure");
+        const body = await readJsonBody(request);
+        const password = readSupervisorPassword(body);
+        if (supervisorLimiter.isLimited(request)) {
+          const proof = verifyAccessProof({
+            secret: challengeSecret,
+            quizId: "supervisor-login",
+            credential: password,
+            token: body.challengeToken,
+            counter: body.challengeCounter,
+            difficultyBits: supervisorDifficultyBits,
+          });
+          if (!proof) {
+            throw new HttpError(
+              429,
+              "أكمل التحقق الآمن للمتابعة دون انتظار.",
+              "SUPERVISOR_PROOF_REQUIRED",
+              {
+                challengeToken: issueAccessChallenge(
+                  challengeSecret,
+                  "supervisor-login",
+                  password,
+                  supervisorDifficultyBits
+                ),
+                difficultyBits: supervisorDifficultyBits,
+              }
+            );
+          }
+          consumeProof(proof);
+        }
+        if (!(await verifySupervisorPassword(password, store.data.adminCredential))) {
+          supervisorLimiter.recordFailure(request);
           throw new HttpError(
             401,
             "رمز المشرف غير صحيح.",
             "SUPERVISOR_LOGIN_REJECTED"
           );
         }
-        recordSupervisorAttempt(request, "success");
+        supervisorLimiter.clear(request);
         json(
           response,
           200,
@@ -1022,13 +1106,6 @@ export async function createBaynatServer({
             "DUPLICATE_PIN"
           );
         }
-        if (quiz.students.some((student) => student.identityLookup === identityLookup)) {
-          throw new HttpError(
-            409,
-            "يوجد طالب بالاسم والصف نفسيهما. أضف وصفًا مميزًا للاسم.",
-            "DUPLICATE_STUDENT_IDENTITY"
-          );
-        }
         const student = {
           id:
             typeof body.id === "string" && /^[a-zA-Z0-9_-]{3,80}$/.test(body.id)
@@ -1046,8 +1123,7 @@ export async function createBaynatServer({
             draftQuiz.students.some(
               (existing) =>
                 existing.id === student.id ||
-                existing.pinLookup === student.pinLookup ||
-                existing.identityLookup === student.identityLookup
+                existing.pinLookup === student.pinLookup
             )
           ) {
             throw new HttpError(
@@ -1099,7 +1175,7 @@ export async function createBaynatServer({
           200,
           {
             token: issueAccessChallenge(
-              store.data.secret,
+              challengeSecret,
               quiz.id,
               input.credential,
               accessDifficultyBits
@@ -1116,34 +1192,35 @@ export async function createBaynatServer({
         let quiz = requireQuiz(store, accessMatch[1]);
         const body = await readJsonBody(request);
         const input = readStudentAccessInput(body);
-        if (
-          !verifyAccessProof({
-            secret: store.data.secret,
-            quizId: quiz.id,
-            credential: input.credential,
-            token: body.challengeToken,
-            counter: body.challengeCounter,
-            difficultyBits: accessDifficultyBits,
-          })
-        ) {
+        const proof = verifyAccessProof({
+          secret: challengeSecret,
+          quizId: quiz.id,
+          credential: input.credential,
+          token: body.challengeToken,
+          counter: body.challengeCounter,
+          difficultyBits: accessDifficultyBits,
+        });
+        if (!proof) {
           throw new HttpError(
             400,
             "انتهى تحقق الدخول أو لم يكتمل. حاول مرة أخرى.",
             "INVALID_ACCESS_PROOF"
           );
         }
+        consumeProof(proof);
         const identityLookup = studentIdentityLookup(
           store.data.secret,
           input.name,
           input.className
         );
         const lookup = pinLookup(store.data.secret, quiz.id, input.pin);
-        const student = quiz.students.find(
+        const candidate = quiz.students.find(
           (item) =>
             item.identityLookup === identityLookup &&
-            item.pinLookup === lookup &&
-            verifyPin(input.pin, item)
+            item.pinLookup === lookup
         );
+        const student =
+          candidate && (await verifyPin(input.pin, candidate)) ? candidate : null;
         if (!student) {
           throw new HttpError(
             401,
@@ -1264,7 +1341,7 @@ export async function createBaynatServer({
           {
             quiz: {
               id: quiz.id,
-              question: publicQuestion(quiz),
+              question: publicQuestionSummary(quiz),
               participantCount: quiz.submissions.length,
             },
           },
@@ -1293,6 +1370,9 @@ export async function createBaynatServer({
             error: {
               code: error instanceof HttpError ? error.code : "INTERNAL_ERROR",
               message,
+              ...(error instanceof HttpError && error.details
+                ? { details: error.details }
+                : {}),
             },
           },
           securityHeaders()
