@@ -5,6 +5,7 @@ import {
   calculateSessionSummary,
   calculateTaskProgress,
   createInitialState,
+  createManagedPerson,
   filterStudents,
   getRoleNavigation,
   initialStudents,
@@ -75,4 +76,23 @@ test("exposes role-appropriate navigation and creates isolated state", () => {
   assert.deepEqual(supervisorRoutes, ["overview", "management", "reports", "brand"]);
   assert.equal(second.students[0].name, "عبدالله الشمري");
   assert.equal(first.brandId, "gate");
+});
+
+test("creates student and supervisor records for supervisor management", () => {
+  const student = createManagedPerson(
+    "student",
+    { name: "فارس التجربة", subtitle: "المستوى التمهيدي", username: "faris-demo" },
+    42
+  );
+  const supervisor = createManagedPerson(
+    "supervisor",
+    { name: "أمل السالم", subtitle: "مشرفة برامج", username: "amal" },
+    99
+  );
+
+  assert.equal(student.id, "student-42");
+  assert.equal(student.attendance, "present");
+  assert.equal(student.level, "المستوى التمهيدي");
+  assert.equal(supervisor.id, "supervisor-99");
+  assert.equal(supervisor.role, "supervisor");
 });

@@ -412,6 +412,38 @@ export function createInitialState() {
   };
 }
 
+export function createManagedPerson(kind, { name, subtitle, username }, seed = Date.now()) {
+  if (kind === "student") {
+    const alternatePalette = Number(seed) % 2 === 0;
+    return {
+      id: `student-${seed}`,
+      name,
+      level: subtitle,
+      attendance: "present",
+      memorization: "",
+      memorizationPages: 0,
+      recitation: 4,
+      review: "",
+      reinforcement: "",
+      tafsirRead: false,
+      notes: "",
+      avatarColor: alternatePalette ? "#e8f3ed" : "#e9f2f8",
+      avatarText: alternatePalette ? "#187052" : "#467da9",
+    };
+  }
+
+  const role = kind === "supervisor" ? "supervisor" : "teacher";
+  return {
+    id: `${role}-${seed}`,
+    name,
+    role,
+    subtitle,
+    username,
+    avatarColor: role === "supervisor" ? "#eeecf9" : "#e8f3ed",
+    avatarText: role === "supervisor" ? "#7061ab" : "#187052",
+  };
+}
+
 function loadState() {
   if (typeof window === "undefined") return createInitialState();
 
@@ -475,6 +507,11 @@ function formatNumber(value, options = {}) {
 function formatScore(score) {
   if (!score) return "—";
   return Number.isInteger(score) ? String(score) : Number(score).toFixed(1);
+}
+
+function givenName(name = "") {
+  const parts = name.split(/\s+/);
+  return parts[0] === "عبد" && parts[1] ? `${parts[0]} ${parts[1]}` : parts[0];
 }
 
 function getInitials(name = "") {
@@ -662,7 +699,7 @@ function formatToday() {
 function renderTeacherPage(view) {
   const summary = calculateSessionSummary(state.students);
   const heading = pageHeading(
-    view === "attendance" ? "الحضور والتسميع" : `أهلًا بك، شيخ ${activeUser.name.split(" ")[0]}`,
+    view === "attendance" ? "الحضور والتسميع" : `أهلًا بك، شيخ ${givenName(activeUser.name)}`,
     view === "attendance" ? "حدّث حضور الطالب وإنجازه في جلسة اليوم." : "موجز هادئ لكل ما تحتاجه قبل بدء الحلقة.",
     {
       actions:
@@ -904,7 +941,7 @@ function renderParentPage(view) {
 
   return `
     <div class="page">
-      ${pageHeading(`أهلًا بك، ${activeUser.name.split(" ")[0]}`, "تتابع رحلة عبدالله من الحفظ حتى التثبيت.", {
+      ${pageHeading(`أهلًا بك، ${givenName(activeUser.name)}`, "تتابع رحلة عبدالله من الحفظ حتى التثبيت.", {
         actions: `<button class="secondary-action" type="button" data-toast="تم إرسال رسالة تشجيع لعبدالله.">${icon("message")} رسالة تشجيع</button>`,
       })}
       ${renderChildHero(child, taskProgress, "عبدالله يقترب من إتمام ورد هذا الأسبوع.")}
@@ -1036,7 +1073,7 @@ function renderStudentPage(view) {
 
   return `
     <div class="page">
-      ${pageHeading(`أهلًا يا ${student.name.split(" ")[0]}`, "أنت قريب من تسميع جديد ومميّز.", {
+      ${pageHeading(`أهلًا يا ${givenName(student.name)}`, "أنت قريب من تسميع جديد ومميّز.", {
         actions: `<span class="today-chip"><i></i> ${formatNumber(taskProgress.percentage)}٪ مكتمل</span>`,
       })}
       ${renderChildHero(student, taskProgress, "ابدأ بالمهمة الأصغر، ثم احتفل بإنجازك بعد كل تسميع.")}
@@ -1399,33 +1436,9 @@ function addPerson(event) {
   if (!name || !subtitle || !username) return;
 
   if (kind === "student") {
-    const hue = state.students.length % 2 === 0;
-    state.students.push({
-      id: `student-${Date.now()}`,
-      name,
-      level: subtitle,
-      attendance: "present",
-      memorization: "",
-      memorizationPages: 0,
-      recitation: 4,
-      review: "",
-      reinforcement: "",
-      tafsirRead: false,
-      notes: "",
-      avatarColor: hue ? "#e8f3ed" : "#e9f2f8",
-      avatarText: hue ? "#187052" : "#467da9",
-    });
+    state.students.push(createManagedPerson(kind, { name, subtitle, username }));
   } else {
-    const role = kind === "supervisor" ? "supervisor" : "teacher";
-    state.staff.push({
-      id: `${role}-${Date.now()}`,
-      name,
-      role,
-      subtitle,
-      username,
-      avatarColor: role === "supervisor" ? "#eeecf9" : "#e8f3ed",
-      avatarText: role === "supervisor" ? "#7061ab" : "#187052",
-    });
+    state.staff.push(createManagedPerson(kind, { name, subtitle, username }));
   }
 
   persistState();
