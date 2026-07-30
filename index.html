@@ -1,202 +1,211 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Search Trail — answers, graphs, photos, and match insight</title>
+    <title>بينات | منصة متابعة حلقات القرآن</title>
     <meta
       name="description"
-      content="Search Trail is a dark AI search concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight."
+      content="بينات منصة عربية لإدارة حلقات القرآن ومتابعة الطالب من قبل المعلّم وولي الأمر والمشرف."
     />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Tajawal:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=3" />
   </head>
   <body>
-    <div class="background-glow" aria-hidden="true"></div>
+    <div class="ambient ambient--one" aria-hidden="true"></div>
+    <div class="ambient ambient--two" aria-hidden="true"></div>
 
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Search Trail home">
-        <img src="./logo.svg" alt="" />
-        <span>Search Trail</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#demo">Demo</a>
-        <a href="#features">Features</a>
-        <a href="#themes">Theme photos</a>
-      </nav>
-      <a class="header-cta" href="#demo">Try a question</a>
-    </header>
+    <section class="auth-screen" id="authScreen" aria-labelledby="authTitle">
+      <div class="auth-screen__halo" aria-hidden="true"></div>
+      <div class="auth-layout">
+        <section class="auth-intro">
+          <a class="auth-brand" href="#authScreen" aria-label="بينات">
+            <span class="brand-mark" id="authBrandMark"></span>
+            <span>بينات</span>
+          </a>
+          <div class="auth-intro__content">
+            <span class="section-kicker">منصة الحلقة المتكاملة</span>
+            <h1>كل رحلة حفظ<br /><em>تستحق أن تُتابَع.</em></h1>
+            <p>
+              مساحة واحدة تربط المعلّم والطالب وولي الأمر والمشرف، من الحضور حتى التثبيت والتفسير.
+            </p>
+          </div>
+          <div class="auth-orbit" aria-hidden="true">
+            <span class="orbit-dot orbit-dot--one"></span>
+            <span class="orbit-dot orbit-dot--two"></span>
+            <span class="orbit-dot orbit-dot--three"></span>
+            <span class="orbit-card">
+              <b>٤٫٨</b>
+              <small>متوسط التلاوة</small>
+            </span>
+            <span class="orbit-card orbit-card--small">
+              <b>٩٢٪</b>
+              <small>حضور الحلقة</small>
+            </span>
+          </div>
+          <p class="auth-footnote">بُنِيت لتكون واضحة، هادئة، وقريبة من كل أسرة.</p>
+        </section>
 
-    <main id="top">
-      <section class="hero-section">
-        <div class="hero-copy">
-          <p class="eyebrow">Fast AI search concept</p>
-          <h1>Ask anything. Follow the answer trail.</h1>
-          <p class="hero-lede">
-            Search Trail turns questions into clear answers, live-style graphs, study ideas, photo generation prompts,
-            football match summaries, and next steps in one polished dark workspace.
-          </p>
+        <section class="login-card" aria-label="تسجيل الدخول">
+          <div class="login-card__top">
+            <span class="login-card__eyebrow">مرحبًا بك</span>
+            <h2 id="authTitle">ادخل إلى مساحتك</h2>
+            <p>اختر نوع حسابك ثم ابدأ التجربة.</p>
+          </div>
 
-          <form class="hero-search" id="searchForm">
-            <label class="sr-only" for="searchInput">Ask Search Trail</label>
-            <input
-              id="searchInput"
-              name="query"
-              type="search"
-              autocomplete="off"
-              placeholder="Ask about KSA population, science homework, photos, football matches..."
-            />
-            <button type="submit">Search</button>
+          <div class="role-picker" id="rolePicker" aria-label="اختيار نوع الحساب">
+            <button class="role-choice is-selected" type="button" data-auth-role="teacher">
+              <span class="role-choice__icon">ع</span>
+              <span><b>معلّم</b><small>إدارة الحلقة</small></span>
+            </button>
+            <button class="role-choice" type="button" data-auth-role="parent">
+              <span class="role-choice__icon role-choice__icon--parent">و</span>
+              <span><b>ولي أمر</b><small>متابعة الابن</small></span>
+            </button>
+            <button class="role-choice" type="button" data-auth-role="student">
+              <span class="role-choice__icon role-choice__icon--student">ط</span>
+              <span><b>طالب</b><small>خطة التسميع</small></span>
+            </button>
+            <button class="role-choice" type="button" data-auth-role="supervisor">
+              <span class="role-choice__icon role-choice__icon--supervisor">م</span>
+              <span><b>مشرف</b><small>إدارة المنصة</small></span>
+            </button>
+          </div>
+
+          <form class="login-form" id="loginForm">
+            <label class="input-group">
+              <span>اسم المستخدم</span>
+              <div>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-1.4a4.1 4.1 0 0 1 4.1-4.1h5.8a4.1 4.1 0 0 1 4.1 4.1V20M12 9.2a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2Z" /></svg>
+                <input id="usernameInput" name="username" autocomplete="username" placeholder="مثال: teacher" required />
+              </div>
+            </label>
+            <label class="input-group">
+              <span>كلمة المرور</span>
+              <div>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                <input id="passwordInput" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required />
+                <button class="password-toggle" id="passwordToggle" type="button" aria-label="إظهار كلمة المرور">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.4" /></svg>
+                </button>
+              </div>
+            </label>
+            <p class="login-error" id="loginError" role="alert"></p>
+            <button class="primary-action primary-action--full" type="submit">
+              دخول إلى بينات
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
           </form>
 
-          <div class="example-grid" aria-label="Example searches">
-            <button type="button" data-query="People living in KSA for the past 10 years and what changed in 2025">
-              KSA population graph
+          <div class="demo-access">
+            <div>
+              <b>تجربة سريعة</b>
+              <span>استخدم الحساب التجريبي وكلمة المرور 123456</span>
+            </div>
+            <button class="text-link" id="demoLoginButton" type="button">دخول تجريبي</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <div class="portal" id="portal" hidden>
+      <aside class="side-rail" id="sideRail">
+        <div class="side-rail__top">
+          <a class="portal-brand" href="#mainContent" aria-label="الرئيسية">
+            <span class="brand-mark" id="portalBrandMark"></span>
+            <span>بينات</span>
+          </a>
+          <button class="icon-button side-close" id="sideClose" type="button" aria-label="إغلاق القائمة">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+
+        <div class="circle-summary" id="circleSummary">
+          <span class="circle-summary__label">المساحة الحالية</span>
+          <strong>حلقة الفجر</strong>
+          <span>مسجد الهدى · ١٠ طلاب</span>
+          <i></i>
+        </div>
+
+        <nav class="portal-nav" id="mainNav" aria-label="التنقل الرئيسي"></nav>
+
+        <div class="side-rail__bottom">
+          <button class="help-button" type="button" data-toast="مركز المساعدة سيكون متاحًا قريبًا.">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17h.01M9.1 9a3 3 0 1 1 4.95 2.28c-.93.8-2.05 1.45-2.05 2.72v.5M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" /></svg>
+            مركز المساعدة
+          </button>
+          <div class="session-user" id="sessionUser"></div>
+          <button class="logout-button" id="logoutButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M14 5h3a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-3" /></svg>
+            تسجيل الخروج
+          </button>
+        </div>
+      </aside>
+
+      <div class="side-overlay" id="sideOverlay"></div>
+
+      <div class="portal-content">
+        <header class="topbar">
+          <button class="icon-button menu-button" id="sideToggle" type="button" aria-label="فتح القائمة">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+          <div class="breadcrumb" id="breadcrumb"></div>
+          <div class="topbar-actions">
+            <span class="role-badge" id="roleBadge"></span>
+            <button class="icon-button notification-button" type="button" data-toast="لديك تحديثان جديدان في حلقة الفجر." aria-label="التنبيهات">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9A6 6 0 0 0 6 9c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+              <i></i>
             </button>
-            <button type="button" data-query="Help me with a school science search about photosynthesis and give ideas">
-              School science ideas
-            </button>
-            <button type="button" data-query="Generate a high quality photo of a futuristic football stadium at night">
-              Photo prompt
-            </button>
-            <button type="button" data-query="What happened in the latest football match and who had momentum">
-              Football match insight
+            <button class="mood-toggle" id="moodToggle" type="button" aria-pressed="false">
+              <span class="mood-toggle__sun">☼</span>
+              <span class="mood-toggle__moon">☾</span>
+              <b id="moodLabel">وضع ليلي</b>
             </button>
           </div>
-        </div>
+        </header>
 
-        <aside class="hero-visual" aria-label="Search Trail preview">
-          <div class="result-window">
-            <div class="window-bar">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="trail-card active">
-              <p class="eyebrow">Best answer</p>
-              <h2>KSA population trail</h2>
-              <p>Shows ten-year movement, highlights 2025, and explains the jump in plain language.</p>
-            </div>
-            <div class="mini-chart" aria-hidden="true">
-              <span style="height: 38%"></span>
-              <span style="height: 42%"></span>
-              <span style="height: 47%"></span>
-              <span style="height: 51%"></span>
-              <span style="height: 56%"></span>
-              <span style="height: 64%"></span>
-              <span style="height: 70%"></span>
-              <span style="height: 77%"></span>
-              <span style="height: 86%"></span>
-              <span style="height: 94%"></span>
-            </div>
-            <div class="visual-row">
-              <div class="photo-tile">4K image prompt</div>
-              <div class="score-tile">2 - 1<br /><small>match pulse</small></div>
-            </div>
+        <main id="mainContent" tabindex="-1"></main>
+      </div>
+    </div>
+
+    <dialog class="person-dialog" id="personDialog">
+      <form id="personForm">
+        <div class="dialog-header">
+          <div>
+            <span class="section-kicker" id="personDialogKicker">إدارة المنصة</span>
+            <h2 id="personDialogTitle">إضافة طالب</h2>
           </div>
-        </aside>
-      </section>
-
-      <section class="demo-section" id="demo">
-        <div class="section-copy">
-          <p class="eyebrow">Interactive demo</p>
-          <h2>One search box, many answer types.</h2>
-          <p>
-            This demo runs locally in the browser. A production version can connect real search, sports, image, and data APIs.
-          </p>
+          <button class="icon-button" id="personDialogClose" type="button" aria-label="إغلاق">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
         </div>
-
-        <div class="answer-layout">
-          <article class="answer-card" id="answerCard" aria-live="polite">
-            <div class="answer-header">
-              <div>
-                <p class="eyebrow" id="answerType">Data answer</p>
-                <h3 id="answerTitle">KSA population: ten-year trend with 2025 highlight</h3>
-              </div>
-              <span class="speed-pill">Fast answer</span>
-            </div>
-            <p id="answerSummary">
-              Saudi Arabia's population trend rises across the decade in this sample trail. The 2025 point is highlighted so you can quickly see the latest jump and compare it with previous years.
-            </p>
-            <ul class="answer-list" id="answerList"></ul>
-            <div class="chart-panel" id="chartPanel" aria-label="Population chart"></div>
-            <div class="media-panel" id="mediaPanel"></div>
-          </article>
-
-          <aside class="insight-stack">
-            <div class="stat-card">
-              <strong>&lt; 1s</strong>
-              <span>local demo response</span>
-            </div>
-            <div class="stat-card">
-              <strong>10</strong>
-              <span>theme photos generated</span>
-            </div>
-            <div class="stat-card">
-              <strong>All</strong>
-              <span>answers, ideas, photos, charts</span>
-            </div>
-          </aside>
+        <input id="personKindInput" name="kind" type="hidden" value="student" />
+        <label class="input-group">
+          <span>الاسم الكامل</span>
+          <div><input id="personNameInput" name="name" required placeholder="مثال: عمر عبدالله" /></div>
+        </label>
+        <label class="input-group">
+          <span id="personSubtitleLabel">المستوى</span>
+          <div><input id="personSubtitleInput" name="subtitle" required placeholder="المستوى المتوسط" /></div>
+        </label>
+        <label class="input-group">
+          <span>اسم المستخدم</span>
+          <div><input id="personUsernameInput" name="username" required placeholder="مثال: omar" /></div>
+        </label>
+        <div class="dialog-actions">
+          <button class="secondary-action" id="personDialogCancel" type="button">إلغاء</button>
+          <button class="primary-action" type="submit">إضافة الآن</button>
         </div>
-      </section>
+      </form>
+    </dialog>
 
-      <section class="feature-section" id="features">
-        <div class="section-copy">
-          <p class="eyebrow">What it can become</p>
-          <h2>Search for facts, visuals, classes, and games.</h2>
-        </div>
-        <div class="feature-grid">
-          <article>
-            <span class="feature-icon">01</span>
-            <h3>Best answers fast</h3>
-            <p>Summaries start with the answer, then add bullets, sources, and next steps for deeper research.</p>
-          </article>
-          <article>
-            <span class="feature-icon">02</span>
-            <h3>Graphs from questions</h3>
-            <p>Ask for changes over time and Search Trail turns the data into a readable visual trail.</p>
-          </article>
-          <article>
-            <span class="feature-icon">03</span>
-            <h3>High-quality photos</h3>
-            <p>Describe any scene and get a polished image prompt with style, lighting, lens, and detail guidance.</p>
-          </article>
-          <article>
-            <span class="feature-icon">04</span>
-            <h3>School research helper</h3>
-            <p>Science searches can become explanations, experiment ideas, outlines, and project angles.</p>
-          </article>
-          <article>
-            <span class="feature-icon">05</span>
-            <h3>Football match pulse</h3>
-            <p>Follow score, momentum, key moments, players, and tactical changes in a compact match card.</p>
-          </article>
-          <article>
-            <span class="feature-icon">06</span>
-            <h3>Everything you ask</h3>
-            <p>The interface adapts the answer style to the question: data, creative, learning, sports, or general search.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="theme-section" id="themes">
-        <div class="section-copy">
-          <p class="eyebrow">Pick and edit</p>
-          <h2>10 dark theme photo directions.</h2>
-          <p>Use these directions to choose the Search Trail mood before refining colors, graphics, and layout.</p>
-        </div>
-        <div class="theme-grid" id="themeGrid"></div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <span>Search Trail</span>
-      <p>Dark AI search website concept for answers, graphs, photos, school, and football.</p>
-    </footer>
-
-    <script type="module" src="./app.js?v=1"></script>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js?v=3"></script>
   </body>
 </html>

@@ -1,58 +1,114 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildSearchTrailAnswer,
-  calculatePopulationJump,
-  ksaPopulationSeries,
-  parseSearchIntent,
-  themeDirections,
+  authenticateAccountCollection,
+  authenticateDemoAccount,
+  calculateSessionSummary,
+  calculateTaskProgress,
+  createInitialState,
+  createManagedPerson,
+  filterStudents,
+  getRoleNavigation,
+  initialStudents,
+  normalizeArabic,
 } from "../app.js";
 
-test("classifies Search Trail prompt types", () => {
-  assert.equal(parseSearchIntent("People living in KSA for the past 10 years and changes in 2025"), "population");
-  assert.equal(parseSearchIntent("School science search about photosynthesis with ideas"), "school");
-  assert.equal(parseSearchIntent("Generate a high quality photo of a stadium"), "photo");
-  assert.equal(parseSearchIntent("Latest football match score and momentum"), "football");
-  assert.equal(parseSearchIntent(""), "empty");
-  assert.equal(parseSearchIntent("Explain why oceans are blue"), "general");
+test("authenticates each demo role with the matching credentials", () => {
+  const teacher = authenticateDemoAccount("teacher", "123456", "teacher");
+  const parent = authenticateDemoAccount("parent", "123456", "parent");
+  const invalidRole = authenticateDemoAccount("teacher", "123456", "parent");
+  const invalidPassword = authenticateDemoAccount("student", "bad-password", "student");
+
+  assert.equal(teacher.name, "عبد الرحمن العتيبي");
+  assert.equal(parent.childId, "abdullah-alshammari");
+  assert.equal(invalidRole, null);
+  assert.equal(invalidPassword, null);
 });
 
-test("calculates the highlighted 2025 population jump", () => {
-  assert.deepEqual(calculatePopulationJump(ksaPopulationSeries, 2024, 2025), {
-    fromYear: 2024,
-    toYear: 2025,
-    change: 0.6,
-    percent: 1.6,
+test("normalizes Arabic spelling variants for student search", () => {
+  assert.equal(normalizeArabic("إبراهيم"), "ابراهيم");
+  assert.equal(normalizeArabic("هُدَى"), "هدي");
+  assert.equal(normalizeArabic("الرَّحْمَـن"), "الرحمن");
+});
+
+test("filters students by Arabic name and attendance state", () => {
+  const ibrahim = filterStudents(initialStudents, "ابراهيم");
+  const late = filterStudents(initialStudents, "", "late");
+  const absent = filterStudents(initialStudents, "", "absent");
+
+  assert.deepEqual(ibrahim.map((student) => student.name), ["إبراهيم الغامدي"]);
+  assert.deepEqual(late.map((student) => student.name), ["زياد محمد"]);
+  assert.deepEqual(absent.map((student) => student.name), ["بدر الدوسري"]);
+});
+
+test("summarizes attendance and learning metrics for today's session", () => {
+  assert.deepEqual(calculateSessionSummary(initialStudents), {
+    total: 10,
+    present: 8,
+    late: 1,
+    absent: 1,
+    memorizationPages: 18,
+    recitationAverage: 4.4,
+    tafsirRead: 7,
+    attendanceRate: 80,
   });
 });
 
-test("builds population answer with ten-year graph data", () => {
-  const answer = buildSearchTrailAnswer("people living in KSA from past 10 years and show 2025 jump");
-
-  assert.equal(answer.intent, "population");
-  assert.equal(answer.graph.length, 10);
-  assert.equal(answer.graph.at(-1).year, 2025);
-  assert.match(answer.bullets.join(" "), /\+6\.5M/);
-  assert.match(answer.bullets.join(" "), /\+0\.6M/);
+test("calculates a student's assignment progress", () => {
+  assert.deepEqual(
+    calculateTaskProgress([
+      { complete: true },
+      { complete: false },
+      { complete: false },
+      { complete: true },
+    ]),
+    { total: 4, complete: 2, percentage: 50 }
+  );
+  assert.deepEqual(calculateTaskProgress([]), { total: 0, complete: 0, percentage: 0 });
 });
 
-test("builds school science answer with project ideas", () => {
-  const answer = buildSearchTrailAnswer("got search in school for science it write it and give ideas");
+test("exposes role-appropriate navigation and creates isolated state", () => {
+  const supervisorRoutes = getRoleNavigation("supervisor").map((item) => item.id);
+  const first = createInitialState();
+  const second = createInitialState();
 
-  assert.equal(answer.intent, "school");
-  assert.match(answer.summary, /school research/i);
-  assert.ok(answer.bullets.some((bullet) => bullet.includes("Project idea")));
+  first.students[0].name = "اسم معدل";
+
+  assert.deepEqual(supervisorRoutes, ["overview", "management", "reports", "brand"]);
+  assert.equal(second.students[0].name, "عبدالله الشمري");
+  assert.equal(first.brandId, "gate");
 });
 
-test("builds image generation answer with editable media prompt", () => {
-  const answer = buildSearchTrailAnswer("generate photos high quality graphics football stadium");
+test("creates student and supervisor records for supervisor management", () => {
+  const student = createManagedPerson(
+    "student",
+    { name: "فارس التجربة", subtitle: "المستوى التمهيدي", username: "faris-demo" },
+    42
+  );
+  const supervisor = createManagedPerson(
+    "supervisor",
+    { name: "أمل السالم", subtitle: "مشرفة برامج", username: "amal" },
+    99
+  );
 
-  assert.equal(answer.intent, "photo");
-  assert.match(answer.bullets.join(" "), /4K realism/);
-  assert.equal(answer.media.label, "Generated photo direction");
+  assert.equal(student.id, "student-42");
+  assert.equal(student.attendance, "present");
+  assert.equal(student.level, "المستوى التمهيدي");
+  assert.equal(supervisor.id, "supervisor-99");
+  assert.equal(supervisor.role, "supervisor");
 });
 
-test("includes ten editable dark theme directions", () => {
-  assert.equal(themeDirections.length, 10);
-  assert.equal(new Set(themeDirections.map((theme) => theme.name)).size, 10);
+test("accepts a locally managed account after a supervisor creates it", () => {
+  const accounts = [
+    {
+      id: "supervisor-99",
+      name: "أمل السالم",
+      role: "supervisor",
+      username: "amal",
+      password: "123456",
+    },
+  ];
+
+  assert.equal(authenticateAccountCollection(accounts, "amal", "123456", "supervisor").name, "أمل السالم");
+  assert.equal(authenticateAccountCollection(accounts, "amal", "123456", "teacher"), null);
 });
