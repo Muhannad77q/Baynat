@@ -309,16 +309,20 @@ export function normalizeArabic(value = "") {
     .trim();
 }
 
-export function authenticateDemoAccount(username, password, role) {
+export function authenticateAccountCollection(accounts, username, password, role) {
   const normalizedUsername = normalizeArabic(username);
   return (
-    demoAccounts.find(
+    accounts.find(
       (account) =>
         normalizeArabic(account.username) === normalizedUsername &&
         account.password === password &&
         account.role === role
     ) || null
   );
+}
+
+export function authenticateDemoAccount(username, password, role) {
+  return authenticateAccountCollection(demoAccounts, username, password, role);
 }
 
 export function filterStudents(students, query = "", attendance = "all") {
@@ -401,6 +405,7 @@ export function getRoleNavigation(role) {
 
 export function createInitialState() {
   return {
+    accounts: demoAccounts.map((account) => ({ ...account })),
     students: initialStudents.map((student) => ({ ...student })),
     staff: initialStaff.map((member) => ({ ...member })),
     tasks: initialTasks.map((task) => ({ ...task })),
@@ -457,6 +462,7 @@ function loadState() {
     return {
       ...initial,
       ...saved,
+      accounts: Array.isArray(saved.accounts) ? saved.accounts : initial.accounts,
       selectedStudentId: saved.students.some((student) => student.id === saved.selectedStudentId)
         ? saved.selectedStudentId
         : saved.students[0].id,
@@ -473,8 +479,8 @@ function loadState() {
 function persistState() {
   if (typeof window === "undefined") return;
   try {
-    const { students, staff, tasks, selectedStudentId, brandId } = state;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ students, staff, tasks, selectedStudentId, brandId }));
+    const { accounts, students, staff, tasks, selectedStudentId, brandId } = state;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ accounts, students, staff, tasks, selectedStudentId, brandId }));
   } catch {
     // The portal remains usable when browser storage is unavailable.
   }
@@ -485,7 +491,7 @@ function loadActiveUser() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(AUTH_KEY) || "null");
     if (!saved?.id) return null;
-    return demoAccounts.find((account) => account.id === saved.id) || null;
+    return state.accounts.find((account) => account.id === saved.id) || null;
   } catch {
     return null;
   }
@@ -1436,15 +1442,42 @@ function addPerson(event) {
   if (!name || !subtitle || !username) return;
 
   if (kind === "student") {
-    state.students.push(createManagedPerson(kind, { name, subtitle, username }));
+    const student = createManagedPerson(kind, { name, subtitle, username });
+    state.students.push(student);
+    state.accounts.push({
+      id: student.id,
+      role: "student",
+      name,
+      username,
+      password: "123456",
+      subtitle: `طالب · ${subtitle}`,
+      childId: student.id,
+      avatarColor: student.avatarColor,
+      avatarText: student.avatarText,
+    });
   } else {
-    state.staff.push(createManagedPerson(kind, { name, subtitle, username }));
+    const member = createManagedPerson(kind, { name, subtitle, username });
+    state.staff.push(member);
+    state.accounts.push({
+      id: member.id,
+      role: member.role,
+      name,
+      username,
+      password: "123456",
+      subtitle,
+      avatarColor: member.avatarColor,
+      avatarText: member.avatarText,
+    });
   }
 
   persistState();
   refs.personDialog.close();
   renderMain();
-  showToast(kind === "student" ? `تمت إضافة ${name} إلى حلقة الفجر.` : `تمت إضافة ${name} إلى فريق العمل.`);
+  showToast(
+    kind === "student"
+      ? `تمت إضافة ${name} إلى حلقة الفجر. اسم المستخدم: ${username}`
+      : `تمت إضافة ${name} إلى فريق العمل. اسم المستخدم: ${username}`
+  );
 }
 
 function applyTheme(theme) {
@@ -1483,7 +1516,7 @@ function logout() {
 
 function handleLogin(event) {
   event.preventDefault();
-  const account = authenticateDemoAccount(refs.usernameInput.value, refs.passwordInput.value, selectedAuthRole);
+  const account = authenticateAccountCollection(state.accounts, refs.usernameInput.value, refs.passwordInput.value, selectedAuthRole);
   if (!account) {
     refs.loginError.textContent = "تأكد من نوع الحساب، واسم المستخدم، وكلمة المرور التجريبية.";
     return;

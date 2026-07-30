@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  authenticateAccountCollection,
   authenticateDemoAccount,
   calculateSessionSummary,
   calculateTaskProgress,
@@ -95,4 +96,19 @@ test("creates student and supervisor records for supervisor management", () => {
   assert.equal(student.level, "المستوى التمهيدي");
   assert.equal(supervisor.id, "supervisor-99");
   assert.equal(supervisor.role, "supervisor");
+});
+
+test("accepts a locally managed account after a supervisor creates it", () => {
+  const accounts = [
+    {
+      id: "supervisor-99",
+      name: "أمل السالم",
+      role: "supervisor",
+      username: "amal",
+      password: "123456",
+    },
+  ];
+
+  assert.equal(authenticateAccountCollection(accounts, "amal", "123456", "supervisor").name, "أمل السالم");
+  assert.equal(authenticateAccountCollection(accounts, "amal", "123456", "teacher"), null);
 });
