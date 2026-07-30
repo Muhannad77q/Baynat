@@ -7,7 +7,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -57,6 +57,99 @@ class HttpError extends Error {
   }
 }
 
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateStoredData(parsed) {
+  if (
+    parsed?.version !== 1 ||
+    typeof parsed.secret !== "string" ||
+    parsed.secret.length < 20 ||
+    !isRecord(parsed.quizzes)
+  ) {
+    throw new Error("إصدار أو بنية ملف بيانات بَيّنات غير مدعومة؛ لن تتم الكتابة فوقه.");
+  }
+
+  let migrated = false;
+  for (const [quizId, quiz] of Object.entries(parsed.quizzes)) {
+    const validQuiz =
+      isRecord(quiz) &&
+      quiz.id === quizId &&
+      validateQuestion(quiz.question).valid &&
+      Array.isArray(quiz.students) &&
+      Array.isArray(quiz.submissions) &&
+      isRecord(quiz.sessions) &&
+      typeof quiz.adminTokenHash === "string" &&
+      Number.isFinite(new Date(quiz.createdAt).getTime());
+    const validStudents =
+      validQuiz &&
+      quiz.students.every(
+        (student) =>
+          typeof student?.id === "string" &&
+          typeof student.name === "string" &&
+          typeof student.className === "string" &&
+          typeof student.pinLookup === "string" &&
+          typeof student.pinSalt === "string" &&
+          typeof student.pinHash === "string"
+      );
+    const validSubmissions =
+      validQuiz &&
+      quiz.submissions.every(
+        (submission) =>
+          typeof submission?.id === "string" &&
+          typeof submission.studentId === "string" &&
+          submission.questionId === quiz.question.id &&
+          typeof submission.answer === "string" &&
+          typeof submission.isCorrect === "boolean" &&
+          Number.isFinite(submission.elapsedMs) &&
+          Number.isFinite(new Date(submission.submittedAt).getTime())
+      );
+    const validSessions =
+      validQuiz &&
+      Object.values(quiz.sessions).every(
+        (session) =>
+          typeof session?.tokenHash === "string" &&
+          typeof session.studentId === "string" &&
+          Number.isFinite(new Date(session.createdAt).getTime())
+      );
+    const uniqueStudents =
+      validStudents &&
+      new Set(quiz.students.map((student) => student.id)).size === quiz.students.length &&
+      new Set(quiz.students.map((student) => student.pinLookup)).size === quiz.students.length;
+    const uniqueSubmissions =
+      validSubmissions &&
+      new Set(quiz.submissions.map((submission) => submission.id)).size ===
+        quiz.submissions.length &&
+      new Set(quiz.submissions.map((submission) => submission.studentId)).size ===
+        quiz.submissions.length;
+    if (
+      !validQuiz ||
+      !validStudents ||
+      !validSubmissions ||
+      !validSessions ||
+      !uniqueStudents ||
+      !uniqueSubmissions
+    ) {
+      throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
+    }
+
+    if (!isRecord(quiz.starts)) {
+      quiz.starts = {};
+      migrated = true;
+    }
+    if (!quiz.expiresAt) {
+      quiz.expiresAt = new Date(
+        new Date(quiz.createdAt).getTime() + QUIZ_RETENTION_MS
+      ).toISOString();
+      migrated = true;
+    } else if (!Number.isFinite(new Date(quiz.expiresAt).getTime())) {
+      throw new Error("تاريخ انتهاء غرفة في ملف بَيّنات غير صالح.");
+    }
+  }
+  return { data: parsed, migrated };
+}
+
 class JsonStore {
   constructor(filePath) {
     this.filePath = filePath;
@@ -86,11 +179,22 @@ class JsonStore {
         this.close();
         throw new Error("ملف بيانات بَيّنات تالف؛ تم إيقاف الخادم لحماية البيانات.");
       }
-      if (parsed?.version !== 1 || !parsed.secret || !parsed.quizzes) {
+      let validated;
+      try {
+        validated = validateStoredData(parsed);
+      } catch (error) {
         this.close();
-        throw new Error("إصدار ملف بيانات بَيّنات غير مدعوم؛ لن تتم الكتابة فوقه.");
+        throw error;
       }
-      this.data = parsed;
+      this.data = validated.data;
+      if (validated.migrated) {
+        try {
+          await this.persist();
+        } catch (error) {
+          this.close();
+          throw error;
+        }
+      }
       return;
     }
 
@@ -109,39 +213,21 @@ class JsonStore {
 
   async acquireLock() {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      this.lockFd = openSync(this.lockPath, "wx", 0o600);
       try {
-        this.lockFd = openSync(this.lockPath, "wx", 0o600);
-        try {
-          writeFileSync(this.lockFd, String(process.pid));
-        } catch (error) {
-          this.close();
-          throw error;
-        }
-        return;
+        writeFileSync(this.lockFd, String(process.pid));
       } catch (error) {
-        if (error.code !== "EEXIST") throw error;
-        let lockPid = null;
-        try {
-          lockPid = Number((await readFile(this.lockPath, "utf8")).trim());
-        } catch {
-          // An unreadable lock is treated as active to avoid unsafe concurrent writes.
-        }
-        let active = true;
-        if (Number.isInteger(lockPid) && lockPid > 0) {
-          try {
-            process.kill(lockPid, 0);
-          } catch (processError) {
-            if (processError.code === "ESRCH") active = false;
-          }
-        }
-        if (active || attempt === 1) {
-          throw new Error(
-            "ملف بيانات بَيّنات مستخدم من خادم آخر. شغّل نسخة واحدة فقط لكل ملف بيانات."
-          );
-        }
-        await unlink(this.lockPath).catch(() => {});
+        this.close();
+        throw error;
       }
+    } catch (error) {
+      if (error.code === "EEXIST") {
+        throw new Error(
+          "ملف بيانات بَيّنات مقفول. تأكد من توقف الخادم الآخر قبل حذف ملف ‎.lock يدويًا."
+        );
+      }
+      throw error;
     }
   }
 
@@ -318,7 +404,7 @@ function sanitizeQuestion(question, quizId) {
   return cleaned;
 }
 
-async function sanitizeStudents(students, secret, quizId) {
+function sanitizeStudentInputs(students, secret, quizId) {
   if (!Array.isArray(students) || students.length === 0) {
     throw new HttpError(400, "أضف طالبًا واحدًا على الأقل قبل نشر السؤال.", "EMPTY_ROSTER");
   }
@@ -336,6 +422,9 @@ async function sanitizeStudents(students, secret, quizId) {
       typeof student.id === "string" && /^[a-zA-Z0-9_-]{3,80}$/.test(student.id)
         ? student.id
         : `student-${randomBytes(7).toString("base64url")}`;
+    if (accepted.some((item) => item.id === id)) {
+      throw new HttpError(400, "معرّف الطالب مكرر.", "INVALID_STUDENT");
+    }
     const lookup = pinLookup(secret, quizId, validation.value.pin);
     if (accepted.some((item) => item.pinLookup === lookup)) {
       throw new HttpError(
@@ -344,16 +433,27 @@ async function sanitizeStudents(students, secret, quizId) {
         "INVALID_STUDENT"
       );
     }
-    const pinData = await hashPin(validation.value.pin);
     accepted.push({
       id,
       name: validation.value.name,
       className: validation.value.className,
+      pin: validation.value.pin,
       pinLookup: lookup,
-      ...pinData,
     });
   }
   return accepted;
+}
+
+async function hashStudentInputs(students) {
+  const secured = [];
+  for (const student of students) {
+    const { pin, ...publicFields } = student;
+    secured.push({
+      ...publicFields,
+      ...(await hashPin(pin)),
+    });
+  }
+  return secured;
 }
 
 function requireQuiz(store, quizId) {
@@ -394,10 +494,37 @@ function getClientIp(request, trustProxy) {
     .trim();
 }
 
+function getDeviceId(request) {
+  const cookies = String(request.headers.cookie || "").split(";");
+  const value = cookies
+    .map((cookie) => cookie.trim().split("="))
+    .find(([name]) => name === "baynat_device")?.[1];
+  return value && /^[A-Za-z0-9_-]{20,80}$/.test(value) ? value : "";
+}
+
+function createDeviceCookie(request, quizId, trustProxy) {
+  if (getDeviceId(request)) return null;
+  const secure =
+    Boolean(request.socket.encrypted) ||
+    (trustProxy && request.headers["x-forwarded-proto"] === "https");
+  return [
+    `baynat_device=${randomBytes(24).toString("base64url")}`,
+    `Path=/api/quizzes/${quizId}`,
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${Math.floor(QUIZ_RETENTION_MS / 1000)}`,
+    secure ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
 function createAccessLimiter(trustProxy) {
   const attempts = new Map();
   return (request, quizId, recordFailure = false) => {
-    const key = `${quizId}:${getClientIp(request, trustProxy)}`;
+    const deviceId = getDeviceId(request);
+    const client = deviceId ? `device:${deviceId}` : `ip:${getClientIp(request, trustProxy)}`;
+    const key = `${quizId}:${client}`;
     const now = Date.now();
     const recent = (attempts.get(key) || []).filter((time) => now - time < ACCESS_WINDOW_MS);
     if (recent.length >= ACCESS_ATTEMPTS_LIMIT) {
@@ -415,7 +542,7 @@ function createAccessLimiter(trustProxy) {
 function createQuizCreationLimiter(trustProxy) {
   const byIp = new Map();
   let globalAttempts = [];
-  return (request) => {
+  return (request, recordCreation = false) => {
     const now = Date.now();
     const ip = getClientIp(request, trustProxy);
     const recentForIp = (byIp.get(ip) || []).filter(
@@ -432,8 +559,10 @@ function createQuizCreationLimiter(trustProxy) {
         "QUIZ_CREATION_LIMIT"
       );
     }
-    recentForIp.push(now);
-    globalAttempts.push(now);
+    if (recordCreation) {
+      recentForIp.push(now);
+      globalAttempts.push(now);
+    }
     byIp.set(ip, recentForIp);
   };
 }
@@ -481,12 +610,16 @@ export async function createBaynatServer({
       }
 
       if (pathname === "/api/quizzes" && request.method === "POST") {
-        recordQuizCreation(request);
+        if (request.headers["sec-fetch-site"] === "cross-site") {
+          throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
+        }
         const body = await readJsonBody(request);
         const quizId = randomBytes(6).toString("base64url");
         const adminToken = randomBytes(32).toString("base64url");
         const question = sanitizeQuestion(body.question, quizId);
-        const students = await sanitizeStudents(body.students, store.data.secret, quizId);
+        const studentInputs = sanitizeStudentInputs(body.students, store.data.secret, quizId);
+        recordQuizCreation(request, true);
+        const students = await hashStudentInputs(studentInputs);
         const createdAt = new Date();
         const quiz = {
           id: quizId,
@@ -578,6 +711,18 @@ export async function createBaynatServer({
         };
         await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
+          if (
+            draftQuiz.students.some(
+              (existing) =>
+                existing.id === student.id || existing.pinLookup === student.pinLookup
+            )
+          ) {
+            throw new HttpError(
+              409,
+              "الطالب أو رمز الدخول مضاف بالفعل.",
+              "DUPLICATE_STUDENT"
+            );
+          }
           draftQuiz.students.push(student);
           draftQuiz.updatedAt = new Date().toISOString();
         });
@@ -612,7 +757,7 @@ export async function createBaynatServer({
 
       const accessMatch = pathname.match(/^\/api\/quizzes\/([A-Za-z0-9_-]+)\/access$/);
       if (accessMatch && request.method === "POST") {
-        const quiz = requireQuiz(store, accessMatch[1]);
+        let quiz = requireQuiz(store, accessMatch[1]);
         recordAccessAttempt(request, quiz.id);
         const body = await readJsonBody(request);
         const pin = normalizeDigits(body.pin || "");
@@ -644,6 +789,7 @@ export async function createBaynatServer({
           };
           draftQuiz.updatedAt = new Date().toISOString();
         });
+        quiz = requireQuiz(store, accessMatch[1]);
         const existing = quiz.submissions.find(
           (submission) => submission.studentId === student.id
         );
@@ -673,26 +819,27 @@ export async function createBaynatServer({
           throw new HttpError(400, "اكتب إجابة صالحة قبل الإرسال.", "INVALID_ANSWER");
         }
 
-        let submission = quiz.submissions.find((item) => item.studentId === student.id);
-        if (!submission) {
-          const startedAt = Number(session.startedAt) || new Date(session.createdAt).getTime();
-          const elapsedMs = Math.max(0, Date.now() - startedAt);
-          submission = {
+        const startedAt = Number(session.startedAt) || new Date(session.createdAt).getTime();
+        const submission = await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          const existing = draftQuiz.submissions.find(
+            (item) => item.studentId === student.id
+          );
+          if (existing) return existing;
+          const created = {
             id: `submission-${randomBytes(8).toString("base64url")}`,
             studentId: student.id,
-            questionId: quiz.question.id,
+            questionId: draftQuiz.question.id,
             answer,
-            isCorrect: isAnswerCorrect(quiz.question, answer),
-            elapsedMs,
+            isCorrect: isAnswerCorrect(draftQuiz.question, answer),
+            elapsedMs: Math.max(0, Date.now() - startedAt),
             submittedAt: new Date().toISOString(),
           };
-          await store.update((data) => {
-            const draftQuiz = data.quizzes[quiz.id];
-            draftQuiz.submissions.push(submission);
-            draftQuiz.updatedAt = new Date().toISOString();
-          });
-          quiz = requireQuiz(store, submissionMatch[1]);
-        }
+          draftQuiz.submissions.push(created);
+          draftQuiz.updatedAt = new Date().toISOString();
+          return created;
+        });
+        quiz = requireQuiz(store, submissionMatch[1]);
         json(
           response,
           200,
@@ -730,6 +877,7 @@ export async function createBaynatServer({
       const quizMatch = pathname.match(/^\/api\/quizzes\/([A-Za-z0-9_-]+)$/);
       if (quizMatch && request.method === "GET") {
         const quiz = requireQuiz(store, quizMatch[1]);
+        const deviceCookie = createDeviceCookie(request, quiz.id, trustProxy);
         json(
           response,
           200,
@@ -740,7 +888,10 @@ export async function createBaynatServer({
               participantCount: quiz.submissions.length,
             },
           },
-          securityHeaders()
+          {
+            ...securityHeaders(),
+            ...(deviceCookie ? { "Set-Cookie": deviceCookie } : {}),
+          }
         );
         return;
       }

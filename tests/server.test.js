@@ -55,7 +55,7 @@ test("shares one server-backed quiz across independent student sessions", async 
 
   await assert.rejects(
     createBaynatServer({ dataFile }),
-    /شغّل نسخة واحدة فقط/
+    /ملف بيانات بَيّنات مقفول/
   );
 
   const created = await request(firstRun.baseUrl, "/api/quizzes", {
@@ -85,6 +85,7 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal("correctAnswer" in publicQuiz.payload.quiz.question, false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("4821"), false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("سارة"), false);
+  assert.match(publicQuiz.response.headers.get("set-cookie") || "", /baynat_device=/);
 
   const rejectedAccess = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
@@ -155,18 +156,26 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(duplicate.payload.result.entry.id, sarahSubmission.payload.result.entry.id);
   assert.equal(duplicate.payload.result.entry.isCorrect, true);
 
-  const addedStudent = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/students`, {
-    method: "POST",
-    headers: { "X-Admin-Token": adminToken },
-    body: JSON.stringify({
-      id: "student-reem",
-      name: "ريم السبيعي",
-      className: "٢ / ج",
-      pin: "2468",
-    }),
-  });
-  assert.equal(addedStudent.response.status, 201);
-  assert.equal(addedStudent.payload.student.name, "ريم السبيعي");
+  const addStudentRequest = () =>
+    request(firstRun.baseUrl, `/api/quizzes/${quizId}/students`, {
+      method: "POST",
+      headers: { "X-Admin-Token": adminToken },
+      body: JSON.stringify({
+        id: "student-reem",
+        name: "ريم السبيعي",
+        className: "٢ / ج",
+        pin: "2468",
+      }),
+    });
+  const concurrentAdds = await Promise.all([addStudentRequest(), addStudentRequest()]);
+  assert.deepEqual(
+    concurrentAdds.map((result) => result.response.status).sort(),
+    [201, 409]
+  );
+  assert.equal(
+    concurrentAdds.find((result) => result.response.status === 201).payload.student.name,
+    "ريم السبيعي"
+  );
 
   const reemAccess = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
@@ -175,13 +184,30 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(reemAccess.response.status, 200);
   assert.equal(reemAccess.payload.student.id, "student-reem");
 
+  const concurrentSubmissions = await Promise.all(
+    Array.from({ length: 8 }, () =>
+      request(firstRun.baseUrl, `/api/quizzes/${quizId}/submissions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${reemAccess.payload.token}` },
+        body: JSON.stringify({ answer: "المريخ" }),
+      })
+    )
+  );
+  assert.ok(concurrentSubmissions.every((result) => result.response.status === 200));
+  assert.equal(
+    new Set(
+      concurrentSubmissions.map((result) => result.payload.result.entry.id)
+    ).size,
+    1
+  );
+
   const adminSnapshot = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/admin`, {
     headers: { "X-Admin-Token": adminToken },
   });
   assert.equal(adminSnapshot.response.status, 200);
   assert.equal(adminSnapshot.payload.quiz.students.length, 3);
-  assert.equal(adminSnapshot.payload.quiz.submissions.length, 2);
-  assert.equal(adminSnapshot.payload.quiz.leaderboard[0].student.name, "عمر الحربي");
+  assert.equal(adminSnapshot.payload.quiz.submissions.length, 3);
+  assert.equal(adminSnapshot.payload.quiz.leaderboard.length, 3);
 
   await close(firstRun.server);
   const secondRun = await listen(dataFile);
@@ -192,7 +218,7 @@ test("shares one server-backed quiz across independent student sessions", async 
     headers: { "X-Admin-Token": adminToken },
   });
   assert.equal(persisted.response.status, 200);
-  assert.equal(persisted.payload.quiz.submissions.length, 2);
+  assert.equal(persisted.payload.quiz.submissions.length, 3);
   assert.equal(persisted.payload.quiz.students.length, 3);
 });
 
@@ -261,7 +287,9 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
       `/api/quizzes/${created.payload.quizId}/access`,
       {
         method: "POST",
-        headers: { "X-Forwarded-For": `198.51.100.${attempt + 1}` },
+        headers: {
+          "X-Forwarded-For": `198.51.100.${attempt + 1}`,
+        },
         body: JSON.stringify({ pin: "0000" }),
       }
     );
@@ -272,23 +300,53 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
     `/api/quizzes/${created.payload.quizId}/access`,
     {
       method: "POST",
-      headers: { "X-Forwarded-For": "203.0.113.250" },
+      headers: {
+        "X-Forwarded-For": "203.0.113.250",
+      },
       body: JSON.stringify({ pin: "0000" }),
     }
   );
   assert.equal(rateLimited.response.status, 429);
   assert.equal(rateLimited.payload.error.code, "TOO_MANY_ATTEMPTS");
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const sameNetworkStudent = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/access`,
+    {
+      method: "POST",
+      headers: { Cookie: "baynat_device=legitimate-device-00000001" },
+      body: JSON.stringify({ pin: "4821" }),
+    }
+  );
+  assert.equal(sameNetworkStudent.response.status, 200);
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
     const invalidCreation = await request(baseUrl, "/api/quizzes", {
       method: "POST",
       body: JSON.stringify({}),
     });
     assert.equal(invalidCreation.response.status, 400);
   }
+
+  const validQuizBody = JSON.stringify({
+    question: {
+      type: "boolean",
+      prompt: "الأرض تدور حول الشمس.",
+      options: ["صح", "خطأ"],
+      correctAnswer: "صح",
+    },
+    students: [{ name: "عمر الحربي", className: "٢ / أ", pin: "7350" }],
+  });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const allowedCreation = await request(baseUrl, "/api/quizzes", {
+      method: "POST",
+      body: validQuizBody,
+    });
+    assert.equal(allowedCreation.response.status, 201);
+  }
   const creationLimited = await request(baseUrl, "/api/quizzes", {
     method: "POST",
-    body: JSON.stringify({}),
+    body: validQuizBody,
   });
   assert.equal(creationLimited.response.status, 429);
   assert.equal(creationLimited.payload.error.code, "QUIZ_CREATION_LIMIT");
@@ -360,18 +418,67 @@ test("never acknowledges a submission that failed to persist", async (context) =
   assert.equal(persisted.payload.quiz.submissions.length, 1);
 });
 
+test("migrates legacy rooms onto the 31-day expiration policy", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-expiry-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const firstRun = await listen(dataFile);
+  context.after(async () => {
+    if (firstRun.server.listening) await close(firstRun.server);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const created = await request(firstRun.baseUrl, "/api/quizzes", {
+    method: "POST",
+    body: JSON.stringify({
+      question: {
+        type: "boolean",
+        prompt: "السماء زرقاء في النهار.",
+        options: ["صح", "خطأ"],
+        correctAnswer: "صح",
+      },
+      students: [{ name: "سارة القحطاني", className: "٢ / أ", pin: "4821" }],
+    }),
+  });
+  await close(firstRun.server);
+
+  const stored = JSON.parse(await readFile(dataFile, "utf8"));
+  const legacyQuiz = stored.quizzes[created.payload.quizId];
+  const fortyDaysAgo = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+  legacyQuiz.createdAt = fortyDaysAgo;
+  legacyQuiz.question.createdAt = fortyDaysAgo;
+  delete legacyQuiz.expiresAt;
+  await writeFile(dataFile, `${JSON.stringify(stored, null, 2)}\n`);
+
+  const secondRun = await listen(dataFile);
+  context.after(async () => {
+    if (secondRun.server.listening) await close(secondRun.server);
+  });
+  const expired = await request(
+    secondRun.baseUrl,
+    `/api/quizzes/${created.payload.quizId}`
+  );
+  assert.equal(expired.response.status, 410);
+  assert.equal(expired.payload.error.code, "QUIZ_EXPIRED");
+  const migrated = JSON.parse(await readFile(dataFile, "utf8"));
+  assert.ok(migrated.quizzes[created.payload.quizId].expiresAt);
+});
+
 test("refuses to overwrite unsupported database files", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "baynat-schema-"));
   const dataFile = path.join(directory, "baynat.json");
-  const unsupported = '{"version":999,"important":"keep-me"}\n';
   await mkdir(directory, { recursive: true });
-  await writeFile(dataFile, unsupported);
   try {
-    await assert.rejects(
-      createBaynatServer({ dataFile }),
-      /إصدار ملف بيانات بَيّنات غير مدعوم/
-    );
-    assert.equal(await readFile(dataFile, "utf8"), unsupported);
+    for (const unsupported of [
+      '{"version":999,"important":"keep-me"}\n',
+      '{"version":1,"secret":"123456789012345678901234","quizzes":[]}\n',
+    ]) {
+      await writeFile(dataFile, unsupported);
+      await assert.rejects(
+        createBaynatServer({ dataFile }),
+        /إصدار أو بنية ملف بيانات بَيّنات غير مدعومة/
+      );
+      assert.equal(await readFile(dataFile, "utf8"), unsupported);
+    }
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
