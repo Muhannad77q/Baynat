@@ -850,8 +850,11 @@ function renderAnswerEditor() {
       const row = createElement("div", "editor-option");
       const input = document.createElement("input");
       input.type = "text";
+      input.id = `questionOption-${index}`;
+      input.name = `questionOption${index + 1}`;
       input.value = option;
       input.maxLength = 70;
+      input.autocomplete = "off";
       input.placeholder = `الخيار ${formatNumber(index + 1)}`;
       input.dataset.optionIndex = String(index);
       input.setAttribute("aria-label", `الخيار ${formatNumber(index + 1)}`);
@@ -890,8 +893,11 @@ function renderAnswerEditor() {
   const wrapper = createElement("div", "short-answer-wrap");
   const input = document.createElement("input");
   input.type = "text";
+  input.id = "shortCorrectAnswer";
+  input.name = "shortCorrectAnswer";
   input.className = "short-answer-input";
   input.maxLength = 300;
+  input.autocomplete = "off";
   input.value = editorState.correctAnswer || "";
   input.placeholder = "اكتب الإجابة النموذجية القصيرة";
   input.dataset.shortAnswer = "true";
@@ -1220,6 +1226,8 @@ function renderAdminLeaderboard() {
 
 async function requestJson(path, options = {}) {
   let response;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12_000);
   try {
     response = await fetch(path, {
       ...options,
@@ -1227,10 +1235,12 @@ async function requestJson(path, options = {}) {
         "Content-Type": "application/json",
         ...(options.headers || {}),
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: controller.signal,
     });
   } catch {
     throw new Error("تعذّر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.");
+  } finally {
+    window.clearTimeout(timeout);
   }
 
   let payload = {};

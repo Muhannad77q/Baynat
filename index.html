@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=2" />
+    <link rel="stylesheet" href="./styles.css?v=3" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -638,12 +638,12 @@
         </div>
         <div class="field-group">
           <label class="field-label" for="studentName">اسم الطالب</label>
-          <input id="studentName" name="name" type="text" maxlength="60" placeholder="مثال: سارة القحطاني" required />
+          <input id="studentName" name="name" type="text" maxlength="60" autocomplete="name" placeholder="مثال: سارة القحطاني" required />
         </div>
         <div class="form-row">
           <div class="field-group">
             <label class="field-label" for="studentClass">الصف</label>
-            <input id="studentClass" name="className" type="text" maxlength="20" placeholder="مثال: ٢ / أ" required />
+            <input id="studentClass" name="className" type="text" maxlength="20" autocomplete="off" placeholder="مثال: ٢ / أ" required />
           </div>
           <div class="field-group">
             <label class="field-label" for="newStudentPin">رمز الدخول</label>
@@ -653,6 +653,7 @@
               type="text"
               inputmode="numeric"
               maxlength="4"
+              autocomplete="off"
               placeholder="٤ أرقام"
               required
             />
@@ -702,6 +703,6 @@
       <span id="toastMessage">تم الحفظ بنجاح</span>
     </div>
 
-    <script type="module" src="./app.js?v=2"></script>
+    <script type="module" src="./app.js?v=3"></script>
   </body>
 </html>

@@ -131,6 +131,8 @@ function showError(title, message) {
 
 async function requestJson(path, options = {}) {
   let response;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12_000);
   try {
     response = await fetch(path, {
       ...options,
@@ -138,10 +140,12 @@ async function requestJson(path, options = {}) {
         "Content-Type": "application/json",
         ...(options.headers || {}),
       },
-      signal: AbortSignal.timeout(12_000),
+      signal: controller.signal,
     });
   } catch {
     throw new Error("تعذّر الاتصال بالتطبيق. تحقق من الإنترنت وحاول مرة أخرى.");
+  } finally {
+    window.clearTimeout(timeout);
   }
 
   let payload = {};
@@ -265,6 +269,11 @@ function startTimer() {
   stopTimer();
   timerStartedAt = performance.now();
   refs.studentTimer.textContent = formatTimer(0);
+  resumeTimer();
+}
+
+function resumeTimer() {
+  stopTimer();
   timerInterval = window.setInterval(() => {
     refs.studentTimer.textContent = formatTimer(performance.now() - timerStartedAt);
   }, 100);
@@ -312,7 +321,7 @@ async function submitAnswer(event) {
     startLeaderboardPolling();
   } catch (error) {
     refs.answerError.textContent = error.message;
-    startTimer();
+    resumeTimer();
   } finally {
     setButtonLoading(refs.submitAnswerButton, false, "إرسال الإجابة");
   }
@@ -404,9 +413,14 @@ function stopLeaderboardPolling() {
 
 function setButtonLoading(button, loading, text) {
   button.disabled = loading;
-  const icon = button.querySelector("svg");
   button.replaceChildren(document.createTextNode(text));
-  if (!loading && icon) button.append(icon);
+  if (!loading) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", "#icon-arrow");
+    svg.append(use);
+    button.append(svg);
+  }
 }
 
 function showToast(message, isError = false) {

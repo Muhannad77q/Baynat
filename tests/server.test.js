@@ -42,6 +42,10 @@ test("shares one server-backed quiz across independent student sessions", async 
     await rm(directory, { recursive: true, force: true });
   });
 
+  const studentPage = await fetch(`${firstRun.baseUrl}/student.html`);
+  assert.equal(studentPage.status, 200);
+  assert.match(await studentPage.text(), /بوابة الطالب/);
+
   const created = await request(firstRun.baseUrl, "/api/quizzes", {
     method: "POST",
     body: JSON.stringify({
@@ -216,4 +220,38 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
   );
   assert.equal(unauthorized.response.status, 401);
   assert.equal(unauthorized.payload.error.code, "ADMIN_UNAUTHORIZED");
+
+  for (let attempt = 0; attempt < 22; attempt += 1) {
+    const validAccess = await request(
+      baseUrl,
+      `/api/quizzes/${created.payload.quizId}/access`,
+      {
+        method: "POST",
+        body: JSON.stringify({ pin: "4821" }),
+      }
+    );
+    assert.equal(validAccess.response.status, 200);
+  }
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const failedAccess = await request(
+      baseUrl,
+      `/api/quizzes/${created.payload.quizId}/access`,
+      {
+        method: "POST",
+        body: JSON.stringify({ pin: "0000" }),
+      }
+    );
+    assert.equal(failedAccess.response.status, 401);
+  }
+  const rateLimited = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/access`,
+    {
+      method: "POST",
+      body: JSON.stringify({ pin: "0000" }),
+    }
+  );
+  assert.equal(rateLimited.response.status, 429);
+  assert.equal(rateLimited.payload.error.code, "TOO_MANY_ATTEMPTS");
 });

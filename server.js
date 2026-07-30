@@ -285,7 +285,7 @@ function getClientIp(request) {
 
 function createAccessLimiter() {
   const attempts = new Map();
-  return (request, quizId) => {
+  return (request, quizId, recordFailure = false) => {
     const key = `${quizId}:${getClientIp(request)}`;
     const now = Date.now();
     const recent = (attempts.get(key) || []).filter((time) => now - time < ACCESS_WINDOW_MS);
@@ -296,7 +296,7 @@ function createAccessLimiter() {
         "TOO_MANY_ATTEMPTS"
       );
     }
-    recent.push(now);
+    if (recordFailure) recent.push(now);
     attempts.set(key, recent);
   };
 }
@@ -471,10 +471,14 @@ export async function createBaynatServer({ dataFile = DEFAULT_DATA_FILE } = {}) 
         const lookup = pinLookup(store.data.secret, quiz.id, pin);
         const student = quiz.students.find((item) => item.pinLookup === lookup);
         if (!student || !verifyPin(pin, student)) {
+          recordAccessAttempt(request, quiz.id, true);
           throw new HttpError(401, "الرمز غير صحيح. تأكد منه أو اطلبه من المشرف.", "PIN_REJECTED");
         }
         const token = randomBytes(32).toString("base64url");
         await store.update(() => {
+          quiz.sessions = Object.fromEntries(
+            Object.entries(quiz.sessions).filter(([, session]) => session.studentId !== student.id)
+          );
           quiz.sessions[hashToken(token)] = {
             tokenHash: hashToken(token),
             studentId: student.id,
