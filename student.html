@@ -13,7 +13,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=3" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
   </head>
   <body class="student-mode">
     <svg class="icon-sprite" aria-hidden="true">
@@ -83,12 +83,22 @@
           <div class="student-card access-card">
             <span class="student-kicker">مرحبًا بك 👋</span>
             <h1>جاهز لسؤال اليوم؟</h1>
-            <p>أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.</p>
+            <p>اكتب اسمك كما سجّله المشرف، ثم أدخل رمزك المكوّن من ٤ أرقام.</p>
             <div class="question-ready-chip">
               <span></span>
               <b id="accessQuestionType">سؤال اليوم متاح</b>
             </div>
             <form id="studentAccessForm" novalidate>
+              <label for="studentFullName">اسم الطالب</label>
+              <input
+                id="studentFullName"
+                name="studentName"
+                type="text"
+                maxlength="60"
+                autocomplete="name"
+                placeholder="مثال: سارة القحطاني"
+                aria-describedby="pinError"
+              />
               <label for="studentPin">رمز الدخول</label>
               <input
                 id="studentPin"
@@ -198,6 +208,6 @@
       <span id="toastMessage">تم تحديث الترتيب</span>
     </div>
 
-    <script type="module" src="./student.js?v=2"></script>
+    <script type="module" src="./student.js?v=3"></script>
   </body>
 </html>

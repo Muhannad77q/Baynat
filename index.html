@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -633,6 +633,17 @@
         <span class="section-label">لوحة المشرف</span>
         <h2 id="adminAuthTitle">دخول المشرف</h2>
         <p id="adminAuthDescription">أدخل رمز المشرف للمتابعة إلى إدارة سؤال اليوم.</p>
+        <div class="field-group" id="adminSetupKeyGroup" hidden>
+          <label class="field-label" for="adminSetupKey">مفتاح التهيئة</label>
+          <input
+            id="adminSetupKey"
+            name="setupKey"
+            type="text"
+            maxlength="128"
+            autocomplete="off"
+            placeholder="يظهر في سجل تشغيل الخادم"
+          />
+        </div>
         <div class="field-group">
           <label class="field-label" for="adminPassword">رمز المشرف</label>
           <input
@@ -721,7 +732,7 @@
         <div class="share-success-icon">
           <svg><use href="#icon-share"></use></svg>
         </div>
-        <p>أرسل هذا الرابط إلى طلابك. سيدخل كل طالب باستخدام رمزه المكوّن من ٤ أرقام.</p>
+        <p>أرسل هذا الرابط إلى طلابك. سيدخل كل طالب باسمه ورمزه المكوّن من ٤ أرقام.</p>
         <label class="field-label" for="shareLinkInput">رابط الطلاب</label>
         <div class="copy-field">
           <input id="shareLinkInput" type="text" readonly />
@@ -742,6 +753,6 @@
       <span id="toastMessage">تم الحفظ بنجاح</span>
     </div>
 
-    <script type="module" src="./app.js?v=4"></script>
+    <script type="module" src="./app.js?v=5"></script>
   </body>
 </html>

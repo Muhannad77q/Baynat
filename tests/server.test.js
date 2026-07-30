@@ -9,7 +9,7 @@ const supervisorTokens = new Map();
 const TEST_SUPERVISOR_PASSWORD = "baynat-test-admin";
 
 async function listen(dataFile) {
-  const { server } = await createBaynatServer({
+  const { server, store } = await createBaynatServer({
     dataFile,
     logger: { error() {} },
   });
@@ -22,7 +22,10 @@ async function listen(dataFile) {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+      body: JSON.stringify({
+        password: TEST_SUPERVISOR_PASSWORD,
+        setupKey: store.data.setupKey,
+      }),
     }
   ).then((response) => response.json());
   supervisorTokens.set(baseUrl, authentication.token);
@@ -102,18 +105,17 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal("correctAnswer" in publicQuiz.payload.quiz.question, false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("4821"), false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("سارة"), false);
-  assert.match(publicQuiz.response.headers.get("set-cookie") || "", /baynat_device=/);
 
   const rejectedAccess = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
-    body: JSON.stringify({ pin: "0000" }),
+    body: JSON.stringify({ name: "سارة القحطاني", pin: "0000" }),
   });
   assert.equal(rejectedAccess.response.status, 401);
   assert.equal(rejectedAccess.payload.error.code, "PIN_REJECTED");
 
   const sarahAccess = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
-    body: JSON.stringify({ pin: "4821" }),
+    body: JSON.stringify({ name: "سارة القحطاني", pin: "4821" }),
   });
   assert.equal(sarahAccess.response.status, 200);
   assert.equal(sarahAccess.payload.student.name, "سارة القحطاني");
@@ -145,7 +147,7 @@ test("shares one server-backed quiz across independent student sessions", async 
 
   const omarAccess = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
-    body: JSON.stringify({ pin: "7350" }),
+    body: JSON.stringify({ name: "عمر الحربي", pin: "7350" }),
   });
   const omarSubmission = await request(
     firstRun.baseUrl,
@@ -196,7 +198,7 @@ test("shares one server-backed quiz across independent student sessions", async 
 
   const reemAccess = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
-    body: JSON.stringify({ pin: "2468" }),
+    body: JSON.stringify({ name: "ريم السبيعي", pin: "2468" }),
   });
   assert.equal(reemAccess.response.status, 200);
   assert.equal(reemAccess.payload.student.id, "student-reem");
@@ -282,7 +284,10 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
         options: ["صح", "خطأ"],
         correctAnswer: "صح",
       },
-      students: [{ name: "سارة القحطاني", className: "٢ / أ", pin: "4821" }],
+      students: [
+        { name: "سارة القحطاني", className: "٢ / أ", pin: "4821" },
+        { name: "عمر الحربي", className: "٢ / أ", pin: "7350" },
+      ],
     }),
   });
   const unauthorized = await request(
@@ -293,40 +298,28 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
   assert.equal(unauthorized.response.status, 401);
   assert.equal(unauthorized.payload.error.code, "ADMIN_UNAUTHORIZED");
 
-  const studentBootstrap = await fetch(
-    `${baseUrl}/api/quizzes/${created.payload.quizId}`
-  );
-  const legitimateDeviceCookie = (studentBootstrap.headers.get("set-cookie") || "").split(
-    ";"
-  )[0];
-  assert.match(legitimateDeviceCookie, /^baynat_device=/);
-
   for (let attempt = 0; attempt < 22; attempt += 1) {
     const validAccess = await request(
       baseUrl,
       `/api/quizzes/${created.payload.quizId}/access`,
       {
         method: "POST",
-        body: JSON.stringify({ pin: "4821" }),
+        body: JSON.stringify({ name: "سارة القحطاني", pin: "4821" }),
       }
     );
     assert.equal(validAccess.response.status, 200);
   }
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     const failedAccess = await request(
       baseUrl,
       `/api/quizzes/${created.payload.quizId}/access`,
       {
         method: "POST",
         headers: {
-          Cookie: `baynat_device=fabricated-device-${String(attempt).padStart(
-            4,
-            "0"
-          )}.${"A".repeat(43)}`,
           "X-Forwarded-For": `198.51.100.${attempt + 1}`,
         },
-        body: JSON.stringify({ pin: "0000" }),
+        body: JSON.stringify({ name: "سارة القحطاني", pin: "0000" }),
       }
     );
     assert.equal(failedAccess.response.status, 401);
@@ -337,10 +330,9 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
     {
       method: "POST",
       headers: {
-        Cookie: `baynat_device=fabricated-device-final.${"A".repeat(43)}`,
         "X-Forwarded-For": "203.0.113.250",
       },
-      body: JSON.stringify({ pin: "0000" }),
+      body: JSON.stringify({ name: "سارة القحطاني", pin: "0000" }),
     }
   );
   assert.equal(rateLimited.response.status, 429);
@@ -351,8 +343,7 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
     `/api/quizzes/${created.payload.quizId}/access`,
     {
       method: "POST",
-      headers: { Cookie: legitimateDeviceCookie },
-      body: JSON.stringify({ pin: "4821" }),
+      body: JSON.stringify({ name: "عمر الحربي", pin: "7350" }),
     }
   );
   assert.equal(sameNetworkStudent.response.status, 200);
@@ -389,6 +380,67 @@ test("rejects duplicate PINs and unauthorized admin access", async (context) => 
   assert.equal(creationLimited.payload.error.code, "QUIZ_CREATION_LIMIT");
 });
 
+test("requires the server bootstrap key and rate-limits supervisor login", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-supervisor-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const setupKey = "bootstrap-key-for-tests";
+  const { server } = await createBaynatServer({
+    dataFile,
+    setupKey,
+    logger: { error() {} },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  context.after(async () => {
+    if (server.listening) await close(server);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const attackerSetup = await request(baseUrl, "/api/admin/setup", {
+    method: "POST",
+    body: JSON.stringify({
+      setupKey: "wrong-bootstrap-key",
+      password: "attacker-password",
+    }),
+  });
+  assert.equal(attackerSetup.response.status, 401);
+  assert.equal(attackerSetup.payload.error.code, "SETUP_KEY_REJECTED");
+
+  const configured = await request(baseUrl, "/api/admin/setup", {
+    method: "POST",
+    body: JSON.stringify({
+      setupKey,
+      password: TEST_SUPERVISOR_PASSWORD,
+    }),
+  });
+  assert.equal(configured.response.status, 201);
+  assert.ok(configured.payload.token);
+
+  const takeover = await request(baseUrl, "/api/admin/setup", {
+    method: "POST",
+    body: JSON.stringify({
+      setupKey,
+      password: "another-password",
+    }),
+  });
+  assert.notEqual(takeover.response.status, 201);
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const rejectedLogin = await request(baseUrl, "/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ password: "wrong-password" }),
+    });
+    assert.equal(rejectedLogin.response.status, 401);
+  }
+  const limitedLogin = await request(baseUrl, "/api/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ password: "wrong-password" }),
+  });
+  assert.equal(limitedLogin.response.status, 429);
+  assert.equal(limitedLogin.payload.error.code, "SUPERVISOR_LOGIN_LIMIT");
+});
+
 test("never acknowledges a submission that failed to persist", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "baynat-transaction-"));
   const dataDirectory = path.join(directory, "data");
@@ -415,7 +467,7 @@ test("never acknowledges a submission that failed to persist", async (context) =
   const { quizId, adminToken } = created.payload;
   const access = await request(firstRun.baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
-    body: JSON.stringify({ pin: "4821" }),
+    body: JSON.stringify({ name: "سارة القحطاني", pin: "4821" }),
   });
 
   await rename(dataDirectory, backupDirectory);

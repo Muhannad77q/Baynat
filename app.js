@@ -432,6 +432,8 @@ function cacheRefs() {
     adminAuthForm: document.querySelector("#adminAuthForm"),
     adminAuthTitle: document.querySelector("#adminAuthTitle"),
     adminAuthDescription: document.querySelector("#adminAuthDescription"),
+    adminSetupKey: document.querySelector("#adminSetupKey"),
+    adminSetupKeyGroup: document.querySelector("#adminSetupKeyGroup"),
     adminPassword: document.querySelector("#adminPassword"),
     adminPasswordConfirm: document.querySelector("#adminPasswordConfirm"),
     adminPasswordConfirmGroup: document.querySelector("#adminPasswordConfirmGroup"),
@@ -514,7 +516,7 @@ function bindEvents() {
   refs.studentSearch.addEventListener("input", renderStudents);
   refs.studentsTableBody.addEventListener("click", handleStudentTableAction);
   refs.adminAuthForm.addEventListener("submit", submitSupervisorAccess);
-  [refs.adminPassword, refs.adminPasswordConfirm].forEach((input) =>
+  [refs.adminSetupKey, refs.adminPassword, refs.adminPasswordConfirm].forEach((input) =>
     input.addEventListener("input", () => {
       refs.adminAuthError.textContent = "";
     })
@@ -1292,16 +1294,17 @@ function showSupervisorModal(configured) {
   supervisorAuthMode = configured ? "login" : "setup";
   refs.adminAuthForm.reset();
   refs.adminAuthError.textContent = "";
+  refs.adminSetupKeyGroup.hidden = configured;
   refs.adminPasswordConfirmGroup.hidden = configured;
   refs.adminPassword.autocomplete = configured ? "current-password" : "new-password";
   refs.adminAuthTitle.textContent = configured ? "دخول المشرف" : "أنشئ رمز المشرف";
   refs.adminAuthDescription.textContent = configured
     ? "أدخل رمز المشرف لفتح إدارة سؤال اليوم."
-    : "اختر رمزًا خاصًا بك من ٦ خانات على الأقل. ستستخدمه عند فتح لوحة المشرف من جديد.";
+    : "أدخل مفتاح التهيئة الظاهر في سجل تشغيل الخادم، ثم اختر رمزًا خاصًا بك.";
   refs.adminAuthSubmit.textContent = configured ? "دخول لوحة المشرف" : "حفظ رمز المشرف";
   refs.adminAuthNote.textContent = configured
     ? "لا يطلب الطلاب هذا الرمز؛ هو خاص بلوحة المشرف فقط."
-    : "احفظ الرمز في مكان آمن. الطلاب لن يروه ولن يحتاجوا إليه.";
+    : "مفتاح التهيئة يُستخدم مرة واحدة فقط. احفظ رمز المشرف في مكان آمن.";
   if (!refs.adminAuthModal.open) refs.adminAuthModal.showModal();
   window.setTimeout(() => refs.adminPassword.focus(), 80);
 }
@@ -1335,6 +1338,12 @@ async function initializeSupervisorAccess() {
 async function submitSupervisorAccess(event) {
   event.preventDefault();
   const password = refs.adminPassword.value;
+  const setupKey = refs.adminSetupKey.value.trim();
+  if (supervisorAuthMode === "setup" && !setupKey) {
+    refs.adminAuthError.textContent = "أدخل مفتاح التهيئة من سجل تشغيل الخادم.";
+    refs.adminSetupKey.focus();
+    return;
+  }
   if (password.length < 6) {
     refs.adminAuthError.textContent = "اكتب رمزًا لا يقل عن ٦ خانات.";
     return;
@@ -1354,7 +1363,7 @@ async function submitSupervisorAccess(event) {
   try {
     const payload = await requestJson(`/api/admin/${supervisorAuthMode}`, {
       method: "POST",
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, setupKey }),
     });
     saveSupervisorToken(payload.token);
     refs.adminAuthModal.close();

@@ -71,6 +71,7 @@ function cacheRefs() {
     retryButton: document.querySelector("#retryButton"),
     accessQuestionType: document.querySelector("#accessQuestionType"),
     accessForm: document.querySelector("#studentAccessForm"),
+    studentName: document.querySelector("#studentFullName"),
     studentPin: document.querySelector("#studentPin"),
     pinError: document.querySelector("#pinError"),
     startChallengeButton: document.querySelector("#startChallengeButton"),
@@ -102,6 +103,9 @@ function cacheRefs() {
 
 function bindEvents() {
   refs.retryButton.addEventListener("click", loadQuiz);
+  refs.studentName.addEventListener("input", () => {
+    refs.pinError.textContent = "";
+  });
   refs.studentPin.addEventListener("input", () => {
     refs.studentPin.value = normalizeDigits(refs.studentPin.value).replace(/\D/g, "").slice(0, 4);
     refs.pinError.textContent = "";
@@ -186,7 +190,13 @@ async function loadQuiz() {
 
 async function accessQuiz(event) {
   event.preventDefault();
+  const name = refs.studentName.value.trim();
   const pin = normalizeDigits(refs.studentPin.value);
+  if (name.length < 2) {
+    refs.pinError.textContent = "اكتب اسمك كما سجّله المشرف.";
+    refs.studentName.focus();
+    return;
+  }
   if (!/^\d{4}$/.test(pin)) {
     refs.pinError.textContent = "أدخل رمزك المكوّن من ٤ أرقام.";
     return;
@@ -197,7 +207,7 @@ async function accessQuiz(event) {
   try {
     const payload = await requestJson(`/api/quizzes/${encodeURIComponent(quizId)}/access`, {
       method: "POST",
-      body: JSON.stringify({ pin }),
+      body: JSON.stringify({ name, pin }),
     });
     studentToken = payload.token;
     currentStudent = payload.student;
