@@ -1,3 +1,9 @@
-# Search Trail
+# إعلان كيكة الفراولة — لَذَّة
 
-Dark AI search website concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight.
+إعلان عمودي متحرك بنسبة `9:16` يقدّم المكونات، تركيب الكيكة، اللمسات الأخيرة، وطريقة التقديم خلال 18 ثانية.
+
+```bash
+npm run dev
+```
+
+تتضمن المعاينة تحكمًا بالمشاهد، صوتًا مصممًا داخل المتصفح، وتصدير فيديو `1080×1920` بصيغة WebM.

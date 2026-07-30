@@ -1,58 +1,55 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildSearchTrailAnswer,
-  calculatePopulationJump,
-  ksaPopulationSeries,
-  parseSearchIntent,
-  themeDirections,
+  AD_DURATION,
+  INGREDIENTS,
+  TIMELINE,
+  clamp,
+  easeInOutCubic,
+  progressBetween,
+  sceneAt,
 } from "../app.js";
 
-test("classifies Search Trail prompt types", () => {
-  assert.equal(parseSearchIntent("People living in KSA for the past 10 years and changes in 2025"), "population");
-  assert.equal(parseSearchIntent("School science search about photosynthesis with ideas"), "school");
-  assert.equal(parseSearchIntent("Generate a high quality photo of a stadium"), "photo");
-  assert.equal(parseSearchIntent("Latest football match score and momentum"), "football");
-  assert.equal(parseSearchIntent(""), "empty");
-  assert.equal(parseSearchIntent("Explain why oceans are blue"), "general");
-});
+test("builds one contiguous 18-second advertising timeline", () => {
+  assert.equal(TIMELINE[0].start, 0);
+  assert.equal(TIMELINE.at(-1).end, AD_DURATION);
+  assert.equal(AD_DURATION, 18_000);
 
-test("calculates the highlighted 2025 population jump", () => {
-  assert.deepEqual(calculatePopulationJump(ksaPopulationSeries, 2024, 2025), {
-    fromYear: 2024,
-    toYear: 2025,
-    change: 0.6,
-    percent: 1.6,
+  TIMELINE.slice(1).forEach((scene, index) => {
+    assert.equal(scene.start, TIMELINE[index].end);
   });
 });
 
-test("builds population answer with ten-year graph data", () => {
-  const answer = buildSearchTrailAnswer("people living in KSA from past 10 years and show 2025 jump");
-
-  assert.equal(answer.intent, "population");
-  assert.equal(answer.graph.length, 10);
-  assert.equal(answer.graph.at(-1).year, 2025);
-  assert.match(answer.bullets.join(" "), /\+6\.5M/);
-  assert.match(answer.bullets.join(" "), /\+0\.6M/);
+test("maps playback positions to the intended ad scenes", () => {
+  assert.equal(sceneAt(0).id, "intro");
+  assert.equal(sceneAt(2_799).id, "intro");
+  assert.equal(sceneAt(2_800).id, "ingredients");
+  assert.equal(sceneAt(5_900).id, "assembly");
+  assert.equal(sceneAt(14_500).id, "serving");
+  assert.equal(sceneAt(18_000).id, "intro");
+  assert.equal(sceneAt(-1).id, "serving");
 });
 
-test("builds school science answer with project ideas", () => {
-  const answer = buildSearchTrailAnswer("got search in school for science it write it and give ideas");
-
-  assert.equal(answer.intent, "school");
-  assert.match(answer.summary, /school research/i);
-  assert.ok(answer.bullets.some((bullet) => bullet.includes("Project idea")));
+test("clamps animation progress at both boundaries", () => {
+  assert.equal(clamp(-0.4), 0);
+  assert.equal(clamp(1.4), 1);
+  assert.equal(progressBetween(400, 500, 1_000), 0);
+  assert.equal(progressBetween(750, 500, 1_000), 0.5);
+  assert.equal(progressBetween(1_200, 500, 1_000), 1);
 });
 
-test("builds image generation answer with editable media prompt", () => {
-  const answer = buildSearchTrailAnswer("generate photos high quality graphics football stadium");
-
-  assert.equal(answer.intent, "photo");
-  assert.match(answer.bullets.join(" "), /4K realism/);
-  assert.equal(answer.media.label, "Generated photo direction");
+test("uses a smooth symmetrical assembly easing curve", () => {
+  assert.equal(easeInOutCubic(0), 0);
+  assert.equal(easeInOutCubic(0.5), 0.5);
+  assert.equal(easeInOutCubic(1), 1);
+  assert.ok(easeInOutCubic(0.25) < 0.25);
+  assert.ok(easeInOutCubic(0.75) > 0.75);
 });
 
-test("includes ten editable dark theme directions", () => {
-  assert.equal(themeDirections.length, 10);
-  assert.equal(new Set(themeDirections.map((theme) => theme.name)).size, 10);
+test("covers every featured cake ingredient exactly once", () => {
+  assert.deepEqual(
+    INGREDIENTS.map((ingredient) => ingredient.icon),
+    ["cream", "glaze", "strawberry", "berries", "chocolate"],
+  );
+  assert.equal(new Set(INGREDIENTS.map((ingredient) => ingredient.name)).size, INGREDIENTS.length);
 });

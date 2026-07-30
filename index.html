@@ -1,202 +1,112 @@
 <!doctype html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Search Trail — answers, graphs, photos, and match insight</title>
+    <meta name="theme-color" content="#160b08" />
+    <title>لَذَّة — إعلان كيكة الفراولة</title>
     <meta
       name="description"
-      content="Search Trail is a dark AI search concept for fast answers, data graphs, high-quality photo prompts, school research, and football match insight."
+      content="إعلان عمودي متحرك لكيكة الفراولة: المكونات، التركيب، اللمسات الأخيرة، والتقديم."
     />
-    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=1" />
+    <link rel="stylesheet" href="./styles.css?v=2" />
   </head>
   <body>
-    <div class="background-glow" aria-hidden="true"></div>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
 
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="Search Trail home">
-        <img src="./logo.svg" alt="" />
-        <span>Search Trail</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#demo">Demo</a>
-        <a href="#features">Features</a>
-        <a href="#themes">Theme photos</a>
-      </nav>
-      <a class="header-cta" href="#demo">Try a question</a>
-    </header>
-
-    <main id="top">
-      <section class="hero-section">
-        <div class="hero-copy">
-          <p class="eyebrow">Fast AI search concept</p>
-          <h1>Ask anything. Follow the answer trail.</h1>
-          <p class="hero-lede">
-            Search Trail turns questions into clear answers, live-style graphs, study ideas, photo generation prompts,
-            football match summaries, and next steps in one polished dark workspace.
-          </p>
-
-          <form class="hero-search" id="searchForm">
-            <label class="sr-only" for="searchInput">Ask Search Trail</label>
-            <input
-              id="searchInput"
-              name="query"
-              type="search"
-              autocomplete="off"
-              placeholder="Ask about KSA population, science homework, photos, football matches..."
-            />
-            <button type="submit">Search</button>
-          </form>
-
-          <div class="example-grid" aria-label="Example searches">
-            <button type="button" data-query="People living in KSA for the past 10 years and what changed in 2025">
-              KSA population graph
-            </button>
-            <button type="button" data-query="Help me with a school science search about photosynthesis and give ideas">
-              School science ideas
-            </button>
-            <button type="button" data-query="Generate a high quality photo of a futuristic football stadium at night">
-              Photo prompt
-            </button>
-            <button type="button" data-query="What happened in the latest football match and who had momentum">
-              Football match insight
-            </button>
-          </div>
+    <main class="studio-shell">
+      <section class="preview-column" aria-label="معاينة الإعلان">
+        <div class="preview-frame">
+          <canvas
+            id="adCanvas"
+            width="1080"
+            height="1920"
+            role="img"
+            aria-label="إعلان متحرك يوضح مكونات كيكة الفراولة وطريقة تركيبها وتقديمها"
+          ></canvas>
+          <div class="preview-glare" aria-hidden="true"></div>
         </div>
-
-        <aside class="hero-visual" aria-label="Search Trail preview">
-          <div class="result-window">
-            <div class="window-bar">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="trail-card active">
-              <p class="eyebrow">Best answer</p>
-              <h2>KSA population trail</h2>
-              <p>Shows ten-year movement, highlights 2025, and explains the jump in plain language.</p>
-            </div>
-            <div class="mini-chart" aria-hidden="true">
-              <span style="height: 38%"></span>
-              <span style="height: 42%"></span>
-              <span style="height: 47%"></span>
-              <span style="height: 51%"></span>
-              <span style="height: 56%"></span>
-              <span style="height: 64%"></span>
-              <span style="height: 70%"></span>
-              <span style="height: 77%"></span>
-              <span style="height: 86%"></span>
-              <span style="height: 94%"></span>
-            </div>
-            <div class="visual-row">
-              <div class="photo-tile">4K image prompt</div>
-              <div class="score-tile">2 - 1<br /><small>match pulse</small></div>
-            </div>
-          </div>
-        </aside>
+        <p class="preview-caption"><span class="live-dot"></span> معاينة مباشرة • تتكرر تلقائيًا</p>
       </section>
 
-      <section class="demo-section" id="demo">
-        <div class="section-copy">
-          <p class="eyebrow">Interactive demo</p>
-          <h2>One search box, many answer types.</h2>
+      <section class="control-panel" aria-labelledby="pageTitle">
+        <header class="panel-header">
+          <div class="brand-lockup" aria-label="لذة">
+            <span class="brand-mark">ل</span>
+            <span>لَذَّة</span>
+          </div>
+          <span class="format-pill">9:16</span>
+        </header>
+
+        <div class="panel-copy">
+          <p class="eyebrow">فيلم منتج • ١٨ ثانية</p>
+          <h1 id="pageTitle">الكيكة تركب<br />قدّام عيونك.</h1>
           <p>
-            This demo runs locally in the browser. A production version can connect real search, sports, image, and data APIs.
+            إعلان عربي أنيق مستوحى من الكريمة البيضاء، قلب الفراولة، التوت، وقطع الشوكولاتة في الكيكة الأصلية.
           </p>
         </div>
 
-        <div class="answer-layout">
-          <article class="answer-card" id="answerCard" aria-live="polite">
-            <div class="answer-header">
-              <div>
-                <p class="eyebrow" id="answerType">Data answer</p>
-                <h3 id="answerTitle">KSA population: ten-year trend with 2025 highlight</h3>
-              </div>
-              <span class="speed-pill">Fast answer</span>
-            </div>
-            <p id="answerSummary">
-              Saudi Arabia's population trend rises across the decade in this sample trail. The 2025 point is highlighted so you can quickly see the latest jump and compare it with previous years.
-            </p>
-            <ul class="answer-list" id="answerList"></ul>
-            <div class="chart-panel" id="chartPanel" aria-label="Population chart"></div>
-            <div class="media-panel" id="mediaPanel"></div>
-          </article>
+        <div class="timeline" aria-label="مشاهد الإعلان">
+          <div class="timeline-track" aria-hidden="true">
+            <span id="timelineProgress"></span>
+          </div>
+          <div class="timeline-steps">
+            <button type="button" data-seek="0" class="active">
+              <span>01</span>
+              <strong>الافتتاح</strong>
+            </button>
+            <button type="button" data-seek="2800">
+              <span>02</span>
+              <strong>المكونات</strong>
+            </button>
+            <button type="button" data-seek="5900">
+              <span>03</span>
+              <strong>التركيب</strong>
+            </button>
+            <button type="button" data-seek="14500">
+              <span>04</span>
+              <strong>التقديم</strong>
+            </button>
+          </div>
+        </div>
 
-          <aside class="insight-stack">
-            <div class="stat-card">
-              <strong>&lt; 1s</strong>
-              <span>local demo response</span>
-            </div>
-            <div class="stat-card">
-              <strong>10</strong>
-              <span>theme photos generated</span>
-            </div>
-            <div class="stat-card">
-              <strong>All</strong>
-              <span>answers, ideas, photos, charts</span>
-            </div>
-          </aside>
+        <div class="controls" aria-label="أدوات تشغيل الإعلان">
+          <button type="button" id="playButton" class="control-button">
+            <span class="button-icon" aria-hidden="true">Ⅱ</span>
+            <span>إيقاف</span>
+          </button>
+          <button type="button" id="replayButton" class="control-button">
+            <span class="button-icon replay-icon" aria-hidden="true">↻</span>
+            <span>إعادة</span>
+          </button>
+          <button type="button" id="soundButton" class="control-button">
+            <span class="button-icon" aria-hidden="true">♪</span>
+            <span>الصوت</span>
+          </button>
         </div>
-      </section>
 
-      <section class="feature-section" id="features">
-        <div class="section-copy">
-          <p class="eyebrow">What it can become</p>
-          <h2>Search for facts, visuals, classes, and games.</h2>
-        </div>
-        <div class="feature-grid">
-          <article>
-            <span class="feature-icon">01</span>
-            <h3>Best answers fast</h3>
-            <p>Summaries start with the answer, then add bullets, sources, and next steps for deeper research.</p>
-          </article>
-          <article>
-            <span class="feature-icon">02</span>
-            <h3>Graphs from questions</h3>
-            <p>Ask for changes over time and Search Trail turns the data into a readable visual trail.</p>
-          </article>
-          <article>
-            <span class="feature-icon">03</span>
-            <h3>High-quality photos</h3>
-            <p>Describe any scene and get a polished image prompt with style, lighting, lens, and detail guidance.</p>
-          </article>
-          <article>
-            <span class="feature-icon">04</span>
-            <h3>School research helper</h3>
-            <p>Science searches can become explanations, experiment ideas, outlines, and project angles.</p>
-          </article>
-          <article>
-            <span class="feature-icon">05</span>
-            <h3>Football match pulse</h3>
-            <p>Follow score, momentum, key moments, players, and tactical changes in a compact match card.</p>
-          </article>
-          <article>
-            <span class="feature-icon">06</span>
-            <h3>Everything you ask</h3>
-            <p>The interface adapts the answer style to the question: data, creative, learning, sports, or general search.</p>
-          </article>
-        </div>
-      </section>
+        <button type="button" id="exportButton" class="export-button">
+          <span>
+            <small>نسخة جاهزة للنشر</small>
+            تصدير الفيديو
+          </span>
+          <span class="export-arrow" aria-hidden="true">↙</span>
+        </button>
+        <p id="exportStatus" class="export-status" aria-live="polite">
+          1080 × 1920 • 30 FPS • صوت مصمم خصيصًا
+        </p>
 
-      <section class="theme-section" id="themes">
-        <div class="section-copy">
-          <p class="eyebrow">Pick and edit</p>
-          <h2>10 dark theme photo directions.</h2>
-          <p>Use these directions to choose the Search Trail mood before refining colors, graphics, and layout.</p>
-        </div>
-        <div class="theme-grid" id="themeGrid"></div>
+        <footer class="panel-footer">
+          <span>فراولة</span>
+          <i></i>
+          <span>فانيلا</span>
+          <i></i>
+          <span>شوكولاتة</span>
+        </footer>
       </section>
     </main>
 
-    <footer class="site-footer">
-      <span>Search Trail</span>
-      <p>Dark AI search website concept for answers, graphs, photos, school, and football.</p>
-    </footer>
-
-    <script type="module" src="./app.js?v=1"></script>
+    <script type="module" src="./app.js?v=2"></script>
   </body>
 </html>
