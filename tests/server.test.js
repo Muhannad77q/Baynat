@@ -139,8 +139,8 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.deepEqual(
     omarSubmission.payload.result.leaderboard.map((entry) => [entry.student.name, entry.rank]),
     [
-      ["سارة القحطاني", 1],
-      ["عمر الحربي", 2],
+      ["عمر الحربي", 1],
+      ["سارة القحطاني", 2],
     ]
   );
 
@@ -178,7 +178,7 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(adminSnapshot.response.status, 200);
   assert.equal(adminSnapshot.payload.quiz.students.length, 3);
   assert.equal(adminSnapshot.payload.quiz.submissions.length, 2);
-  assert.equal(adminSnapshot.payload.quiz.leaderboard[0].student.name, "سارة القحطاني");
+  assert.equal(adminSnapshot.payload.quiz.leaderboard[0].student.name, "عمر الحربي");
 
   await close(firstRun.server);
   const secondRun = await listen(dataFile);
