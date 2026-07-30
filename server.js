@@ -463,6 +463,7 @@ async function serveStatic(request, response, pathname) {
 export async function createBaynatServer({
   dataFile = DEFAULT_DATA_FILE,
   trustProxy = process.env.TRUST_PROXY === "true",
+  logger = console,
 } = {}) {
   const store = new JsonStore(dataFile);
   await store.init();
@@ -755,7 +756,7 @@ export async function createBaynatServer({
       const status = error instanceof HttpError ? error.status : 500;
       const message =
         error instanceof HttpError ? error.message : "حدث خطأ غير متوقع. حاول مرة أخرى.";
-      if (!(error instanceof HttpError)) console.error(error);
+      if (!(error instanceof HttpError)) logger.error?.(error);
       if (!response.headersSent) {
         json(
           response,
