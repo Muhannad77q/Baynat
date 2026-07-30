@@ -2554,7 +2554,7 @@ tbody tr:hover {
   font-weight: 700;
 }
 
-.student-choice > span:nth-child(3) {
+.student-choice .choice-radio {
   width: 18px;
   height: 18px;
   border: 2px solid #d8d8e3;
@@ -2573,7 +2573,7 @@ tbody tr:hover {
   color: white;
 }
 
-.student-choice:has(input:checked) > span:nth-child(3) {
+.student-choice:has(input:checked) .choice-radio {
   border: 5px solid var(--primary);
   background: white;
 }

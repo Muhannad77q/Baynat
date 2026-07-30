@@ -2,7 +2,7 @@ export const STORAGE_KEY = "baynat.daily-question.v2";
 export const QUESTION_TYPES = Object.freeze({
   multiple: "اختيار متعدد",
   boolean: "صح أو خطأ",
-  short: "إجابة قصيرة",
+  short: "مقالي قصير",
 });
 
 const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
@@ -42,7 +42,15 @@ export function normalizeAnswer(value = "") {
 
 export function isAnswerCorrect(question, answer) {
   if (!question || answer === null || answer === undefined) return false;
-  return normalizeAnswer(answer) === normalizeAnswer(question.correctAnswer);
+  const normalizedAnswer = normalizeAnswer(answer);
+  const acceptedAnswers =
+    question.type === "short"
+      ? String(question.correctAnswer || "").split("|")
+      : [String(question.correctAnswer || "")];
+  return acceptedAnswers
+    .map(normalizeAnswer)
+    .filter(Boolean)
+    .some((acceptedAnswer) => normalizedAnswer === acceptedAnswer);
 }
 
 export function validateStudentInput(student, existingStudents = []) {
@@ -88,7 +96,13 @@ export function validateQuestion(question) {
     }
   }
 
-  if (!String(question.correctAnswer || "").trim()) {
+  if (
+    !String(question.correctAnswer || "").trim() ||
+    (question.type === "short" &&
+      !String(question.correctAnswer)
+        .split("|")
+        .some((answer) => normalizeAnswer(answer)))
+  ) {
     return { valid: false, error: "حدّد الإجابة الصحيحة قبل الحفظ." };
   }
 
@@ -194,12 +208,34 @@ export function decodeSharePayload(encoded) {
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
     const json = new TextDecoder().decode(base64ToBytes(padded));
     const payload = JSON.parse(json);
-    if (
-      payload?.version !== 1 ||
-      !payload.question?.id ||
-      !Array.isArray(payload.students) ||
-      !Array.isArray(payload.submissions)
-    ) {
+    const validQuestion =
+      payload?.question?.id &&
+      validateQuestion(payload.question).valid &&
+      typeof payload.question.createdAt === "string";
+    const validStudents =
+      Array.isArray(payload?.students) &&
+      payload.students.length > 0 &&
+      payload.students.every(
+        (student) =>
+          typeof student.id === "string" &&
+          typeof student.name === "string" &&
+          typeof student.className === "string" &&
+          typeof student.pinHash === "string"
+      );
+    const validSubmissions =
+      Array.isArray(payload?.submissions) &&
+      payload.submissions.every(
+        (submission) =>
+          typeof submission.id === "string" &&
+          typeof submission.studentId === "string" &&
+          submission.questionId === payload.question.id &&
+          typeof submission.isCorrect === "boolean" &&
+          Number.isFinite(submission.elapsedMs) &&
+          submission.elapsedMs >= 0 &&
+          Number.isFinite(new Date(submission.submittedAt).getTime())
+      );
+
+    if (payload?.version !== 1 || !validQuestion || !validStudents || !validSubmissions) {
       return null;
     }
     return payload;
@@ -284,6 +320,7 @@ let timerStartedAt = null;
 let timerInterval = null;
 let toastTimer = null;
 let sharedMode = false;
+let invalidSharedLink = false;
 let sharedStorageKey = "";
 
 function loadAdminState() {
@@ -390,6 +427,9 @@ function cacheRefs() {
     toastMessage: document.querySelector("#toastMessage"),
     studentScreens: [...document.querySelectorAll(".student-screen")],
     studentAccessScreen: document.querySelector("#studentAccessScreen"),
+    accessTitle: document.querySelector("#accessTitle"),
+    accessDescription: document.querySelector("#accessDescription"),
+    accessFeatures: document.querySelector("#accessFeatures"),
     studentQuizScreen: document.querySelector("#studentQuizScreen"),
     studentResultScreen: document.querySelector("#studentResultScreen"),
     studentAccessForm: document.querySelector("#studentAccessForm"),
@@ -567,8 +607,14 @@ function showStudentApp(screen = "access") {
   refs.exitStudentView.hidden = sharedMode;
   refs.resultBackToAdmin.hidden = sharedMode;
   refs.pinHint.hidden = sharedMode;
+  refs.studentAccessForm.hidden = invalidSharedLink;
+  refs.accessFeatures.hidden = invalidSharedLink;
+  refs.accessTitle.textContent = invalidSharedLink ? "رابط السؤال غير صالح" : "جاهز لسؤال اليوم؟";
+  refs.accessDescription.textContent = invalidSharedLink
+    ? "اطلب من المشرف إرسال رابط جديد، ثم حاول مرة أخرى."
+    : "أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.";
   showStudentScreen(screen);
-  if (screen === "access") {
+  if (screen === "access" && !invalidSharedLink) {
     window.setTimeout(() => refs.studentPin.focus(), 100);
   }
 }
@@ -843,7 +889,7 @@ function renderAnswerEditor() {
   const input = document.createElement("input");
   input.type = "text";
   input.className = "short-answer-input";
-  input.maxLength = 120;
+  input.maxLength = 300;
   input.value = editorState.correctAnswer || "";
   input.placeholder = "اكتب الإجابة النموذجية القصيرة";
   input.dataset.shortAnswer = "true";
@@ -852,7 +898,7 @@ function renderAnswerEditor() {
     createElement(
       "p",
       "",
-      "تُصحّح الإجابة تلقائيًا بعد تجاهل المسافات والتشكيل واختلاف أشكال الهمزة."
+      "تُصحّح تلقائيًا بعد تجاهل المسافات والتشكيل. أضف صيغًا بديلة وافصل بينها بعلامة |."
     )
   );
   refs.answerEditor.replaceChildren(wrapper);
@@ -915,6 +961,16 @@ function renderQuestionEditorPreview() {
   );
 }
 
+function hasSameQuestionContent(first, second) {
+  return (
+    first.type === second.type &&
+    normalizeAnswer(first.prompt) === normalizeAnswer(second.prompt) &&
+    normalizeAnswer(first.correctAnswer) === normalizeAnswer(second.correctAnswer) &&
+    JSON.stringify((first.options || []).map(normalizeAnswer)) ===
+      JSON.stringify((second.options || []).filter(Boolean).map(normalizeAnswer))
+  );
+}
+
 function saveQuestion(event) {
   event.preventDefault();
   editorState.prompt = refs.questionPrompt.value;
@@ -922,6 +978,28 @@ function saveQuestion(event) {
   const validation = validateQuestion(question);
   if (!validation.valid) {
     refs.questionFormError.textContent = validation.error;
+    return;
+  }
+
+  const currentSubmissions = state.submissions.filter(
+    (submission) => submission.questionId === state.currentQuestion.id
+  );
+  const contentChanged = !hasSameQuestionContent(state.currentQuestion, question);
+  if (
+    contentChanged &&
+    currentSubmissions.length > 0 &&
+    !window.confirm(
+      "نشر هذا السؤال سيبدأ تحدّيًا جديدًا ويصفّر نتائج السؤال الحالي على هذا الجهاز. هل تريد المتابعة؟"
+    )
+  ) {
+    return;
+  }
+
+  if (!contentChanged) {
+    state.currentQuestion.published = true;
+    persistState();
+    showToast("السؤال منشور بالفعل");
+    window.setTimeout(openShareModal, 250);
     return;
   }
 
@@ -1191,7 +1269,7 @@ function renderStudentQuiz() {
     input.className = "student-short-answer";
     input.name = "answer";
     input.rows = 4;
-    input.maxLength = 250;
+    input.maxLength = 500;
     input.placeholder = "اكتب إجابتك هنا...";
     input.setAttribute("aria-label", "إجابتك");
     refs.studentAnswerEditor.replaceChildren(input);
@@ -1210,7 +1288,7 @@ function renderStudentQuiz() {
       label.append(
         input,
         createElement("span", "choice-letter", letter),
-        createElement("span", "", ""),
+        createElement("span", "choice-radio", ""),
         createElement("span", "sr-only", `اختر ${option}`)
       );
       label.insertBefore(createElement("span", "", option), label.children[2]);
@@ -1252,7 +1330,7 @@ function submitStudentAnswer(event) {
     return;
   }
 
-  const elapsedMs = Math.max(500, Math.round(performance.now() - timerStartedAt));
+  const elapsedMs = Math.max(0, Math.round(performance.now() - timerStartedAt));
   stopTimer();
   const submission = {
     id: `submission-${Date.now().toString(36)}`,
@@ -1290,7 +1368,7 @@ function renderStudentResult(submission) {
     : `محاولة جميلة يا ${firstName}`;
   refs.resultMessage.textContent = submission.isCorrect
     ? "الدقّة والسرعة رفعتاك في لوحة المتصدرين."
-    : `الإجابة الصحيحة هي «${state.currentQuestion.correctAnswer}». حاول في تحدّي الغد!`;
+    : `إجابة مقترحة: «${state.currentQuestion.correctAnswer.split("|")[0].trim()}». حاول في تحدّي الغد!`;
   refs.studentRank.textContent = `#${toArabicDigits(entry.rank)}`;
   refs.participantCount.textContent = formatNumber(leaderboard.length);
   refs.studentPoints.textContent = formatNumber(entry.total);
@@ -1335,10 +1413,17 @@ function renderStudentLeaderboard(leaderboard, currentStudentId) {
 
 function initApp() {
   cacheRefs();
-  const quizPayload = new URL(window.location.href).searchParams.get("quiz");
+  const currentUrl = new URL(window.location.href);
+  const hasQuizParameter = currentUrl.searchParams.has("quiz");
+  const quizPayload = currentUrl.searchParams.get("quiz");
   const sharedPayload = quizPayload ? decodeSharePayload(quizPayload) : null;
-  sharedMode = Boolean(sharedPayload);
-  state = sharedPayload ? createStateFromSharedPayload(sharedPayload) : loadAdminState();
+  invalidSharedLink = hasQuizParameter && !sharedPayload;
+  sharedMode = hasQuizParameter;
+  state = sharedPayload
+    ? createStateFromSharedPayload(sharedPayload)
+    : invalidSharedLink
+      ? createInitialState()
+      : loadAdminState();
   bindEvents();
   hydrateQuestionEditor(state.currentQuestion);
   renderAll();

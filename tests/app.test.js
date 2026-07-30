@@ -44,11 +44,12 @@ test("compares short Arabic answers after harmless spelling normalization", () =
   const question = {
     type: "short",
     prompt: "ما عاصمة المملكة؟",
-    correctAnswer: "الرِّياض",
+    correctAnswer: "الرِّياض | مدينة الرياض",
   };
 
   assert.equal(normalizeAnswer("  الرِّياض  "), "الرياض");
   assert.equal(isAnswerCorrect(question, "الرياض"), true);
+  assert.equal(isAnswerCorrect(question, "مدينة الرِّياض"), true);
   assert.equal(isAnswerCorrect(question, "جدة"), false);
 });
 
@@ -167,6 +168,23 @@ test("creates a Unicode-safe share link payload without exposing raw PIN fields"
   const encoded = encodeSharePayload(payload);
   assert.deepEqual(decodeSharePayload(encoded), payload);
   assert.equal(encoded.includes("4821"), false);
+});
+
+test("rejects incomplete or tampered shared-link payloads", () => {
+  const state = createInitialState(Date.parse("2026-07-30T12:00:00.000Z"));
+  const payload = createSharePayload(state);
+  const missingPins = {
+    ...payload,
+    students: payload.students.map(({ pinHash: _pinHash, ...student }) => student),
+  };
+  const invalidSubmission = {
+    ...payload,
+    submissions: [{ ...payload.submissions[0], elapsedMs: -10 }],
+  };
+
+  assert.equal(decodeSharePayload("not-valid-base64"), null);
+  assert.equal(decodeSharePayload(encodeSharePayload(missingPins)), null);
+  assert.equal(decodeSharePayload(encodeSharePayload(invalidSubmission)), null);
 });
 
 test("ships with a complete demo classroom and one unsubmitted test student", () => {

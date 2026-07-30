@@ -154,7 +154,7 @@
                 منشور الآن
               </span>
               <h2>سؤال اليوم جاهز<br />لبداية التحدّي!</h2>
-              <p>شارك الرابط مع طلابك، وتابع الإجابات والترتيب لحظة بلحظة.</p>
+              <p>شارك الرابط مع طلابك، وتابع الإجابات والترتيب المحفوظ على جهازك.</p>
               <div class="welcome-actions">
                 <button class="button button-light share-question-button" type="button">
                   <svg><use href="#icon-share"></use></svg>
@@ -280,7 +280,7 @@
                   <span class="section-label">آخر النشاط</span>
                   <h3>الإجابات الأخيرة</h3>
                 </div>
-                <span class="updating-badge"><i></i> مباشر</span>
+                <span class="updating-badge"><i></i> على هذا الجهاز</span>
               </div>
               <div class="activity-list" id="activityList"></div>
             </article>
@@ -296,7 +296,7 @@
             </div>
             <button class="button button-secondary share-question-button" type="button">
               <svg><use href="#icon-share"></use></svg>
-              مشاركة السؤال الحالي
+              مشاركة السؤال المنشور
             </button>
           </div>
 
@@ -323,7 +323,7 @@
                   </button>
                   <button class="type-option" type="button" data-question-type="short" aria-pressed="false">
                     <span class="type-icon">ــ</span>
-                    <span><strong>إجابة قصيرة</strong><small>نص قصير أو سؤال مقالي</small></span>
+                    <span><strong>مقالي قصير</strong><small>يُصحّح كنص مطابق تلقائيًا</small></span>
                     <i></i>
                   </button>
                 </div>
@@ -472,7 +472,7 @@
                 <span class="section-label">الترتيب الكامل</span>
                 <h3>نتائج سؤال اليوم</h3>
               </div>
-              <span class="updating-badge"><i></i> يتحدث تلقائيًا</span>
+                <span class="updating-badge"><i></i> نتائج هذا الجهاز</span>
             </div>
             <div class="table-wrap">
               <table class="leaderboard-table">
@@ -520,8 +520,8 @@
           </div>
           <div class="student-card access-card">
             <span class="student-kicker">مرحبًا بك 👋</span>
-            <h1>جاهز لسؤال اليوم؟</h1>
-            <p>أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.</p>
+            <h1 id="accessTitle">جاهز لسؤال اليوم؟</h1>
+            <p id="accessDescription">أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.</p>
             <form id="studentAccessForm" novalidate>
               <label for="studentPin">رمز الدخول</label>
               <input
@@ -543,7 +543,7 @@
               </button>
             </form>
           </div>
-          <div class="access-features" aria-label="مميزات التحدي">
+          <div class="access-features" id="accessFeatures" aria-label="مميزات التحدي">
             <span>⚡ نقاط للسرعة</span>
             <span>🏆 ترتيب مباشر</span>
             <span>🎯 محاولة واحدة</span>
@@ -613,7 +613,7 @@
                   <span class="section-label">لوحة المتصدرين</span>
                   <h3>أبطال سؤال اليوم</h3>
                 </div>
-                <span class="updating-badge"><i></i> مباشر</span>
+                <span class="updating-badge"><i></i> نتائج الرابط</span>
               </div>
               <div class="student-leader-list" id="studentLeaderboard"></div>
             </article>
@@ -692,7 +692,7 @@
         </div>
         <div class="prototype-note">
           <span>ⓘ</span>
-          <p>هذه النسخة التجريبية تحفظ النتائج على الجهاز. مزامنة النتائج بين أجهزة الطلاب تحتاج ربط قاعدة بيانات عند الإطلاق.</p>
+          <p>هذه نسخة تجريبية تحفظ النتائج على الجهاز؛ لا تستخدم بيانات طلاب حقيقية. المزامنة الآمنة بين الأجهزة تحتاج قاعدة بيانات عند الإطلاق.</p>
         </div>
       </div>
     </dialog>
