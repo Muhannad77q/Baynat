@@ -1186,7 +1186,7 @@ export async function createBaynatServer({
         }
         const password = readSupervisorPassword(body);
         const credential = await hashSupervisorPassword(password);
-        const accessResult = await store.update((data) => {
+        await store.update((data) => {
           if (data.adminCredential) {
             throw new HttpError(
               409,
@@ -1726,7 +1726,7 @@ export async function createBaynatServer({
         const token = randomBytes(32).toString("base64url");
         const expectedStudentRevision = student.revision;
         const expectedRound = quiz.round;
-        await store.update((data) => {
+        const accessResult = await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
           const draftStudent = draftQuiz.students.find(
             (item) => item.id === student.id
