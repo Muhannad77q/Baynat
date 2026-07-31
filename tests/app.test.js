@@ -235,5 +235,7 @@ test("ships with a complete demo classroom and one unsubmitted test student", ()
     ["أولى ثانوي", "ثاني ثانوي", "ثالث ثانوي"].sort()
   );
   assert.equal(state.participants.length, 6);
+  assert.equal(state.answerRecords.length, 6);
+  assert.equal(state.currentRound, 1);
   assert.equal(state.currentQuestion.correctAnswer, "المريخ");
 });

@@ -125,7 +125,8 @@ function validateStoredData(parsed, initialSetupKey) {
       initialSetupKey || randomBytes(9).toString("base64url");
     migrated = true;
   }
-  const rosterCandidates = new Map();
+  let latestQuizRoster = [];
+  let latestQuizTime = -Infinity;
   for (const [quizId, quiz] of Object.entries(parsed.quizzes)) {
     const validQuiz =
       isRecord(quiz) &&
@@ -139,9 +140,6 @@ function validateStoredData(parsed, initialSetupKey) {
     if (validQuiz) {
       for (const student of quiz.students) {
         migrateStudent(student);
-        if (typeof student?.id === "string") {
-          rosterCandidates.set(student.id, structuredClone(student));
-        }
       }
       if (!isRecord(quiz.starts)) {
         quiz.starts = {};
@@ -172,6 +170,32 @@ function validateStoredData(parsed, initialSetupKey) {
           }
         }
         migrated = true;
+      }
+      if (!Number.isInteger(quiz.round) || quiz.round < 1) {
+        quiz.round = 1;
+        migrated = true;
+      }
+      if (!Array.isArray(quiz.answerRecords)) {
+        quiz.answerRecords = quiz.submissions.map((submission) => ({
+          ...structuredClone(submission),
+          round: 1,
+        }));
+        migrated = true;
+      }
+      if (!Array.isArray(quiz.participationRecords)) {
+        quiz.participationRecords = Object.values(quiz.participants).map(
+          (participant) => ({
+            studentId: participant.studentId,
+            accessedAt: participant.firstAccessedAt,
+            round: 1,
+          })
+        );
+        migrated = true;
+      }
+      const quizTime = new Date(quiz.updatedAt || quiz.createdAt).getTime();
+      if (Number.isFinite(quizTime) && quizTime >= latestQuizTime) {
+        latestQuizTime = quizTime;
+        latestQuizRoster = structuredClone(quiz.students);
       }
     }
     const validStudents =
@@ -217,6 +241,30 @@ function validateStoredData(parsed, initialSetupKey) {
           Number.isInteger(participant.sessionCount) &&
           participant.sessionCount >= 1
       );
+    const validRound = validQuiz && Number.isInteger(quiz.round) && quiz.round >= 1;
+    const validAnswerRecords =
+      validQuiz &&
+      quiz.answerRecords.every(
+        (record) =>
+          typeof record?.id === "string" &&
+          typeof record.studentId === "string" &&
+          record.questionId === quiz.question.id &&
+          typeof record.answer === "string" &&
+          typeof record.isCorrect === "boolean" &&
+          Number.isFinite(record.elapsedMs) &&
+          Number.isFinite(new Date(record.submittedAt).getTime()) &&
+          Number.isInteger(record.round) &&
+          record.round >= 1
+      );
+    const validParticipationRecords =
+      validQuiz &&
+      quiz.participationRecords.every(
+        (record) =>
+          typeof record?.studentId === "string" &&
+          Number.isFinite(new Date(record.accessedAt).getTime()) &&
+          Number.isInteger(record.round) &&
+          record.round >= 1
+      );
     const uniqueStudents =
       validStudents &&
       new Set(quiz.students.map((student) => student.id)).size === quiz.students.length;
@@ -232,6 +280,9 @@ function validateStoredData(parsed, initialSetupKey) {
       !validSubmissions ||
       !validSessions ||
       !validParticipants ||
+      !validRound ||
+      !validAnswerRecords ||
+      !validParticipationRecords ||
       !uniqueStudents ||
       !uniqueSubmissions
     ) {
@@ -249,18 +300,10 @@ function validateStoredData(parsed, initialSetupKey) {
   }
 
   if (!Array.isArray(parsed.students)) {
-    parsed.students = [...rosterCandidates.values()];
+    parsed.students = latestQuizRoster;
     migrated = true;
   } else {
     for (const student of parsed.students) migrateStudent(student);
-    const knownStudentIds = new Set(parsed.students.map((student) => student?.id));
-    for (const [studentId, student] of rosterCandidates) {
-      if (!knownStudentIds.has(studentId)) {
-        parsed.students.push(student);
-        knownStudentIds.add(studentId);
-        migrated = true;
-      }
-    }
   }
   const validRoster =
     parsed.students.length <= MAX_STUDENTS &&
@@ -807,6 +850,15 @@ async function hashStudentInputs(students) {
   return secured;
 }
 
+function requireConfiguredStudentSelections(className, halaqa) {
+  if (!DEFAULT_CLASS_OPTIONS.includes(className)) {
+    throw new HttpError(400, "اختر صفًا من القائمة المعتمدة.", "INVALID_STUDENT_CLASS");
+  }
+  if (!DEFAULT_HALAQA_OPTIONS.includes(halaqa)) {
+    throw new HttpError(400, "اختر حلقة من القائمة المعتمدة.", "INVALID_STUDENT_HALAQA");
+  }
+}
+
 function requireQuiz(store, quizId) {
   const quiz = store.read((data) => data.quizzes[quizId]);
   if (!quiz) throw new HttpError(404, "رابط السؤال غير صالح أو انتهى.", "QUIZ_NOT_FOUND");
@@ -1201,6 +1253,10 @@ export async function createBaynatServer({
           if (!validation.valid) {
             throw new HttpError(400, validation.error, "INVALID_STUDENT");
           }
+          requireConfiguredStudentSelections(
+            validation.value.className,
+            validation.value.halaqa
+          );
           const id =
             typeof body.id === "string" && /^[a-zA-Z0-9_-]{3,80}$/.test(body.id)
               ? body.id
@@ -1261,6 +1317,10 @@ export async function createBaynatServer({
           if (!validation.valid) {
             throw new HttpError(400, validation.error, "INVALID_STUDENT");
           }
+          requireConfiguredStudentSelections(
+            validation.value.className,
+            validation.value.halaqa
+          );
           const replacement = {
             ...existing,
             name: validation.value.name,
@@ -1294,6 +1354,19 @@ export async function createBaynatServer({
               );
               if (quizStudentIndex !== -1) {
                 quiz.students[quizStudentIndex] = structuredClone(replacement);
+                quiz.sessions = Object.fromEntries(
+                  Object.entries(quiz.sessions).filter(
+                    ([, session]) => session.studentId !== studentId
+                  )
+                );
+                if (
+                  !quiz.submissions.some(
+                    (submission) => submission.studentId === studentId
+                  )
+                ) {
+                  delete quiz.starts[studentId];
+                  delete quiz.participants[studentId];
+                }
                 quiz.updatedAt = new Date().toISOString();
               }
             }
@@ -1352,6 +1425,9 @@ export async function createBaynatServer({
           sessions: {},
           starts: {},
           participants: {},
+          round: 1,
+          answerRecords: [],
+          participationRecords: [],
           adminTokenHash: hashToken(adminToken),
           createdAt: createdAt.toISOString(),
           updatedAt: createdAt.toISOString(),
@@ -1407,6 +1483,9 @@ export async function createBaynatServer({
               students: quiz.students.map(publicStudent),
               submissions: quiz.submissions,
               participants: serializeParticipants(quiz),
+              answerRecords: quiz.answerRecords,
+              participationRecords: quiz.participationRecords,
+              round: quiz.round,
               leaderboard: serializeLeaderboard(quiz),
               updatedAt: quiz.updatedAt,
             },
@@ -1432,9 +1511,22 @@ export async function createBaynatServer({
           draftQuiz.sessions = {};
           draftQuiz.starts = {};
           draftQuiz.participants = {};
+          draftQuiz.round += 1;
           draftQuiz.updatedAt = new Date().toISOString();
         });
-        json(response, 200, { ok: true, cleared }, securityHeaders());
+        json(
+          response,
+          200,
+          {
+            ok: true,
+            cleared,
+            recordsPreserved: {
+              answers: quiz.answerRecords.length,
+              participations: quiz.participationRecords.length,
+            },
+          },
+          securityHeaders()
+        );
         return;
       }
 
@@ -1449,6 +1541,10 @@ export async function createBaynatServer({
         if (!validation.valid) {
           throw new HttpError(400, validation.error, "INVALID_STUDENT");
         }
+        requireConfiguredStudentSelections(
+          validation.value.className,
+          validation.value.halaqa
+        );
         const lookup = pinLookup(store.data.secret, quiz.id, validation.value.pin);
         const identityLookup = studentIdentityLookup(
           store.data.secret,
@@ -1599,6 +1695,11 @@ export async function createBaynatServer({
           draftQuiz.starts[student.id] ||= startedAt;
           const accessedAt = new Date().toISOString();
           const previousParticipant = draftQuiz.participants[student.id];
+          draftQuiz.participationRecords.push({
+            studentId: student.id,
+            accessedAt,
+            round: draftQuiz.round,
+          });
           draftQuiz.participants[student.id] = previousParticipant
             ? {
                 ...previousParticipant,
@@ -1671,6 +1772,10 @@ export async function createBaynatServer({
             submittedAt: new Date().toISOString(),
           };
           draftQuiz.submissions.push(created);
+          draftQuiz.answerRecords.push({
+            ...structuredClone(created),
+            round: draftQuiz.round,
+          });
           draftQuiz.updatedAt = new Date().toISOString();
           return created;
         });

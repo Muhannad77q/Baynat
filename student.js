@@ -494,6 +494,13 @@ async function refreshLeaderboard(showConfirmation) {
     }
     if (showConfirmation) showToast("تم تحديث ترتيب جميع الطلاب");
   } catch (error) {
+    if (error.code === "STUDENT_UNAUTHORIZED") {
+      studentToken = "";
+      currentStudent = null;
+      await loadQuiz();
+      showToast("أعاد المشرف ترتيب السؤال؛ يمكنك الحل من جديد");
+      return;
+    }
     if (showConfirmation) showToast(error.message, true);
   }
 }

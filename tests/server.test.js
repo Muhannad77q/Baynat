@@ -342,6 +342,17 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(sharedRoster.response.status, 200);
   assert.equal(sharedRoster.payload.students.length, 3);
   assert.equal(JSON.stringify(sharedRoster.payload).includes("pinHash"), false);
+  const rejectedRosterSelection = await request(firstRun.baseUrl, "/api/students", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "طالب غير معتمد",
+      className: "رابع ثانوي",
+      halaqa: "حلقة أخرى",
+      pin: "9999",
+    }),
+  });
+  assert.equal(rejectedRosterSelection.response.status, 400);
+  assert.equal(rejectedRosterSelection.payload.error.code, "INVALID_STUDENT_CLASS");
   const secondSupervisorLogin = await fetch(`${firstRun.baseUrl}/api/admin/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -351,6 +362,13 @@ test("shares one server-backed quiz across independent student sessions", async 
     headers: { "X-Supervisor-Token": secondSupervisorLogin.token },
   }).then((response) => response.json());
   assert.deepEqual(secondSupervisorRoster.students, sharedRoster.payload.students);
+  const reemSessionBeforeEdit = await accessStudent(firstRun.baseUrl, quizId, {
+    name: "ريم السبيعي",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
+    pin: "2468",
+  });
+  assert.equal(reemSessionBeforeEdit.response.status, 200);
   const editedReem = await request(firstRun.baseUrl, "/api/students/student-reem", {
     method: "PATCH",
     body: JSON.stringify({
@@ -362,6 +380,18 @@ test("shares one server-backed quiz across independent student sessions", async 
   });
   assert.equal(editedReem.response.status, 200);
   assert.equal(editedReem.payload.student.className, "ثالث ثانوي");
+  const revokedReemSession = await request(
+    firstRun.baseUrl,
+    `/api/quizzes/${quizId}/submissions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${reemSessionBeforeEdit.payload.token}`,
+      },
+      body: JSON.stringify({ answer: "المريخ" }),
+    }
+  );
+  assert.equal(revokedReemSession.response.status, 401);
 
   const oldReemAccess = await accessStudent(firstRun.baseUrl, quizId, {
     name: "ريم السبيعي",
@@ -410,6 +440,9 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(adminSnapshot.payload.quiz.students.length, 3);
   assert.equal(adminSnapshot.payload.quiz.submissions.length, 3);
   assert.equal(adminSnapshot.payload.quiz.participants.length, 3);
+  assert.equal(adminSnapshot.payload.quiz.answerRecords.length, 3);
+  assert.ok(adminSnapshot.payload.quiz.participationRecords.length >= 4);
+  assert.equal(adminSnapshot.payload.quiz.round, 1);
   assert.equal(adminSnapshot.payload.quiz.leaderboard.length, 3);
 
   await close(firstRun.server);
@@ -488,6 +521,10 @@ test("resets participant and answer records so students can answer again", async
   );
   assert.equal(reset.response.status, 200);
   assert.deepEqual(reset.payload.cleared, { submissions: 1, participants: 1 });
+  assert.deepEqual(reset.payload.recordsPreserved, {
+    answers: 1,
+    participations: 1,
+  });
   const snapshot = await request(
     baseUrl,
     `/api/quizzes/${created.payload.quizId}/admin`,
@@ -495,6 +532,9 @@ test("resets participant and answer records so students can answer again", async
   );
   assert.deepEqual(snapshot.payload.quiz.submissions, []);
   assert.deepEqual(snapshot.payload.quiz.participants, []);
+  assert.equal(snapshot.payload.quiz.answerRecords.length, 1);
+  assert.equal(snapshot.payload.quiz.participationRecords.length, 1);
+  assert.equal(snapshot.payload.quiz.round, 2);
 
   const staleSession = await request(
     baseUrl,
@@ -517,6 +557,15 @@ test("resets participant and answer records so students can answer again", async
     }
   );
   assert.equal(secondSubmission.response.status, 200);
+  const historyAfterRetry = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/admin`,
+    { headers: { "X-Admin-Token": created.payload.adminToken } }
+  );
+  assert.deepEqual(
+    historyAfterRetry.payload.quiz.answerRecords.map((record) => record.round),
+    [1, 2]
+  );
 });
 
 test("rejects duplicate PINs while allowing namesakes with distinct codes", async (context) => {
@@ -952,6 +1001,65 @@ test("migrates legacy rooms onto the 31-day expiration policy", async (context) 
   assert.equal(expired.payload.error.code, "QUIZ_EXPIRED");
   const migrated = JSON.parse(await readFile(dataFile, "utf8"));
   assert.ok(migrated.quizzes[created.payload.quizId].expiresAt);
+});
+
+test("derives a legacy shared roster from the latest room only", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-roster-migration-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const firstRun = await listen(dataFile);
+  context.after(async () => {
+    if (firstRun.server.listening) await close(firstRun.server);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const created = await request(firstRun.baseUrl, "/api/quizzes", {
+    method: "POST",
+    body: JSON.stringify({
+      question: {
+        type: "boolean",
+        prompt: "الأرض تدور حول الشمس.",
+        options: ["صح", "خطأ"],
+        correctAnswer: "صح",
+      },
+      students: [
+        {
+          id: "latest-student",
+          name: "هند محمد",
+          className: "ثاني ثانوي",
+          halaqa: "سواعد",
+          pin: "1357",
+        },
+      ],
+    }),
+  });
+  await close(firstRun.server);
+
+  const stored = JSON.parse(await readFile(dataFile, "utf8"));
+  const latestQuiz = stored.quizzes[created.payload.quizId];
+  const oldQuiz = structuredClone(latestQuiz);
+  oldQuiz.id = "legacy-old-room";
+  oldQuiz.question.id = "question-legacy-old-room";
+  oldQuiz.students = Array.from({ length: 80 }, (_, index) => ({
+    ...structuredClone(latestQuiz.students[0]),
+    id: `historical-student-${index}`,
+  }));
+  oldQuiz.createdAt = new Date(Date.now() - 60_000).toISOString();
+  oldQuiz.updatedAt = oldQuiz.createdAt;
+  stored.quizzes = {
+    [oldQuiz.id]: oldQuiz,
+    [created.payload.quizId]: latestQuiz,
+  };
+  delete stored.students;
+  await writeFile(dataFile, `${JSON.stringify(stored, null, 2)}\n`);
+
+  const secondRun = await listen(dataFile);
+  context.after(async () => {
+    if (secondRun.server.listening) await close(secondRun.server);
+  });
+  const roster = await request(secondRun.baseUrl, "/api/students");
+  assert.deepEqual(
+    roster.payload.students.map((student) => student.id),
+    ["latest-student"]
+  );
 });
 
 test("migrates legacy namesakes without rejecting the stored classroom", async (context) => {

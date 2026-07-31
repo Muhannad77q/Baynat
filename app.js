@@ -316,6 +316,27 @@ export function createInitialState(now = Date.now()) {
     elapsedMs,
     submittedAt: new Date(now - minutesAgo * 60_000).toISOString(),
   });
+  const submissions = [
+    createSubmission("submission-omar", "student-omar", 8400, true, 22),
+    createSubmission("submission-noura", "student-noura", 10_200, true, 18),
+    createSubmission("submission-yousef", "student-yousef", 13_100, true, 14),
+    createSubmission("submission-layan", "student-layan", 9400, false, 11),
+    createSubmission("submission-rakan", "student-rakan", 16_700, true, 8),
+    createSubmission("submission-joud", "student-joud", 21_100, true, 4),
+  ];
+  const participants = [
+    "student-omar",
+    "student-noura",
+    "student-yousef",
+    "student-layan",
+    "student-rakan",
+    "student-joud",
+  ].map((studentId, index) => ({
+    studentId,
+    firstAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
+    lastAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
+    sessionCount: 1,
+  }));
 
   return {
     version: 2,
@@ -329,22 +350,15 @@ export function createInitialState(now = Date.now()) {
       published: true,
     },
     students,
-    submissions: [
-      createSubmission("submission-omar", "student-omar", 8400, true, 22),
-      createSubmission("submission-noura", "student-noura", 10_200, true, 18),
-      createSubmission("submission-yousef", "student-yousef", 13_100, true, 14),
-      createSubmission("submission-layan", "student-layan", 9400, false, 11),
-      createSubmission("submission-rakan", "student-rakan", 16_700, true, 8),
-      createSubmission("submission-joud", "student-joud", 21_100, true, 4),
-    ],
-    participants: ["student-omar", "student-noura", "student-yousef", "student-layan", "student-rakan", "student-joud"].map(
-      (studentId, index) => ({
-        studentId,
-        firstAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
-        lastAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
-        sessionCount: 1,
-      })
-    ),
+    submissions,
+    participants,
+    answerRecords: submissions.map((submission) => ({ ...submission, round: 1 })),
+    participationRecords: participants.map((participant) => ({
+      studentId: participant.studentId,
+      accessedAt: participant.firstAccessedAt,
+      round: 1,
+    })),
+    currentRound: 1,
   };
 }
 
@@ -360,6 +374,8 @@ let invalidSharedLink = false;
 let sharedStorageKey = "";
 let adminSyncInterval = null;
 let adminSyncInFlight = false;
+let rosterSyncInterval = null;
+let rosterSyncInFlight = false;
 let supervisorToken = "";
 let supervisorAuthMode = "login";
 let editingStudentId = "";
@@ -378,6 +394,20 @@ function loadAdminState() {
         halaqa: student.halaqa || "غير محدد",
       }));
       stored.participants = Array.isArray(stored.participants) ? stored.participants : [];
+      stored.answerRecords = Array.isArray(stored.answerRecords)
+        ? stored.answerRecords
+        : stored.submissions.map((submission) => ({ ...submission, round: 1 }));
+      stored.participationRecords = Array.isArray(stored.participationRecords)
+        ? stored.participationRecords
+        : stored.participants.map((participant) => ({
+            studentId: participant.studentId,
+            accessedAt: participant.firstAccessedAt,
+            round: 1,
+          }));
+      stored.currentRound =
+        Number.isInteger(stored.currentRound) && stored.currentRound > 0
+          ? stored.currentRound
+          : 1;
       return stored;
     }
   } catch {
@@ -1100,6 +1130,9 @@ async function saveQuestion(event) {
   };
   state.submissions = [];
   state.participants = [];
+  state.answerRecords = [];
+  state.participationRecords = [];
+  state.currentRound = 1;
   persistState();
   refs.questionFormError.textContent = "";
   hydrateQuestionEditor(state.currentQuestion);
@@ -1385,7 +1418,7 @@ function formatRecordTime(dateString) {
 }
 
 function renderRecords() {
-  const submissions = state.submissions
+  const submissions = (state.answerRecords || state.submissions)
     .filter((submission) => submission.questionId === state.currentQuestion.id)
     .slice()
     .sort(
@@ -1397,6 +1430,19 @@ function renderRecords() {
       participant.studentId,
       participant,
     ])
+  );
+  const historicalParticipantByStudent = new Map();
+  for (const record of state.participationRecords || []) {
+    const previous = historicalParticipantByStudent.get(record.studentId);
+    if (
+      !previous ||
+      new Date(record.accessedAt).getTime() > new Date(previous.accessedAt).getTime()
+    ) {
+      historicalParticipantByStudent.set(record.studentId, record);
+    }
+  }
+  const currentSubmissions = state.submissions.filter(
+    (submission) => submission.questionId === state.currentQuestion.id
   );
   refs.answerRecordCount.textContent = formatNumber(submissions.length);
   refs.answerRecordsEmpty.hidden = submissions.length > 0;
@@ -1419,6 +1465,13 @@ function renderRecords() {
       studentColumn.append(studentCell);
       row.append(
         studentColumn,
+        createElement(
+          "td",
+          "",
+          submission.round === state.currentRound
+            ? "الحالية"
+            : `الجولة ${formatNumber(submission.round || 1)}`
+        ),
         createElement("td", "", student.className),
         createElement("td", "", student.halaqa),
         createElement("td", "answer-record-text", submission.answer || "—"),
@@ -1437,6 +1490,7 @@ function renderRecords() {
   const enteredCount = state.students.filter(
     (student) =>
       participantByStudent.has(student.id) ||
+      historicalParticipantByStudent.has(student.id) ||
       submissions.some((submission) => submission.studentId === student.id)
   ).length;
   refs.participantRecordCount.textContent = `${formatNumber(enteredCount)} / ${formatNumber(
@@ -1447,9 +1501,25 @@ function renderRecords() {
   refs.participantRecordsBody.replaceChildren(
     ...state.students.map((student, index) => {
       const participant = participantByStudent.get(student.id);
-      const submission = submissions.find((item) => item.studentId === student.id);
-      const statusText = submission ? "أجاب" : participant ? "دخل ولم يجب" : "لم يدخل";
-      const statusClass = submission ? "answered" : participant ? "joined" : "waiting";
+      const historicalParticipant = historicalParticipantByStudent.get(student.id);
+      const submission = currentSubmissions.find((item) => item.studentId === student.id);
+      const historicalSubmission = submissions.find(
+        (item) => item.studentId === student.id
+      );
+      const statusText = submission
+        ? "أجاب"
+        : participant
+          ? "دخل ولم يجب"
+          : historicalSubmission || historicalParticipant
+            ? "شارك سابقًا"
+            : "لم يدخل";
+      const statusClass = submission
+        ? "answered"
+        : participant
+          ? "joined"
+          : historicalSubmission || historicalParticipant
+            ? "previous"
+            : "waiting";
       const status = createElement("span", `student-status ${statusClass}`);
       status.append(createElement("i"), document.createTextNode(statusText));
       const row = document.createElement("tr");
@@ -1472,8 +1542,10 @@ function renderRecords() {
           "",
           participant
             ? formatRecordTime(participant.lastAccessedAt)
-            : submission
-              ? formatRecordTime(submission.submittedAt)
+            : historicalParticipant
+              ? formatRecordTime(historicalParticipant.accessedAt)
+              : historicalSubmission
+                ? formatRecordTime(historicalSubmission.submittedAt)
               : "—"
         )
       );
@@ -1493,7 +1565,7 @@ async function resetLeaderboard() {
   }
   if (
     !window.confirm(
-      "سيُحذف سجل المشاركات والأجوبة لسؤال اليوم، وسيتمكن الطلاب من الحل من جديد. هل تريد المتابعة؟"
+      "سيُصفّر الترتيب الحالي وسيتمكن الطلاب من الحل من جديد، مع بقاء سجل المشاركات والأجوبة محفوظًا. هل تريد المتابعة؟"
     )
   ) {
     return;
@@ -1509,9 +1581,10 @@ async function resetLeaderboard() {
     }
     state.submissions = [];
     state.participants = [];
+    state.currentRound = (state.currentRound || 1) + 1;
     persistState();
     renderAll();
-    showToast("تمت إعادة تعيين المتصدرين والسجل");
+    showToast("تمت إعادة تعيين المتصدرين وبقي السجل محفوظًا");
   } catch (error) {
     showToast(error.message, true);
   }
@@ -1744,6 +1817,24 @@ async function refreshSupervisorRoster(pinOverrides = {}) {
   });
   persistState();
   renderAll();
+  startRosterSync();
+}
+
+async function syncSupervisorRosterSilently() {
+  if (rosterSyncInFlight || !supervisorToken) return;
+  rosterSyncInFlight = true;
+  try {
+    await refreshSupervisorRoster();
+  } catch {
+    // Authentication errors are handled by supervisorRequest; transient polling errors stay silent.
+  } finally {
+    rosterSyncInFlight = false;
+  }
+}
+
+function startRosterSync() {
+  if (rosterSyncInterval) return;
+  rosterSyncInterval = window.setInterval(syncSupervisorRosterSilently, 5_000);
 }
 
 function adminRequest(path, options = {}) {
@@ -1774,6 +1865,9 @@ async function ensureRemoteQuiz() {
   };
   state.submissions = [];
   state.participants = [];
+  state.answerRecords = [];
+  state.participationRecords = [];
+  state.currentRound = 1;
   persistState();
   renderAll();
   startAdminSync();
@@ -1828,6 +1922,9 @@ async function syncAdminResults() {
     });
     state.submissions = payload.quiz.submissions;
     state.participants = payload.quiz.participants || [];
+    state.answerRecords = payload.quiz.answerRecords || payload.quiz.submissions;
+    state.participationRecords = payload.quiz.participationRecords || [];
+    state.currentRound = payload.quiz.round || 1;
     persistState();
     renderAll();
   } catch (error) {

@@ -1843,6 +1843,11 @@ tbody tr:hover {
   color: var(--primary);
 }
 
+.student-status.previous {
+  background: #fff7df;
+  color: #9a6b00;
+}
+
 .student-status i {
   width: 6px;
   height: 6px;
