@@ -78,6 +78,29 @@ function validateStoredData(parsed, initialSetupKey) {
   }
 
   let migrated = false;
+  const migrateStudent = (student) => {
+    if (
+      !isRecord(student) ||
+      typeof student.name !== "string" ||
+      typeof student.className !== "string"
+    ) {
+      return;
+    }
+    if (typeof student.halaqa !== "string" || !student.halaqa.trim()) {
+      student.halaqa = "غير محدد";
+      migrated = true;
+    }
+    const expectedIdentityLookup = studentIdentityLookup(
+      parsed.secret,
+      student.name,
+      student.className,
+      student.halaqa
+    );
+    if (student.identityLookup !== expectedIdentityLookup) {
+      student.identityLookup = expectedIdentityLookup;
+      migrated = true;
+    }
+  };
   if (parsed.adminCredential === undefined) {
     parsed.adminCredential = null;
     migrated = true;
@@ -100,6 +123,7 @@ function validateStoredData(parsed, initialSetupKey) {
       initialSetupKey || randomBytes(9).toString("base64url");
     migrated = true;
   }
+  const rosterCandidates = new Map();
   for (const [quizId, quiz] of Object.entries(parsed.quizzes)) {
     const validQuiz =
       isRecord(quiz) &&
@@ -112,19 +136,40 @@ function validateStoredData(parsed, initialSetupKey) {
       Number.isFinite(new Date(quiz.createdAt).getTime());
     if (validQuiz) {
       for (const student of quiz.students) {
-        if (
-          isRecord(student) &&
-          typeof student.name === "string" &&
-          typeof student.className === "string" &&
-          !student.identityLookup
-        ) {
-          student.identityLookup = studentIdentityLookup(
-            parsed.secret,
-            student.name,
-            student.className
-          );
-          migrated = true;
+        migrateStudent(student);
+        if (typeof student?.id === "string") {
+          rosterCandidates.set(student.id, structuredClone(student));
         }
+      }
+      if (!isRecord(quiz.starts)) {
+        quiz.starts = {};
+        migrated = true;
+      }
+      if (!isRecord(quiz.participants)) {
+        quiz.participants = {};
+        for (const [studentId, startedAt] of Object.entries(quiz.starts)) {
+          const startedTime = Number(startedAt);
+          if (Number.isFinite(startedTime)) {
+            const timestamp = new Date(startedTime).toISOString();
+            quiz.participants[studentId] = {
+              studentId,
+              firstAccessedAt: timestamp,
+              lastAccessedAt: timestamp,
+              sessionCount: 1,
+            };
+          }
+        }
+        for (const submission of quiz.submissions) {
+          if (!quiz.participants[submission.studentId]) {
+            quiz.participants[submission.studentId] = {
+              studentId: submission.studentId,
+              firstAccessedAt: submission.submittedAt,
+              lastAccessedAt: submission.submittedAt,
+              sessionCount: 1,
+            };
+          }
+        }
+        migrated = true;
       }
     }
     const validStudents =
@@ -134,8 +179,9 @@ function validateStoredData(parsed, initialSetupKey) {
           typeof student?.id === "string" &&
           typeof student.name === "string" &&
           typeof student.className === "string" &&
+          typeof student.halaqa === "string" &&
           typeof student.identityLookup === "string" &&
-          typeof student.pinLookup === "string" &&
+          (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
           typeof student.pinSalt === "string" &&
           typeof student.pinHash === "string"
       );
@@ -159,10 +205,19 @@ function validateStoredData(parsed, initialSetupKey) {
           typeof session.studentId === "string" &&
           Number.isFinite(new Date(session.createdAt).getTime())
       );
+    const validParticipants =
+      validQuiz &&
+      Object.entries(quiz.participants).every(
+        ([studentId, participant]) =>
+          participant?.studentId === studentId &&
+          Number.isFinite(new Date(participant.firstAccessedAt).getTime()) &&
+          Number.isFinite(new Date(participant.lastAccessedAt).getTime()) &&
+          Number.isInteger(participant.sessionCount) &&
+          participant.sessionCount >= 1
+      );
     const uniqueStudents =
       validStudents &&
-      new Set(quiz.students.map((student) => student.id)).size === quiz.students.length &&
-      new Set(quiz.students.map((student) => student.pinLookup)).size === quiz.students.length;
+      new Set(quiz.students.map((student) => student.id)).size === quiz.students.length;
     const uniqueSubmissions =
       validSubmissions &&
       new Set(quiz.submissions.map((submission) => submission.id)).size ===
@@ -174,16 +229,13 @@ function validateStoredData(parsed, initialSetupKey) {
       !validStudents ||
       !validSubmissions ||
       !validSessions ||
+      !validParticipants ||
       !uniqueStudents ||
       !uniqueSubmissions
     ) {
       throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
     }
 
-    if (!isRecord(quiz.starts)) {
-      quiz.starts = {};
-      migrated = true;
-    }
     if (!quiz.expiresAt) {
       quiz.expiresAt = new Date(
         new Date(quiz.createdAt).getTime() + QUIZ_RETENTION_MS
@@ -192,6 +244,38 @@ function validateStoredData(parsed, initialSetupKey) {
     } else if (!Number.isFinite(new Date(quiz.expiresAt).getTime())) {
       throw new Error("تاريخ انتهاء غرفة في ملف بَيّنات غير صالح.");
     }
+  }
+
+  if (!Array.isArray(parsed.students)) {
+    parsed.students = [...rosterCandidates.values()];
+    migrated = true;
+  } else {
+    for (const student of parsed.students) migrateStudent(student);
+    const knownStudentIds = new Set(parsed.students.map((student) => student?.id));
+    for (const [studentId, student] of rosterCandidates) {
+      if (!knownStudentIds.has(studentId)) {
+        parsed.students.push(student);
+        knownStudentIds.add(studentId);
+        migrated = true;
+      }
+    }
+  }
+  const validRoster =
+    parsed.students.length <= MAX_STUDENTS &&
+    parsed.students.every(
+      (student) =>
+        typeof student?.id === "string" &&
+        typeof student.name === "string" &&
+        typeof student.className === "string" &&
+        typeof student.halaqa === "string" &&
+        typeof student.identityLookup === "string" &&
+        (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
+        typeof student.pinSalt === "string" &&
+        typeof student.pinHash === "string"
+    ) &&
+    new Set(parsed.students.map((student) => student.id)).size === parsed.students.length;
+  if (!validRoster) {
+    throw new Error("قائمة الطلاب المشتركة في ملف بَيّنات غير صالحة.");
   }
   return { data: parsed, migrated };
 }
@@ -250,6 +334,7 @@ class JsonStore {
       secret: randomBytes(32).toString("base64url"),
       adminCredential: null,
       setupKey: this.initialSetupKey || randomBytes(9).toString("base64url"),
+      students: [],
       quizzes: {},
     };
     try {
@@ -451,18 +536,18 @@ function verifySupervisorToken(token, secret) {
   return safeEqual(signature, expected);
 }
 
-function canonicalStudentIdentity(name, className) {
-  return `${normalizeAnswer(name)}|${normalizeAnswer(className)}`;
+function canonicalStudentIdentity(name, className, halaqa) {
+  return `${normalizeAnswer(name)}|${normalizeAnswer(className)}|${normalizeAnswer(halaqa)}`;
 }
 
-function studentIdentityLookup(secret, name, className) {
+function studentIdentityLookup(secret, name, className, halaqa) {
   return createHmac("sha256", secret)
-    .update(`student:${canonicalStudentIdentity(name, className)}`)
+    .update(`student:${canonicalStudentIdentity(name, className, halaqa)}`)
     .digest("base64url");
 }
 
-function canonicalAccessCredential(name, className, pin) {
-  return `${canonicalStudentIdentity(name, className)}|${normalizeDigits(pin)}`;
+function canonicalAccessCredential(name, className, halaqa, pin) {
+  return `${canonicalStudentIdentity(name, className, halaqa)}|${normalizeDigits(pin)}`;
 }
 
 function issueAccessChallenge(secret, quizId, credential, difficultyBits) {
@@ -564,7 +649,12 @@ function createProofReplayGuard() {
 }
 
 function publicStudent(student) {
-  return { id: student.id, name: student.name, className: student.className };
+  return {
+    id: student.id,
+    name: student.name,
+    className: student.className,
+    halaqa: student.halaqa,
+  };
 }
 
 function publicQuestion(quiz) {
@@ -574,6 +664,27 @@ function publicQuestion(quiz) {
 
 function publicQuestionSummary(quiz) {
   return { type: quiz.question.type };
+}
+
+function publicAccessOptions(quiz) {
+  const byClass = new Map();
+  for (const student of quiz.students) {
+    if (!byClass.has(student.className)) byClass.set(student.className, new Set());
+    byClass.get(student.className).add(student.halaqa);
+  }
+  return [...byClass.entries()].map(([className, halaqas]) => ({
+    className,
+    halaqas: [...halaqas].sort((first, second) => first.localeCompare(second, "ar")),
+  }));
+}
+
+function serializeParticipants(quiz) {
+  return Object.values(quiz.participants || {}).map((participant) => ({
+    studentId: participant.studentId,
+    firstAccessedAt: participant.firstAccessedAt,
+    lastAccessedAt: participant.lastAccessedAt,
+    sessionCount: participant.sessionCount,
+  }));
 }
 
 function acceptedAnswer(question) {
@@ -600,7 +711,7 @@ function serializeResult(quiz, submission) {
   const entry = leaderboard.find((item) => item.id === submission.id);
   return {
     entry,
-    participantCount: leaderboard.length,
+    participantCount: Math.max(serializeParticipants(quiz).length, leaderboard.length),
     suggestedAnswer: submission.isCorrect ? null : acceptedAnswer(quiz.question),
     leaderboard,
   };
@@ -636,7 +747,10 @@ function sanitizeStudentInputs(students, secret, quizId) {
 
   const accepted = [];
   for (const student of students) {
-    const validation = validateStudentInput(student, accepted);
+    const validation = validateStudentInput(
+      { ...student, halaqa: student?.halaqa || "غير محدد" },
+      accepted
+    );
     if (!validation.valid) {
       throw new HttpError(400, validation.error, "INVALID_STUDENT");
     }
@@ -651,7 +765,8 @@ function sanitizeStudentInputs(students, secret, quizId) {
     const identityLookup = studentIdentityLookup(
       secret,
       validation.value.name,
-      validation.value.className
+      validation.value.className,
+      validation.value.halaqa
     );
     if (accepted.some((item) => item.pinLookup === lookup)) {
       throw new HttpError(
@@ -664,6 +779,7 @@ function sanitizeStudentInputs(students, secret, quizId) {
       id,
       name: validation.value.name,
       className: validation.value.className,
+      halaqa: validation.value.halaqa,
       pin: validation.value.pin,
       pinLookup: lookup,
       identityLookup,
@@ -726,12 +842,16 @@ function readSupervisorPassword(body) {
 function readStudentAccessInput(body) {
   const name = String(body?.name || "").trim();
   const className = String(body?.className || "").trim();
+  const halaqa = String(body?.halaqa || "").trim();
   const pin = normalizeDigits(body?.pin || "").trim();
   if (normalizeAnswer(name).length < 2) {
     throw new HttpError(400, "اكتب اسم الطالب كما سجّله المشرف.", "INVALID_STUDENT_NAME");
   }
   if (!normalizeAnswer(className)) {
-    throw new HttpError(400, "اكتب صف الطالب كما سجّله المشرف.", "INVALID_STUDENT_CLASS");
+    throw new HttpError(400, "اختر صف الطالب.", "INVALID_STUDENT_CLASS");
+  }
+  if (!normalizeAnswer(halaqa)) {
+    throw new HttpError(400, "اختر حلقة الطالب.", "INVALID_STUDENT_HALAQA");
   }
   if (!/^\d{4}$/.test(pin)) {
     throw new HttpError(400, "أدخل رمزًا صحيحًا من ٤ أرقام.", "INVALID_PIN");
@@ -739,8 +859,9 @@ function readStudentAccessInput(body) {
   return {
     name,
     className,
+    halaqa,
     pin,
-    credential: canonicalAccessCredential(name, className, pin),
+    credential: canonicalAccessCredential(name, className, halaqa, pin),
   };
 }
 
@@ -1052,6 +1173,154 @@ export async function createBaynatServer({
         return;
       }
 
+      const rosterMatch = pathname.match(/^\/api\/students(?:\/([A-Za-z0-9_-]+))?$/);
+      if (rosterMatch) {
+        requireSupervisor(request, store);
+        if (request.method === "GET" && !rosterMatch[1]) {
+          json(
+            response,
+            200,
+            { students: store.data.students.map(publicStudent) },
+            securityHeaders()
+          );
+          return;
+        }
+        if (request.headers["sec-fetch-site"] === "cross-site") {
+          throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
+        }
+        if (request.method === "POST" && !rosterMatch[1]) {
+          const body = await readJsonBody(request);
+          const validation = validateStudentInput(body);
+          if (!validation.valid) {
+            throw new HttpError(400, validation.error, "INVALID_STUDENT");
+          }
+          const id =
+            typeof body.id === "string" && /^[a-zA-Z0-9_-]{3,80}$/.test(body.id)
+              ? body.id
+              : `student-${randomBytes(7).toString("base64url")}`;
+          const student = {
+            id,
+            name: validation.value.name,
+            className: validation.value.className,
+            halaqa: validation.value.halaqa,
+            identityLookup: studentIdentityLookup(
+              store.data.secret,
+              validation.value.name,
+              validation.value.className,
+              validation.value.halaqa
+            ),
+            pinLookup: pinLookup(store.data.secret, "roster", validation.value.pin),
+            ...(await hashPin(validation.value.pin)),
+          };
+          await store.update((data) => {
+            if (data.students.length >= MAX_STUDENTS) {
+              throw new HttpError(
+                400,
+                `الحد الأعلى هو ${MAX_STUDENTS} طالبًا.`,
+                "ROSTER_TOO_LARGE"
+              );
+            }
+            if (data.students.some((existing) => existing.id === student.id)) {
+              throw new HttpError(409, "الطالب مضاف بالفعل.", "DUPLICATE_STUDENT");
+            }
+            data.students.push(student);
+            for (const quiz of Object.values(data.quizzes)) {
+              if (!quiz.students.some((existing) => existing.id === student.id)) {
+                quiz.students.push(structuredClone(student));
+                quiz.updatedAt = new Date().toISOString();
+              }
+            }
+          });
+          json(response, 201, { student: publicStudent(student) }, securityHeaders());
+          return;
+        }
+        if (request.method === "PATCH" && rosterMatch[1]) {
+          const studentId = rosterMatch[1];
+          const existing = store.data.students.find((student) => student.id === studentId);
+          if (!existing) {
+            throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
+          }
+          const body = await readJsonBody(request);
+          const validation = validateStudentInput(
+            {
+              name: body.name,
+              className: body.className,
+              halaqa: body.halaqa,
+              pin: body.pin || "",
+            },
+            [],
+            { pinRequired: false }
+          );
+          if (!validation.valid) {
+            throw new HttpError(400, validation.error, "INVALID_STUDENT");
+          }
+          const replacement = {
+            ...existing,
+            name: validation.value.name,
+            className: validation.value.className,
+            halaqa: validation.value.halaqa,
+            identityLookup: studentIdentityLookup(
+              store.data.secret,
+              validation.value.name,
+              validation.value.className,
+              validation.value.halaqa
+            ),
+          };
+          if (validation.value.pin) {
+            Object.assign(
+              replacement,
+              {
+                pinLookup: pinLookup(store.data.secret, "roster", validation.value.pin),
+              },
+              await hashPin(validation.value.pin)
+            );
+          }
+          await store.update((data) => {
+            const rosterIndex = data.students.findIndex((student) => student.id === studentId);
+            if (rosterIndex === -1) {
+              throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
+            }
+            data.students[rosterIndex] = replacement;
+            for (const quiz of Object.values(data.quizzes)) {
+              const quizStudentIndex = quiz.students.findIndex(
+                (student) => student.id === studentId
+              );
+              if (quizStudentIndex !== -1) {
+                quiz.students[quizStudentIndex] = structuredClone(replacement);
+                quiz.updatedAt = new Date().toISOString();
+              }
+            }
+          });
+          json(response, 200, { student: publicStudent(replacement) }, securityHeaders());
+          return;
+        }
+        if (request.method === "DELETE" && rosterMatch[1]) {
+          const studentId = rosterMatch[1];
+          if (!store.data.students.some((student) => student.id === studentId)) {
+            throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
+          }
+          await store.update((data) => {
+            data.students = data.students.filter((student) => student.id !== studentId);
+            for (const quiz of Object.values(data.quizzes)) {
+              quiz.students = quiz.students.filter((student) => student.id !== studentId);
+              quiz.submissions = quiz.submissions.filter(
+                (submission) => submission.studentId !== studentId
+              );
+              quiz.sessions = Object.fromEntries(
+                Object.entries(quiz.sessions).filter(
+                  ([, session]) => session.studentId !== studentId
+                )
+              );
+              delete quiz.starts[studentId];
+              delete quiz.participants[studentId];
+              quiz.updatedAt = new Date().toISOString();
+            }
+          });
+          json(response, 200, { ok: true }, securityHeaders());
+          return;
+        }
+      }
+
       if (pathname === "/api/quizzes" && request.method === "POST") {
         requireSupervisor(request, store);
         if (request.headers["sec-fetch-site"] === "cross-site") {
@@ -1061,17 +1330,21 @@ export async function createBaynatServer({
         const quizId = randomBytes(6).toString("base64url");
         const adminToken = randomBytes(32).toString("base64url");
         const question = sanitizeQuestion(body.question, quizId);
-        const studentInputs = sanitizeStudentInputs(body.students, store.data.secret, quizId);
+        const studentInputs =
+          store.data.students.length === 0
+            ? sanitizeStudentInputs(body.students, store.data.secret, quizId)
+            : null;
         recordQuizCreation(request, true);
-        const students = await hashStudentInputs(studentInputs);
+        const bootstrapStudents = studentInputs ? await hashStudentInputs(studentInputs) : null;
         const createdAt = new Date();
         const quiz = {
           id: quizId,
           question,
-          students,
+          students: [],
           submissions: [],
           sessions: {},
           starts: {},
+          participants: {},
           adminTokenHash: hashToken(adminToken),
           createdAt: createdAt.toISOString(),
           updatedAt: createdAt.toISOString(),
@@ -1086,6 +1359,17 @@ export async function createBaynatServer({
               delete data.quizzes[storedQuizId];
             }
           }
+          if (data.students.length === 0 && bootstrapStudents) {
+            data.students = structuredClone(bootstrapStudents);
+          }
+          if (data.students.length === 0) {
+            throw new HttpError(
+              400,
+              "أضف طالبًا واحدًا على الأقل قبل نشر السؤال.",
+              "EMPTY_ROSTER"
+            );
+          }
+          quiz.students = structuredClone(data.students);
           data.quizzes[quizId] = quiz;
         });
         json(
@@ -1115,12 +1399,35 @@ export async function createBaynatServer({
               question: quiz.question,
               students: quiz.students.map(publicStudent),
               submissions: quiz.submissions,
+              participants: serializeParticipants(quiz),
               leaderboard: serializeLeaderboard(quiz),
               updatedAt: quiz.updatedAt,
             },
           },
           securityHeaders()
         );
+        return;
+      }
+
+      const resetLeaderboardMatch = pathname.match(
+        /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/leaderboard\/reset$/
+      );
+      if (resetLeaderboardMatch && request.method === "POST") {
+        const quiz = requireQuiz(store, resetLeaderboardMatch[1]);
+        requireAdmin(request, quiz);
+        const cleared = {
+          submissions: quiz.submissions.length,
+          participants: serializeParticipants(quiz).length,
+        };
+        await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          draftQuiz.submissions = [];
+          draftQuiz.sessions = {};
+          draftQuiz.starts = {};
+          draftQuiz.participants = {};
+          draftQuiz.updatedAt = new Date().toISOString();
+        });
+        json(response, 200, { ok: true, cleared }, securityHeaders());
         return;
       }
 
@@ -1139,7 +1446,8 @@ export async function createBaynatServer({
         const identityLookup = studentIdentityLookup(
           store.data.secret,
           validation.value.name,
-          validation.value.className
+          validation.value.className,
+          validation.value.halaqa
         );
         if (quiz.students.some((student) => student.pinLookup === lookup)) {
           throw new HttpError(
@@ -1155,6 +1463,7 @@ export async function createBaynatServer({
               : `student-${randomBytes(7).toString("base64url")}`,
           name: validation.value.name,
           className: validation.value.className,
+          halaqa: validation.value.halaqa,
           pinLookup: lookup,
           identityLookup,
           ...(await hashPin(validation.value.pin)),
@@ -1200,6 +1509,7 @@ export async function createBaynatServer({
             )
           );
           if (draftQuiz.starts) delete draftQuiz.starts[studentId];
+          if (draftQuiz.participants) delete draftQuiz.participants[studentId];
           draftQuiz.updatedAt = new Date().toISOString();
         });
         json(response, 200, { ok: true }, securityHeaders());
@@ -1253,20 +1563,23 @@ export async function createBaynatServer({
         const identityLookup = studentIdentityLookup(
           store.data.secret,
           input.name,
-          input.className
+          input.className,
+          input.halaqa
         );
-        const lookup = pinLookup(store.data.secret, quiz.id, input.pin);
-        const candidate = quiz.students.find(
-          (item) =>
-            item.identityLookup === identityLookup &&
-            item.pinLookup === lookup
+        const candidates = quiz.students.filter(
+          (item) => item.identityLookup === identityLookup
         );
-        const student =
-          candidate && (await verifyPin(input.pin, candidate)) ? candidate : null;
+        let student = null;
+        for (const candidate of candidates) {
+          if (await verifyPin(input.pin, candidate)) {
+            student = candidate;
+            break;
+          }
+        }
         if (!student) {
           throw new HttpError(
             401,
-            "الاسم أو الصف أو الرمز غير صحيح. تأكد منها أو راجع المشرف.",
+            "الاسم أو الصف أو الحلقة أو الرمز غير صحيح. تأكد منها أو راجع المشرف.",
             "PIN_REJECTED"
           );
         }
@@ -1275,7 +1588,22 @@ export async function createBaynatServer({
         await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
           draftQuiz.starts ||= {};
+          draftQuiz.participants ||= {};
           draftQuiz.starts[student.id] ||= startedAt;
+          const accessedAt = new Date().toISOString();
+          const previousParticipant = draftQuiz.participants[student.id];
+          draftQuiz.participants[student.id] = previousParticipant
+            ? {
+                ...previousParticipant,
+                lastAccessedAt: accessedAt,
+                sessionCount: previousParticipant.sessionCount + 1,
+              }
+            : {
+                studentId: student.id,
+                firstAccessedAt: accessedAt,
+                lastAccessedAt: accessedAt,
+                sessionCount: 1,
+              };
           draftQuiz.sessions = Object.fromEntries(
             Object.entries(draftQuiz.sessions).filter(
               ([, session]) => session.studentId !== student.id
@@ -1384,7 +1712,11 @@ export async function createBaynatServer({
             quiz: {
               id: quiz.id,
               question: publicQuestionSummary(quiz),
-              participantCount: quiz.submissions.length,
+              accessOptions: publicAccessOptions(quiz),
+              participantCount: Math.max(
+                serializeParticipants(quiz).length,
+                quiz.submissions.length
+              ),
             },
           },
           securityHeaders()

@@ -82,12 +82,16 @@ function solveChallenge(token, difficultyBits) {
 }
 
 async function createStudentProof(baseUrl, quizId, credentials) {
+  const completeCredentials = {
+    halaqa: "غير محدد",
+    ...credentials,
+  };
   const challenge = await request(
     baseUrl,
     `/api/quizzes/${quizId}/access/challenge`,
     {
       method: "POST",
-      body: JSON.stringify(credentials),
+      body: JSON.stringify(completeCredentials),
     }
   );
   assert.equal(challenge.response.status, 200);
@@ -106,10 +110,14 @@ async function accessStudent(baseUrl, quizId, credentials) {
 }
 
 async function accessStudentWithProof(baseUrl, quizId, credentials, proof) {
+  const completeCredentials = {
+    halaqa: "غير محدد",
+    ...credentials,
+  };
   return request(baseUrl, `/api/quizzes/${quizId}/access`, {
     method: "POST",
     body: JSON.stringify({
-      ...credentials,
+      ...completeCredentials,
       challengeToken: proof.token,
       challengeCounter: proof.counter,
     }),
@@ -148,8 +156,20 @@ test("shares one server-backed quiz across independent student sessions", async 
         correctAnswer: "المريخ",
       },
       students: [
-        { id: "student-sarah", name: "سارة القحطاني", className: "٢ / أ", pin: "4821" },
-        { id: "student-omar", name: "عمر الحربي", className: "٢ / أ", pin: "7350" },
+        {
+          id: "student-sarah",
+          name: "سارة القحطاني",
+          className: "أولى ثانوي",
+          halaqa: "زكاء",
+          pin: "4821",
+        },
+        {
+          id: "student-omar",
+          name: "عمر الحربي",
+          className: "ثاني ثانوي",
+          halaqa: "سواعد",
+          pin: "7350",
+        },
       ],
     }),
   });
@@ -166,10 +186,15 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(JSON.stringify(publicQuiz.payload).includes("المريخ"), false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("4821"), false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("سارة"), false);
+  assert.deepEqual(publicQuiz.payload.quiz.accessOptions, [
+    { className: "أولى ثانوي", halaqas: ["زكاء"] },
+    { className: "ثاني ثانوي", halaqas: ["سواعد"] },
+  ]);
 
   const rejectedAccess = await accessStudent(firstRun.baseUrl, quizId, {
     name: "سارة القحطاني",
-    className: "٢ / أ",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
     pin: "0000",
   });
   assert.equal(rejectedAccess.response.status, 401);
@@ -177,7 +202,8 @@ test("shares one server-backed quiz across independent student sessions", async 
 
   const sarahCredentials = {
     name: "سارة القحطاني",
-    className: "٢ / أ",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
     pin: "4821",
   };
   const sarahProof = await createStudentProof(
@@ -215,6 +241,8 @@ test("shares one server-backed quiz across independent student sessions", async 
     "أي كوكب يُعرف بالكوكب الأحمر؟"
   );
   assert.equal(sarahAccess.payload.result, null);
+  const participantSummary = await request(firstRun.baseUrl, `/api/quizzes/${quizId}`);
+  assert.equal(participantSummary.payload.quiz.participantCount, 1);
 
   const earlyLeaderboard = await request(
     firstRun.baseUrl,
@@ -242,7 +270,8 @@ test("shares one server-backed quiz across independent student sessions", async 
 
   const omarCredentials = {
     name: "عمر الحربي",
-    className: "٢ / أ",
+    className: "ثاني ثانوي",
+    halaqa: "سواعد",
     pin: "7350",
   };
   const omarProof = await createStudentProof(
@@ -288,13 +317,13 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(duplicate.payload.result.entry.isCorrect, true);
 
   const addStudentRequest = () =>
-    request(firstRun.baseUrl, `/api/quizzes/${quizId}/students`, {
+    request(firstRun.baseUrl, "/api/students", {
       method: "POST",
-      headers: { "X-Admin-Token": adminToken },
       body: JSON.stringify({
         id: "student-reem",
         name: "ريم السبيعي",
-        className: "٢ / ج",
+        className: "أولى ثانوي",
+        halaqa: "زكاء",
         pin: "2468",
       }),
     });
@@ -308,10 +337,50 @@ test("shares one server-backed quiz across independent student sessions", async 
     "ريم السبيعي"
   );
 
+  const sharedRoster = await request(firstRun.baseUrl, "/api/students");
+  assert.equal(sharedRoster.response.status, 200);
+  assert.equal(sharedRoster.payload.students.length, 3);
+  assert.equal(JSON.stringify(sharedRoster.payload).includes("pinHash"), false);
+  const secondSupervisorLogin = await fetch(`${firstRun.baseUrl}/api/admin/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+  }).then((response) => response.json());
+  const secondSupervisorRoster = await fetch(`${firstRun.baseUrl}/api/students`, {
+    headers: { "X-Supervisor-Token": secondSupervisorLogin.token },
+  }).then((response) => response.json());
+  assert.deepEqual(secondSupervisorRoster.students, sharedRoster.payload.students);
+  const editedReem = await request(firstRun.baseUrl, "/api/students/student-reem", {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: "ريم السبيعي",
+      className: "ثالث ثانوي",
+      halaqa: "سواعد",
+      pin: "8642",
+    }),
+  });
+  assert.equal(editedReem.response.status, 200);
+  assert.equal(editedReem.payload.student.className, "ثالث ثانوي");
+
+  const oldReemAccess = await accessStudent(firstRun.baseUrl, quizId, {
+    name: "ريم السبيعي",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
+    pin: "2468",
+  });
+  assert.equal(oldReemAccess.response.status, 401);
+  const oldReemPin = await accessStudent(firstRun.baseUrl, quizId, {
+    name: "ريم السبيعي",
+    className: "ثالث ثانوي",
+    halaqa: "سواعد",
+    pin: "2468",
+  });
+  assert.equal(oldReemPin.response.status, 401);
   const reemAccess = await accessStudent(firstRun.baseUrl, quizId, {
     name: "ريم السبيعي",
-    className: "٢ / ج",
-    pin: "2468",
+    className: "ثالث ثانوي",
+    halaqa: "سواعد",
+    pin: "8642",
   });
   assert.equal(reemAccess.response.status, 200);
   assert.equal(reemAccess.payload.student.id, "student-reem");
@@ -339,6 +408,7 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(adminSnapshot.response.status, 200);
   assert.equal(adminSnapshot.payload.quiz.students.length, 3);
   assert.equal(adminSnapshot.payload.quiz.submissions.length, 3);
+  assert.equal(adminSnapshot.payload.quiz.participants.length, 3);
   assert.equal(adminSnapshot.payload.quiz.leaderboard.length, 3);
 
   await close(firstRun.server);
@@ -352,6 +422,100 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(persisted.response.status, 200);
   assert.equal(persisted.payload.quiz.submissions.length, 3);
   assert.equal(persisted.payload.quiz.students.length, 3);
+  const persistedRoster = await request(secondRun.baseUrl, "/api/students");
+  assert.equal(persistedRoster.payload.students.length, 3);
+  assert.equal(
+    persistedRoster.payload.students.find((student) => student.id === "student-reem").halaqa,
+    "سواعد"
+  );
+});
+
+test("resets participant and answer records so students can answer again", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-reset-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const { server, baseUrl } = await listen(dataFile);
+  context.after(async () => {
+    await close(server);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const created = await request(baseUrl, "/api/quizzes", {
+    method: "POST",
+    body: JSON.stringify({
+      question: {
+        type: "boolean",
+        prompt: "الأرض تدور حول الشمس.",
+        options: ["صح", "خطأ"],
+        correctAnswer: "صح",
+      },
+      students: [
+        {
+          id: "student-reset",
+          name: "هند محمد",
+          className: "ثالث ثانوي",
+          halaqa: "زكاء",
+          pin: "4312",
+        },
+      ],
+    }),
+  });
+  const credentials = {
+    name: "هند محمد",
+    className: "ثالث ثانوي",
+    halaqa: "زكاء",
+    pin: "4312",
+  };
+  const firstAccess = await accessStudent(baseUrl, created.payload.quizId, credentials);
+  const firstSubmission = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/submissions`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${firstAccess.payload.token}` },
+      body: JSON.stringify({ answer: "صح" }),
+    }
+  );
+  assert.equal(firstSubmission.response.status, 200);
+
+  const reset = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/leaderboard/reset`,
+    {
+      method: "POST",
+      headers: { "X-Admin-Token": created.payload.adminToken },
+    }
+  );
+  assert.equal(reset.response.status, 200);
+  assert.deepEqual(reset.payload.cleared, { submissions: 1, participants: 1 });
+  const snapshot = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/admin`,
+    { headers: { "X-Admin-Token": created.payload.adminToken } }
+  );
+  assert.deepEqual(snapshot.payload.quiz.submissions, []);
+  assert.deepEqual(snapshot.payload.quiz.participants, []);
+
+  const staleSession = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/submissions`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${firstAccess.payload.token}` },
+      body: JSON.stringify({ answer: "صح" }),
+    }
+  );
+  assert.equal(staleSession.response.status, 401);
+  const secondAccess = await accessStudent(baseUrl, created.payload.quizId, credentials);
+  const secondSubmission = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/submissions`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secondAccess.payload.token}` },
+      body: JSON.stringify({ answer: "صح" }),
+    }
+  );
+  assert.equal(secondSubmission.response.status, 200);
 });
 
 test("rejects duplicate PINs while allowing namesakes with distinct codes", async (context) => {
@@ -418,6 +582,29 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
   assert.equal(secondNamesake.response.status, 200);
   assert.notEqual(firstNamesake.payload.student.id, secondNamesake.payload.student.id);
 
+  const sarahRosterEntry = await request(baseUrl, "/api/students", {
+    method: "POST",
+    body: JSON.stringify({
+      id: "student-sarah",
+      name: "سارة القحطاني",
+      className: "أولى ثانوي",
+      halaqa: "زكاء",
+      pin: "4821",
+    }),
+  });
+  const omarRosterEntry = await request(baseUrl, "/api/students", {
+    method: "POST",
+    body: JSON.stringify({
+      id: "student-omar",
+      name: "عمر الحربي",
+      className: "ثاني ثانوي",
+      halaqa: "سواعد",
+      pin: "7350",
+    }),
+  });
+  assert.equal(sarahRosterEntry.response.status, 201);
+  assert.equal(omarRosterEntry.response.status, 201);
+
   const created = await request(baseUrl, "/api/quizzes", {
     method: "POST",
     body: JSON.stringify({
@@ -445,7 +632,8 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
 
   const sarahCredentials = {
     name: "سارة القحطاني",
-    className: "٢ / أ",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
     pin: "4821",
   };
   const boundProof = await createStudentProof(
@@ -472,7 +660,8 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const failedAccess = await accessStudent(baseUrl, created.payload.quizId, {
       name: "سارة القحطاني",
-      className: "٢ / أ",
+      className: "أولى ثانوي",
+      halaqa: "زكاء",
       pin: String(attempt).padStart(4, "0"),
     });
     assert.equal(failedAccess.response.status, 401);
@@ -486,7 +675,8 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
 
   const sameNetworkStudent = await accessStudent(baseUrl, created.payload.quizId, {
     name: "عمر الحربي",
-    className: "٢ / أ",
+    className: "ثاني ثانوي",
+    halaqa: "سواعد",
     pin: "7350",
   });
   assert.equal(sameNetworkStudent.response.status, 200);
@@ -794,6 +984,11 @@ test("migrates legacy namesakes without rejecting the stored classroom", async (
   const legacyStudents = stored.quizzes[created.payload.quizId].students;
   legacyStudents.forEach((student) => {
     delete student.identityLookup;
+    delete student.halaqa;
+  });
+  stored.students.forEach((student) => {
+    delete student.identityLookup;
+    delete student.halaqa;
   });
   await writeFile(dataFile, `${JSON.stringify(stored, null, 2)}\n`);
 
@@ -804,6 +999,8 @@ test("migrates legacy namesakes without rejecting the stored classroom", async (
   const migrated = JSON.parse(await readFile(dataFile, "utf8"));
   const migratedStudents = migrated.quizzes[created.payload.quizId].students;
   assert.equal(migratedStudents[0].identityLookup, migratedStudents[1].identityLookup);
+  assert.equal(migratedStudents[0].halaqa, "غير محدد");
+  assert.equal(migrated.students.length, 2);
 
   const firstAccess = await accessStudent(
     secondRun.baseUrl,
@@ -866,6 +1063,7 @@ test("uses strong production proof difficulty defaults and floors", async (conte
       body: JSON.stringify({
         name: "سارة القحطاني",
         className: "٢ / أ",
+        halaqa: "غير محدد",
         pin: "4821",
       }),
     }

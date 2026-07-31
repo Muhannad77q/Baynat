@@ -523,6 +523,17 @@ svg {
   color: var(--primary);
 }
 
+.button-danger-soft {
+  border-color: #f0cbd0;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.button-danger-soft:hover:not(:disabled) {
+  border-color: #e8aeb8;
+  background: #fff0f2;
+}
+
 .button-light {
   background: white;
   color: var(--primary-dark);
@@ -1827,6 +1838,11 @@ tbody tr:hover {
   color: var(--muted);
 }
 
+.student-status.joined {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
 .student-status i {
   width: 6px;
   height: 6px;
@@ -1848,6 +1864,31 @@ tbody tr:hover {
 .row-menu:hover {
   background: var(--surface-soft);
   color: var(--ink);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.row-action-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.row-action-button:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.row-action-button svg {
+  width: 15px;
+  height: 15px;
 }
 
 .empty-state {
@@ -1882,6 +1923,12 @@ tbody tr:hover {
   background: white;
   color: var(--muted);
   font-size: 0.66rem;
+}
+
+.leaderboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .score-legend span {
@@ -2042,6 +2089,53 @@ tbody tr:hover {
   font-weight: 700;
 }
 
+.records-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.records-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.records-panel .panel-heading {
+  padding: 20px 22px;
+}
+
+.record-count {
+  display: grid;
+  min-width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  padding: 0 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.records-table {
+  min-width: 850px;
+}
+
+.answer-record-text {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-state.compact {
+  padding: 35px 20px;
+}
+
+.empty-state.compact > span {
+  font-size: 1.6rem;
+}
+
 .modal {
   width: min(540px, calc(100% - 28px));
   max-width: none;
@@ -2153,11 +2247,30 @@ tbody tr:hover {
   margin-bottom: 16px;
 }
 
-.field-group input {
+.field-group input,
+.field-group select {
+  width: 100%;
   min-height: 45px;
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
   padding: 9px 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
   font-size: 0.78rem;
+}
+
+.field-group select:focus {
+  border-color: var(--primary);
+  background: white;
+  box-shadow: 0 0 0 4px rgba(103, 89, 232, 0.08);
+}
+
+.field-help {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 0.62rem;
 }
 
 .form-row {
@@ -2486,7 +2599,7 @@ tbody tr:hover {
   text-align: right;
 }
 
-:is(#studentFullName, #studentClassName) {
+.access-card :is(#studentFullName, #studentClassName, #studentHalaqa) {
   width: 100%;
   height: 52px;
   border: 1px solid var(--border-strong);
@@ -2500,10 +2613,16 @@ tbody tr:hover {
   text-align: right;
 }
 
-:is(#studentFullName, #studentClassName):focus {
+.access-card :is(#studentFullName, #studentClassName, #studentHalaqa):focus {
   border-color: var(--primary);
   background: white;
   box-shadow: 0 0 0 4px rgba(103, 89, 232, 0.08);
+}
+
+.student-access-selects {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 #studentPin {
@@ -3100,7 +3219,7 @@ tbody tr:hover {
 
   .side-nav {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 5px;
     margin: 0;
   }
@@ -3371,7 +3490,8 @@ tbody tr:hover {
   }
 
   .form-row,
-  .copy-field {
+  .copy-field,
+  .student-access-selects {
     grid-template-columns: 1fr;
   }
 
@@ -3404,6 +3524,12 @@ tbody tr:hover {
 
   .score-legend {
     display: grid;
+  }
+
+  .leaderboard-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .podium-card > span:not(.crown):not(.podium-rank) {

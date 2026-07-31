@@ -10,6 +10,15 @@ const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 const WESTERN_DIGITS = "0123456789";
 const PLACE_BONUSES = [30, 20, 10];
 const DEFAULT_OPTIONS = ["الزهرة", "المريخ", "المشتري", "عطارد"];
+export const DEFAULT_CLASS_OPTIONS = Object.freeze([
+  "أولى ثانوي",
+  "ثاني ثانوي",
+  "ثالث ثانوي",
+]);
+export const DEFAULT_HALAQA_OPTIONS = Object.freeze([
+  "زكاء",
+  "سواعد",
+]);
 
 export function normalizeDigits(value = "") {
   return String(value)
@@ -54,25 +63,41 @@ export function isAnswerCorrect(question, answer) {
     .some((acceptedAnswer) => normalizedAnswer === acceptedAnswer);
 }
 
-export function validateStudentInput(student, existingStudents = []) {
+export function validateStudentInput(
+  student,
+  existingStudents = [],
+  { pinRequired = true, excludeId = "" } = {}
+) {
   const name = String(student?.name || "").trim();
   const className = String(student?.className || "").trim();
+  const halaqa = String(student?.halaqa || "").trim();
   const pin = normalizeDigits(student?.pin || "").trim();
 
   if (name.length < 2) {
     return { valid: false, error: "اكتب اسم الطالب كاملًا." };
   }
   if (!className) {
-    return { valid: false, error: "اكتب صف الطالب." };
+    return { valid: false, error: "اختر صف الطالب." };
   }
-  if (!/^\d{4}$/.test(pin)) {
+  if (!halaqa) {
+    return { valid: false, error: "اختر حلقة الطالب." };
+  }
+  if (pinRequired && !/^\d{4}$/.test(pin)) {
     return { valid: false, error: "يجب أن يتكوّن رمز الدخول من ٤ أرقام." };
   }
-  if (existingStudents.some((item) => normalizeDigits(item.pin || "") === pin)) {
+  if (!pinRequired && pin && !/^\d{4}$/.test(pin)) {
+    return { valid: false, error: "رمز الدخول الجديد يجب أن يتكوّن من ٤ أرقام." };
+  }
+  if (
+    pin &&
+    existingStudents.some(
+      (item) => item.id !== excludeId && normalizeDigits(item.pin || "") === pin
+    )
+  ) {
     return { valid: false, error: "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا." };
   }
 
-  return { valid: true, value: { name, className, pin } };
+  return { valid: true, value: { name, className, halaqa, pin } };
 }
 
 export function validateQuestion(question) {
@@ -221,6 +246,7 @@ export function decodeSharePayload(encoded) {
           typeof student.id === "string" &&
           typeof student.name === "string" &&
           typeof student.className === "string" &&
+          typeof student.halaqa === "string" &&
           typeof student.pinHash === "string"
       );
     const validSubmissions =
@@ -249,10 +275,11 @@ export function createSharePayload(state) {
   return {
     version: 1,
     question: state.currentQuestion,
-    students: state.students.map(({ id, name, className, pin, pinHash }) => ({
+    students: state.students.map(({ id, name, className, halaqa, pin, pinHash }) => ({
       id,
       name,
       className,
+      halaqa,
       pinHash: pinHash || hashPin(state.currentQuestion.id, pin),
     })),
     submissions: state.submissions
@@ -271,14 +298,14 @@ export function createSharePayload(state) {
 export function createInitialState(now = Date.now()) {
   const questionId = "question-red-planet";
   const students = [
-    { id: "student-sarah", name: "سارة القحطاني", className: "٢ / أ", pin: "4821" },
-    { id: "student-omar", name: "عمر الحربي", className: "٢ / أ", pin: "7350" },
-    { id: "student-noura", name: "نورة الغامدي", className: "٢ / أ", pin: "1643" },
-    { id: "student-yousef", name: "يوسف الدوسري", className: "٢ / ب", pin: "2904" },
-    { id: "student-layan", name: "ليان الشهري", className: "٢ / ب", pin: "6185" },
-    { id: "student-rakan", name: "راكان المطيري", className: "٢ / ب", pin: "9032" },
-    { id: "student-joud", name: "جود العتيبي", className: "٢ / أ", pin: "4278" },
-    { id: "student-salman", name: "سلمان الزهراني", className: "٢ / ب", pin: "5519" },
+    { id: "student-sarah", name: "سارة القحطاني", className: "أولى ثانوي", halaqa: "زكاء", pin: "4821" },
+    { id: "student-omar", name: "عمر الحربي", className: "أولى ثانوي", halaqa: "زكاء", pin: "7350" },
+    { id: "student-noura", name: "نورة الغامدي", className: "أولى ثانوي", halaqa: "زكاء", pin: "1643" },
+    { id: "student-yousef", name: "يوسف الدوسري", className: "ثاني ثانوي", halaqa: "سواعد", pin: "2904" },
+    { id: "student-layan", name: "ليان الشهري", className: "ثاني ثانوي", halaqa: "سواعد", pin: "6185" },
+    { id: "student-rakan", name: "راكان المطيري", className: "ثاني ثانوي", halaqa: "سواعد", pin: "9032" },
+    { id: "student-joud", name: "جود العتيبي", className: "ثالث ثانوي", halaqa: "زكاء", pin: "4278" },
+    { id: "student-salman", name: "سلمان الزهراني", className: "ثالث ثانوي", halaqa: "سواعد", pin: "5519" },
   ];
   const createSubmission = (id, studentId, elapsedMs, isCorrect, minutesAgo) => ({
     id,
@@ -310,6 +337,14 @@ export function createInitialState(now = Date.now()) {
       createSubmission("submission-rakan", "student-rakan", 16_700, true, 8),
       createSubmission("submission-joud", "student-joud", 21_100, true, 4),
     ],
+    participants: ["student-omar", "student-noura", "student-yousef", "student-layan", "student-rakan", "student-joud"].map(
+      (studentId, index) => ({
+        studentId,
+        firstAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
+        lastAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
+        sessionCount: 1,
+      })
+    ),
   };
 }
 
@@ -327,6 +362,7 @@ let adminSyncInterval = null;
 let adminSyncInFlight = false;
 let supervisorToken = "";
 let supervisorAuthMode = "login";
+let editingStudentId = "";
 
 function loadAdminState() {
   try {
@@ -337,6 +373,11 @@ function loadAdminState() {
       Array.isArray(stored.students) &&
       Array.isArray(stored.submissions)
     ) {
+      stored.students = stored.students.map((student) => ({
+        ...student,
+        halaqa: student.halaqa || "غير محدد",
+      }));
+      stored.participants = Array.isArray(stored.participants) ? stored.participants : [];
       return stored;
     }
   } catch {
@@ -414,9 +455,14 @@ function cacheRefs() {
     openStudentModal: document.querySelector("#openStudentModal"),
     studentModal: document.querySelector("#studentModal"),
     studentForm: document.querySelector("#studentForm"),
+    studentModalLabel: document.querySelector("#studentModalLabel"),
+    studentModalTitle: document.querySelector("#studentModalTitle"),
     studentName: document.querySelector("#studentName"),
     studentClass: document.querySelector("#studentClass"),
+    studentHalaqa: document.querySelector("#studentHalaqa"),
     newStudentPin: document.querySelector("#newStudentPin"),
+    studentPinHelp: document.querySelector("#studentPinHelp"),
+    saveStudentButtonText: document.querySelector("#saveStudentButtonText"),
     studentFormError: document.querySelector("#studentFormError"),
     studentSearch: document.querySelector("#studentSearch"),
     studentListCount: document.querySelector("#studentListCount"),
@@ -425,6 +471,13 @@ function cacheRefs() {
     adminPodium: document.querySelector("#adminPodium"),
     adminLeaderboardRows: document.querySelector("#adminLeaderboardRows"),
     leaderboardEmptyState: document.querySelector("#leaderboardEmptyState"),
+    resetLeaderboardButton: document.querySelector("#resetLeaderboardButton"),
+    answerRecordCount: document.querySelector("#answerRecordCount"),
+    answerRecordsBody: document.querySelector("#answerRecordsBody"),
+    answerRecordsEmpty: document.querySelector("#answerRecordsEmpty"),
+    participantRecordCount: document.querySelector("#participantRecordCount"),
+    participantRecordsBody: document.querySelector("#participantRecordsBody"),
+    participantRecordsEmpty: document.querySelector("#participantRecordsEmpty"),
     shareModal: document.querySelector("#shareModal"),
     shareLinkInput: document.querySelector("#shareLinkInput"),
     copyShareLink: document.querySelector("#copyShareLink"),
@@ -503,18 +556,14 @@ function bindEvents() {
   refs.questionForm.addEventListener("submit", saveQuestion);
   refs.resetQuestionButton.addEventListener("click", resetQuestionEditor);
 
-  refs.openStudentModal.addEventListener("click", () => {
-    refs.studentForm.reset();
-    refs.studentFormError.textContent = "";
-    refs.studentModal.showModal();
-    window.setTimeout(() => refs.studentName.focus(), 80);
-  });
+  refs.openStudentModal.addEventListener("click", () => openStudentEditor());
   refs.newStudentPin.addEventListener("input", () => {
     refs.newStudentPin.value = normalizeDigits(refs.newStudentPin.value).replace(/\D/g, "").slice(0, 4);
   });
-  refs.studentForm.addEventListener("submit", addStudent);
+  refs.studentForm.addEventListener("submit", saveStudent);
   refs.studentSearch.addEventListener("input", renderStudents);
   refs.studentsTableBody.addEventListener("click", handleStudentTableAction);
+  refs.resetLeaderboardButton.addEventListener("click", resetLeaderboard);
   refs.adminAuthForm.addEventListener("submit", submitSupervisorAccess);
   [refs.adminSetupKey, refs.adminPassword, refs.adminPasswordConfirm].forEach((input) =>
     input.addEventListener("input", () => {
@@ -605,8 +654,9 @@ function switchAdminView(viewName) {
   const labels = {
     dashboard: ["لوحة المشرف", "أهلًا أستاذ محمد 👋"],
     question: ["سؤال اليوم", "أنشئ تحدّيًا جديدًا"],
-    students: ["إدارة الفصل", "طلاب فصلك"],
+    students: ["إدارة الطلاب", "الطلاب المشتركون"],
     leaderboard: ["نتائج اليوم", "لوحة المتصدرين"],
+    records: ["سجل اليوم", "الأجوبة والمشاركون"],
   };
   const [kicker, title] = labels[viewName] || labels.dashboard;
   refs.pageKicker.textContent = kicker;
@@ -614,6 +664,7 @@ function switchAdminView(viewName) {
   if (viewName === "question") hydrateQuestionEditor(state.currentQuestion);
   if (viewName === "students") renderStudents();
   if (viewName === "leaderboard") renderAdminLeaderboard();
+  if (viewName === "records") renderRecords();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -660,6 +711,7 @@ function renderAll() {
   renderDashboard();
   renderStudents();
   renderAdminLeaderboard();
+  renderRecords();
 }
 
 function renderDate() {
@@ -1047,6 +1099,7 @@ async function saveQuestion(event) {
     remote: null,
   };
   state.submissions = [];
+  state.participants = [];
   persistState();
   refs.questionFormError.textContent = "";
   hydrateQuestionEditor(state.currentQuestion);
@@ -1062,69 +1115,126 @@ async function saveQuestion(event) {
   }
 }
 
-async function addStudent(event) {
+function replaceStudentSelectOptions(select, values, placeholder, selectedValue = "") {
+  const uniqueValues = [...new Set(values.filter(Boolean))];
+  const placeholderOption = createElement("option", "", placeholder);
+  placeholderOption.value = "";
+  select.replaceChildren(
+    placeholderOption,
+    ...uniqueValues.map((value) => {
+      const option = createElement("option", "", value);
+      option.value = value;
+      return option;
+    })
+  );
+  select.value = uniqueValues.includes(selectedValue) ? selectedValue : "";
+}
+
+function openStudentEditor(student = null) {
+  editingStudentId = student?.id || "";
+  refs.studentForm.reset();
+  refs.studentFormError.textContent = "";
+  const classOptions = [
+    ...DEFAULT_CLASS_OPTIONS,
+    ...state.students.map((item) => item.className),
+    student?.className,
+  ];
+  const halaqaOptions = [
+    ...DEFAULT_HALAQA_OPTIONS,
+    ...state.students.map((item) => item.halaqa),
+    student?.halaqa,
+  ];
+  replaceStudentSelectOptions(
+    refs.studentClass,
+    classOptions,
+    "اختر الصف",
+    student?.className
+  );
+  replaceStudentSelectOptions(
+    refs.studentHalaqa,
+    halaqaOptions,
+    "اختر الحلقة",
+    student?.halaqa
+  );
+  refs.studentName.value = student?.name || "";
+  refs.newStudentPin.required = !student;
+  refs.newStudentPin.placeholder = student ? "اتركه فارغًا دون تغيير" : "٤ أرقام";
+  refs.studentPinHelp.textContent = student
+    ? "اترك الرمز فارغًا للإبقاء على الرمز الحالي."
+    : "رمز خاص بالطالب من ٤ أرقام.";
+  refs.studentModalLabel.textContent = student ? "تعديل البيانات" : "طالب جديد";
+  refs.studentModalTitle.textContent = student ? `تعديل ${student.name}` : "إضافة طالب للفصل";
+  refs.saveStudentButtonText.textContent = student ? "حفظ التعديلات" : "إضافة الطالب";
+  refs.studentModal.showModal();
+  window.setTimeout(() => refs.studentName.focus(), 80);
+}
+
+async function saveStudent(event) {
   event.preventDefault();
+  const isEditing = Boolean(editingStudentId);
   const validation = validateStudentInput(
     {
       name: refs.studentName.value,
       className: refs.studentClass.value,
+      halaqa: refs.studentHalaqa.value,
       pin: refs.newStudentPin.value,
     },
-    state.students
+    state.students,
+    { pinRequired: !isEditing, excludeId: editingStudentId }
   );
   if (!validation.valid) {
     refs.studentFormError.textContent = validation.error;
     return;
   }
 
-  const student = {
-    id: `student-${Date.now().toString(36)}`,
-    ...validation.value,
-  };
-  if (state.currentQuestion.remote) {
-    try {
-      await adminRequest(
-        `/api/quizzes/${encodeURIComponent(state.currentQuestion.remote.quizId)}/students`,
-        {
-          method: "POST",
-          body: JSON.stringify(student),
-        }
-      );
-    } catch (error) {
-      refs.studentFormError.textContent = error.message;
-      return;
-    }
+  try {
+    const path = isEditing
+      ? `/api/students/${encodeURIComponent(editingStudentId)}`
+      : "/api/students";
+    const payload = await supervisorRequest(path, {
+      method: isEditing ? "PATCH" : "POST",
+      body: JSON.stringify(validation.value),
+    });
+    await refreshSupervisorRoster({
+      [payload.student.id]: validation.value.pin,
+    });
+  } catch (error) {
+    refs.studentFormError.textContent = error.message;
+    return;
   }
-  state.students.push(student);
-  persistState();
   refs.studentModal.close();
   refs.studentForm.reset();
+  editingStudentId = "";
   renderAll();
-  showToast(`تمت إضافة ${validation.value.name}`);
+  showToast(isEditing ? "تم حفظ بيانات الطالب" : `تمت إضافة ${validation.value.name}`);
 }
 
 async function handleStudentTableAction(event) {
+  const editButton = event.target.closest("[data-edit-student]");
+  if (editButton) {
+    const student = state.students.find((item) => item.id === editButton.dataset.editStudent);
+    if (student) openStudentEditor(student);
+    return;
+  }
   const button = event.target.closest("[data-delete-student]");
   if (!button) return;
   const student = state.students.find((item) => item.id === button.dataset.deleteStudent);
   if (!student) return;
   if (!window.confirm(`هل تريد حذف ${student.name} من الفصل؟`)) return;
 
-  if (state.currentQuestion.remote) {
-    try {
-      await adminRequest(
-        `/api/quizzes/${encodeURIComponent(
-          state.currentQuestion.remote.quizId
-        )}/students/${encodeURIComponent(student.id)}`,
-        { method: "DELETE" }
-      );
-    } catch (error) {
-      showToast(error.message, true);
-      return;
-    }
+  try {
+    await supervisorRequest(`/api/students/${encodeURIComponent(student.id)}`, {
+      method: "DELETE",
+    });
+  } catch (error) {
+    showToast(error.message, true);
+    return;
   }
   state.students = state.students.filter((item) => item.id !== student.id);
   state.submissions = state.submissions.filter((submission) => submission.studentId !== student.id);
+  state.participants = (state.participants || []).filter(
+    (participant) => participant.studentId !== student.id
+  );
   persistState();
   renderAll();
   showToast("تم حذف الطالب من الفصل");
@@ -1133,7 +1243,7 @@ async function handleStudentTableAction(event) {
 function renderStudents() {
   const query = normalizeAnswer(refs.studentSearch?.value || "");
   const filtered = state.students.filter((student) =>
-    normalizeAnswer(`${student.name} ${student.className}`).includes(query)
+    normalizeAnswer(`${student.name} ${student.className} ${student.halaqa}`).includes(query)
   );
   const submittedIds = new Set(
     state.submissions
@@ -1150,11 +1260,15 @@ function renderStudents() {
       const studentColumn = document.createElement("td");
       const studentCell = createElement("div", "student-cell");
       const details = createElement("div");
-      details.append(createElement("strong", "", student.name), createElement("span", "", `طالب ${student.className}`));
+      details.append(
+        createElement("strong", "", student.name),
+        createElement("span", "", `${student.className} · ${student.halaqa}`)
+      );
       studentCell.append(avatarFor(student, index), details);
       studentColumn.append(studentCell);
 
       const classColumn = createElement("td", "", student.className);
+      const halaqaColumn = createElement("td", "", student.halaqa);
       const pinColumn = document.createElement("td");
       const pin = createElement("span", "pin-code");
       const visiblePin = student.pin ? toArabicDigits(student.pin) : "••••";
@@ -1172,14 +1286,29 @@ function renderStudents() {
 
       const actionColumn = document.createElement("td");
       if (!sharedMode) {
+        const actions = createElement("div", "row-actions");
+        const editButton = createElement("button", "row-action-button");
+        editButton.type = "button";
+        editButton.dataset.editStudent = student.id;
+        editButton.title = `تعديل ${student.name}`;
+        editButton.setAttribute("aria-label", `تعديل ${student.name}`);
+        editButton.append(createIcon("icon-edit"));
         const deleteButton = createElement("button", "row-menu", "×");
         deleteButton.type = "button";
         deleteButton.dataset.deleteStudent = student.id;
         deleteButton.title = `حذف ${student.name}`;
         deleteButton.setAttribute("aria-label", `حذف ${student.name}`);
-        actionColumn.append(deleteButton);
+        actions.append(editButton, deleteButton);
+        actionColumn.append(actions);
       }
-      row.append(studentColumn, classColumn, pinColumn, statusColumn, actionColumn);
+      row.append(
+        studentColumn,
+        classColumn,
+        halaqaColumn,
+        pinColumn,
+        statusColumn,
+        actionColumn
+      );
       return row;
     })
   );
@@ -1244,6 +1373,148 @@ function renderAdminLeaderboard() {
       return row;
     })
   );
+}
+
+function formatRecordTime(dateString) {
+  const date = new Date(dateString);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function renderRecords() {
+  const submissions = state.submissions
+    .filter((submission) => submission.questionId === state.currentQuestion.id)
+    .slice()
+    .sort(
+      (first, second) =>
+        new Date(second.submittedAt).getTime() - new Date(first.submittedAt).getTime()
+    );
+  const participantByStudent = new Map(
+    (state.participants || []).map((participant) => [
+      participant.studentId,
+      participant,
+    ])
+  );
+  refs.answerRecordCount.textContent = formatNumber(submissions.length);
+  refs.answerRecordsEmpty.hidden = submissions.length > 0;
+  refs.answerRecordsBody.closest(".table-wrap").hidden = submissions.length === 0;
+  refs.answerRecordsBody.replaceChildren(
+    ...submissions.map((submission, index) => {
+      const student =
+        state.students.find((item) => item.id === submission.studentId) || {
+          name: "طالب محذوف",
+          className: "—",
+          halaqa: "—",
+        };
+      const row = document.createElement("tr");
+      const studentColumn = document.createElement("td");
+      const studentCell = createElement("div", "student-cell");
+      studentCell.append(
+        avatarFor(student, index),
+        createElement("strong", "", student.name)
+      );
+      studentColumn.append(studentCell);
+      row.append(
+        studentColumn,
+        createElement("td", "", student.className),
+        createElement("td", "", student.halaqa),
+        createElement("td", "answer-record-text", submission.answer || "—"),
+        createElement(
+          "td",
+          `answer-state ${submission.isCorrect ? "correct" : "wrong"}`,
+          submission.isCorrect ? "صحيحة ✓" : "غير صحيحة ×"
+        ),
+        createElement("td", "", formatSeconds(submission.elapsedMs)),
+        createElement("td", "", formatRecordTime(submission.submittedAt))
+      );
+      return row;
+    })
+  );
+
+  const enteredCount = state.students.filter(
+    (student) =>
+      participantByStudent.has(student.id) ||
+      submissions.some((submission) => submission.studentId === student.id)
+  ).length;
+  refs.participantRecordCount.textContent = `${formatNumber(enteredCount)} / ${formatNumber(
+    state.students.length
+  )}`;
+  refs.participantRecordsEmpty.hidden = state.students.length > 0;
+  refs.participantRecordsBody.closest(".table-wrap").hidden = state.students.length === 0;
+  refs.participantRecordsBody.replaceChildren(
+    ...state.students.map((student, index) => {
+      const participant = participantByStudent.get(student.id);
+      const submission = submissions.find((item) => item.studentId === student.id);
+      const statusText = submission ? "أجاب" : participant ? "دخل ولم يجب" : "لم يدخل";
+      const statusClass = submission ? "answered" : participant ? "joined" : "waiting";
+      const status = createElement("span", `student-status ${statusClass}`);
+      status.append(createElement("i"), document.createTextNode(statusText));
+      const row = document.createElement("tr");
+      const studentColumn = document.createElement("td");
+      const studentCell = createElement("div", "student-cell");
+      studentCell.append(
+        avatarFor(student, index),
+        createElement("strong", "", student.name)
+      );
+      studentColumn.append(studentCell);
+      const statusColumn = document.createElement("td");
+      statusColumn.append(status);
+      row.append(
+        studentColumn,
+        createElement("td", "", student.className),
+        createElement("td", "", student.halaqa),
+        statusColumn,
+        createElement(
+          "td",
+          "",
+          participant
+            ? formatRecordTime(participant.lastAccessedAt)
+            : submission
+              ? formatRecordTime(submission.submittedAt)
+              : "—"
+        )
+      );
+      return row;
+    })
+  );
+}
+
+async function resetLeaderboard() {
+  const hasResults =
+    state.submissions.some(
+      (submission) => submission.questionId === state.currentQuestion.id
+    ) || (state.participants || []).length > 0;
+  if (!hasResults) {
+    showToast("قائمة المتصدرين فارغة بالفعل");
+    return;
+  }
+  if (
+    !window.confirm(
+      "سيُحذف سجل المشاركات والأجوبة لسؤال اليوم، وسيتمكن الطلاب من الحل من جديد. هل تريد المتابعة؟"
+    )
+  ) {
+    return;
+  }
+  try {
+    if (state.currentQuestion.remote) {
+      await adminRequest(
+        `/api/quizzes/${encodeURIComponent(
+          state.currentQuestion.remote.quizId
+        )}/leaderboard/reset`,
+        { method: "POST" }
+      );
+    }
+    state.submissions = [];
+    state.participants = [];
+    persistState();
+    renderAll();
+    showToast("تمت إعادة تعيين المتصدرين والسجل");
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
 async function requestJson(path, options = {}) {
@@ -1348,6 +1619,7 @@ async function initializeSupervisorAccess() {
       await requestJson("/api/admin/session", {
         headers: { "X-Supervisor-Token": supervisorToken },
       });
+      await refreshSupervisorRoster();
       return;
     } catch {
       saveSupervisorToken("");
@@ -1421,6 +1693,7 @@ async function submitSupervisorAccess(event) {
       });
     }
     saveSupervisorToken(payload.token);
+    await refreshSupervisorRoster();
     refs.adminAuthModal.close();
     showToast(
       supervisorAuthMode === "setup" ? "تم تأمين لوحة المشرف" : "مرحبًا بعودتك"
@@ -1462,6 +1735,17 @@ async function supervisorRequest(path, options = {}) {
   }
 }
 
+async function refreshSupervisorRoster(pinOverrides = {}) {
+  const payload = await supervisorRequest("/api/students");
+  const currentById = new Map(state.students.map((student) => [student.id, student]));
+  state.students = payload.students.map((student) => {
+    const knownPin = pinOverrides[student.id] || currentById.get(student.id)?.pin;
+    return knownPin ? { ...student, pin: knownPin } : student;
+  });
+  persistState();
+  renderAll();
+}
+
 function adminRequest(path, options = {}) {
   const token = state.currentQuestion.remote?.adminToken;
   return requestJson(path, {
@@ -1489,6 +1773,7 @@ async function ensureRemoteQuiz() {
     studentPath: payload.studentPath,
   };
   state.submissions = [];
+  state.participants = [];
   persistState();
   renderAll();
   startAdminSync();
@@ -1536,7 +1821,13 @@ async function syncAdminResults() {
     const payload = await adminRequest(
       `/api/quizzes/${encodeURIComponent(remote.quizId)}/admin`
     );
+    const localStudentsById = new Map(state.students.map((student) => [student.id, student]));
+    state.students = payload.quiz.students.map((student) => {
+      const pin = localStudentsById.get(student.id)?.pin;
+      return pin ? { ...student, pin } : student;
+    });
     state.submissions = payload.quiz.submissions;
+    state.participants = payload.quiz.participants || [];
     persistState();
     renderAll();
   } catch (error) {

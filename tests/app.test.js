@@ -20,23 +20,54 @@ test("normalizes Arabic and Persian digits for four-digit student codes", () => 
   assert.equal(normalizeDigits("4821"), "4821");
 });
 
-test("validates student details and prevents duplicate access codes", () => {
-  const existing = [{ id: "one", name: "سارة", className: "٢ / أ", pin: "4821" }];
+test("validates student class and halaqa selections and supports PIN-free edits", () => {
+  const existing = [
+    { id: "one", name: "سارة", className: "أولى ثانوي", halaqa: "زكاء", pin: "4821" },
+  ];
 
   assert.deepEqual(
-    validateStudentInput({ name: "عمر الحربي", className: "٢ / ب", pin: "٧٣٥٠" }, existing),
+    validateStudentInput(
+      { name: "عمر الحربي", className: "ثاني ثانوي", halaqa: "سواعد", pin: "٧٣٥٠" },
+      existing
+    ),
     {
       valid: true,
-      value: { name: "عمر الحربي", className: "٢ / ب", pin: "7350" },
+      value: {
+        name: "عمر الحربي",
+        className: "ثاني ثانوي",
+        halaqa: "سواعد",
+        pin: "7350",
+      },
     }
   );
   assert.equal(
-    validateStudentInput({ name: "نورة", className: "٢ / أ", pin: "٤٨٢١" }, existing).error,
+    validateStudentInput(
+      { name: "نورة", className: "أولى ثانوي", halaqa: "زكاء", pin: "٤٨٢١" },
+      existing
+    ).error,
     "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا."
   );
   assert.equal(
-    validateStudentInput({ name: "جود", className: "٢ / أ", pin: "12" }, existing).valid,
+    validateStudentInput(
+      { name: "جود", className: "ثالث ثانوي", halaqa: "زكاء", pin: "12" },
+      existing
+    ).valid,
     false
+  );
+  assert.equal(
+    validateStudentInput(
+      { name: "سارة القحطاني", className: "ثالث ثانوي", halaqa: "سواعد", pin: "" },
+      existing,
+      { pinRequired: false, excludeId: "one" }
+    ).valid,
+    true
+  );
+  assert.equal(
+    validateStudentInput(
+      { name: "نورة", className: "أولى ثانوي", halaqa: "", pin: "1234" },
+      existing
+    ).error,
+    "اختر حلقة الطالب."
   );
 });
 
@@ -164,6 +195,10 @@ test("creates a Unicode-safe share link payload without exposing raw PIN fields"
   assert.equal(payload.question.prompt, "أيّ كوكب يُعرف بالكوكب الأحمر؟");
   assert.equal(payload.students.every((student) => !Object.hasOwn(student, "pin")), true);
   assert.equal(payload.students.every((student) => Boolean(student.pinHash)), true);
+  assert.deepEqual(
+    [...new Set(payload.students.map((student) => student.halaqa))].sort(),
+    ["زكاء", "سواعد"].sort()
+  );
 
   const encoded = encodeSharePayload(payload);
   assert.deepEqual(decodeSharePayload(encoded), payload);
@@ -195,5 +230,10 @@ test("ships with a complete demo classroom and one unsubmitted test student", ()
   assert.equal(state.students.length, 8);
   assert.equal(state.submissions.length, 6);
   assert.equal(state.submissions.some((submission) => submission.studentId === sarah.id), false);
+  assert.deepEqual(
+    [...new Set(state.students.map((student) => student.className))].sort(),
+    ["أولى ثانوي", "ثاني ثانوي", "ثالث ثانوي"].sort()
+  );
+  assert.equal(state.participants.length, 6);
   assert.equal(state.currentQuestion.correctAnswer, "المريخ");
 });

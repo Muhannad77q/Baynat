@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=5" />
+    <link rel="stylesheet" href="./styles.css?v=6" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -39,6 +39,10 @@
       <symbol id="icon-trophy" viewBox="0 0 24 24">
         <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z"></path>
         <path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"></path>
+      </symbol>
+      <symbol id="icon-history" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+        <path d="M3 3v5h5M12 7v5l3 2"></path>
       </symbol>
       <symbol id="icon-plus" viewBox="0 0 24 24">
         <path d="M12 5v14M5 12h14"></path>
@@ -105,6 +109,10 @@
           <button class="nav-item" type="button" data-view="leaderboard">
             <svg><use href="#icon-trophy"></use></svg>
             <span>المتصدرون</span>
+          </button>
+          <button class="nav-item" type="button" data-view="records">
+            <svg><use href="#icon-history"></use></svg>
+            <span>السجل</span>
           </button>
         </nav>
 
@@ -414,7 +422,7 @@
             <div>
               <span class="section-label">إدارة الفصل</span>
               <h2>قائمة الطلاب</h2>
-              <p>أضف اسم الطالب وصفّه ورمز الدخول المكوّن من ٤ أرقام.</p>
+              <p>قائمة مشتركة لكل المشرفين، وتشمل الطلاب في جميع الصفوف والحلقات.</p>
             </div>
             <button class="button button-primary" id="openStudentModal" type="button">
               <svg><use href="#icon-plus"></use></svg>
@@ -426,9 +434,9 @@
             <div class="students-toolbar">
               <label class="search-field" for="studentSearch">
                 <svg><use href="#icon-search"></use></svg>
-                <input id="studentSearch" type="search" placeholder="ابحث بالاسم أو الصف..." autocomplete="off" />
+                <input id="studentSearch" type="search" placeholder="ابحث بالاسم أو الصف أو الحلقة..." autocomplete="off" />
               </label>
-              <div class="student-total"><span id="studentListCount">٠</span> طلاب في الفصل</div>
+              <div class="student-total"><span id="studentListCount">٠</span> طالب مسجل</div>
             </div>
             <div class="table-wrap">
               <table class="students-table">
@@ -436,6 +444,7 @@
                   <tr>
                     <th>الطالب</th>
                     <th>الصف</th>
+                    <th>الحلقة</th>
                     <th>رمز الدخول</th>
                     <th>حالة اليوم</th>
                     <th><span class="sr-only">الإجراءات</span></th>
@@ -459,9 +468,14 @@
               <h2>لوحة المتصدرين</h2>
               <p>الترتيب يعتمد على صحة الإجابة، ثم سرعة الحل.</p>
             </div>
-            <div class="score-legend">
-              <span><i class="legend-dot legend-correct"></i> صحة الإجابة</span>
-              <span><i class="legend-dot legend-speed"></i> نقاط السرعة</span>
+            <div class="leaderboard-actions">
+              <div class="score-legend">
+                <span><i class="legend-dot legend-correct"></i> صحة الإجابة</span>
+                <span><i class="legend-dot legend-speed"></i> نقاط السرعة</span>
+              </div>
+              <button class="button button-danger-soft" id="resetLeaderboardButton" type="button">
+                إعادة تعيين المتصدرين
+              </button>
             </div>
           </div>
 
@@ -493,6 +507,79 @@
               <h3>المنصّة بانتظار أبطالها</h3>
               <p>ستظهر النتائج هنا بعد أول إجابة.</p>
             </div>
+          </div>
+        </section>
+
+        <section id="recordsView" class="view-panel" data-admin-view="records">
+          <div class="section-intro">
+            <div>
+              <span class="section-label">متابعة سؤال اليوم</span>
+              <h2>سجل الأجوبة والمشاركين</h2>
+              <p>اعرف من دخل، ومن أجاب، ونص الإجابة ووقت إرسالها.</p>
+            </div>
+            <span class="updating-badge"><i></i> يتحدّث تلقائيًا</span>
+          </div>
+
+          <div class="records-grid">
+            <article class="panel records-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">سجل الأجوبة</span>
+                  <h3>كل الإجابات المرسلة</h3>
+                </div>
+                <span class="record-count" id="answerRecordCount">٠</span>
+              </div>
+              <div class="table-wrap">
+                <table class="records-table">
+                  <thead>
+                    <tr>
+                      <th>الطالب</th>
+                      <th>الصف</th>
+                      <th>الحلقة</th>
+                      <th>الإجابة</th>
+                      <th>النتيجة</th>
+                      <th>الوقت</th>
+                      <th>أُرسلت في</th>
+                    </tr>
+                  </thead>
+                  <tbody id="answerRecordsBody"></tbody>
+                </table>
+              </div>
+              <div class="empty-state compact" id="answerRecordsEmpty" hidden>
+                <span>📝</span>
+                <h3>لا توجد إجابات بعد</h3>
+                <p>ستظهر إجابات الطلاب هنا فور إرسالها.</p>
+              </div>
+            </article>
+
+            <article class="panel records-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">سجل المشاركين</span>
+                  <h3>حالة جميع الطلاب</h3>
+                </div>
+                <span class="record-count" id="participantRecordCount">٠</span>
+              </div>
+              <div class="table-wrap">
+                <table class="records-table">
+                  <thead>
+                    <tr>
+                      <th>الطالب</th>
+                      <th>الصف</th>
+                      <th>الحلقة</th>
+                      <th>الحالة</th>
+                      <th>آخر دخول</th>
+                    </tr>
+                  </thead>
+                  <tbody id="participantRecordsBody"></tbody>
+                </table>
+              </div>
+              <div class="empty-state compact" id="participantRecordsEmpty" hidden>
+                <span>👥</span>
+                <h3>لا يوجد طلاب</h3>
+                <p>أضف الطلاب أولًا ليظهر سجل المشاركة.</p>
+              </div>
+            </article>
           </div>
         </section>
       </main>
@@ -681,8 +768,8 @@
       <form class="modal-card" id="studentForm" novalidate>
         <div class="modal-header">
           <div>
-            <span class="section-label">طالب جديد</span>
-            <h2>إضافة طالب للفصل</h2>
+            <span class="section-label" id="studentModalLabel">طالب جديد</span>
+            <h2 id="studentModalTitle">إضافة طالب للفصل</h2>
           </div>
           <button class="modal-close" type="button" data-close-dialog="studentModal" aria-label="إغلاق">×</button>
         </div>
@@ -693,9 +780,14 @@
         <div class="form-row">
           <div class="field-group">
             <label class="field-label" for="studentClass">الصف</label>
-            <input id="studentClass" name="className" type="text" maxlength="20" autocomplete="off" placeholder="مثال: ٢ / أ" required />
+            <select id="studentClass" name="className" required></select>
           </div>
           <div class="field-group">
+            <label class="field-label" for="studentHalaqa">الحلقة</label>
+            <select id="studentHalaqa" name="halaqa" required></select>
+          </div>
+        </div>
+        <div class="field-group">
             <label class="field-label" for="newStudentPin">رمز الدخول</label>
             <input
               id="newStudentPin"
@@ -706,14 +798,15 @@
               autocomplete="off"
               placeholder="٤ أرقام"
               required
+              aria-describedby="studentPinHelp"
             />
-          </div>
+            <span class="field-help" id="studentPinHelp">رمز خاص بالطالب من ٤ أرقام.</span>
         </div>
         <p class="form-error" id="studentFormError" role="alert"></p>
         <div class="form-actions">
-          <button class="button button-primary" type="submit">
+          <button class="button button-primary" id="saveStudentButton" type="submit">
             <svg><use href="#icon-plus"></use></svg>
-            إضافة الطالب
+            <span id="saveStudentButtonText">إضافة الطالب</span>
           </button>
           <button class="button button-secondary" type="button" data-close-dialog="studentModal">إلغاء</button>
         </div>
@@ -753,6 +846,6 @@
       <span id="toastMessage">تم الحفظ بنجاح</span>
     </div>
 
-    <script type="module" src="./app.js?v=6"></script>
+    <script type="module" src="./app.js?v=7"></script>
   </body>
 </html>

@@ -9,6 +9,7 @@ const WESTERN_DIGITS = "0123456789";
 let refs = {};
 let quizId = "";
 let question = null;
+let accessOptions = [];
 let currentStudent = null;
 let studentToken = "";
 let timerStartedAt = null;
@@ -73,6 +74,7 @@ function cacheRefs() {
     accessForm: document.querySelector("#studentAccessForm"),
     studentName: document.querySelector("#studentFullName"),
     studentClassName: document.querySelector("#studentClassName"),
+    studentHalaqa: document.querySelector("#studentHalaqa"),
     studentPin: document.querySelector("#studentPin"),
     pinError: document.querySelector("#pinError"),
     startChallengeButton: document.querySelector("#startChallengeButton"),
@@ -104,11 +106,12 @@ function cacheRefs() {
 
 function bindEvents() {
   refs.retryButton.addEventListener("click", loadQuiz);
-  [refs.studentName, refs.studentClassName].forEach((input) =>
+  [refs.studentName, refs.studentClassName, refs.studentHalaqa].forEach((input) =>
     input.addEventListener("input", () => {
       refs.pinError.textContent = "";
     })
   );
+  refs.studentClassName.addEventListener("change", populateHalaqaOptions);
   refs.studentPin.addEventListener("input", () => {
     refs.studentPin.value = normalizeDigits(refs.studentPin.value).replace(/\D/g, "").slice(0, 4);
     refs.pinError.textContent = "";
@@ -196,6 +199,26 @@ function solveAccessChallenge(token, difficultyBits) {
   });
 }
 
+function replaceSelectOptions(select, values, placeholder) {
+  const previousValue = select.value;
+  select.replaceChildren(
+    createElement("option", "", placeholder),
+    ...values.map((value) => {
+      const option = createElement("option", "", value);
+      option.value = value;
+      return option;
+    })
+  );
+  select.firstElementChild.value = "";
+  if (values.includes(previousValue)) select.value = previousValue;
+}
+
+function populateHalaqaOptions() {
+  const selectedClass = refs.studentClassName.value;
+  const option = accessOptions.find((item) => item.className === selectedClass);
+  replaceSelectOptions(refs.studentHalaqa, option?.halaqas || [], "اختر الحلقة");
+}
+
 async function loadQuiz() {
   showScreen(refs.loadingScreen);
   if (!/^[A-Za-z0-9_-]{6,80}$/.test(quizId)) {
@@ -206,9 +229,16 @@ async function loadQuiz() {
   try {
     const payload = await requestJson(`/api/quizzes/${encodeURIComponent(quizId)}`);
     question = payload.quiz.question;
+    accessOptions = Array.isArray(payload.quiz.accessOptions) ? payload.quiz.accessOptions : [];
+    replaceSelectOptions(
+      refs.studentClassName,
+      accessOptions.map((item) => item.className),
+      "اختر الصف"
+    );
+    populateHalaqaOptions();
     refs.accessQuestionType.textContent = `${QUESTION_TYPES[question.type]} · سؤال واحد`;
     showScreen(refs.accessScreen);
-    window.setTimeout(() => refs.studentPin.focus(), 100);
+    window.setTimeout(() => refs.studentName.focus(), 100);
   } catch (error) {
     showError(
       error.code === "QUIZ_NOT_FOUND" ? "رابط السؤال غير صالح" : "تعذّر فتح السؤال",
@@ -221,6 +251,7 @@ async function accessQuiz(event) {
   event.preventDefault();
   const name = refs.studentName.value.trim();
   const className = refs.studentClassName.value.trim();
+  const halaqa = refs.studentHalaqa.value.trim();
   const pin = normalizeDigits(refs.studentPin.value);
   if (name.length < 2) {
     refs.pinError.textContent = "اكتب اسمك كما سجّله المشرف.";
@@ -228,8 +259,13 @@ async function accessQuiz(event) {
     return;
   }
   if (!className) {
-    refs.pinError.textContent = "اكتب صفك كما سجّله المشرف.";
+    refs.pinError.textContent = "اختر صفك.";
     refs.studentClassName.focus();
+    return;
+  }
+  if (!halaqa) {
+    refs.pinError.textContent = "اختر حلقتك.";
+    refs.studentHalaqa.focus();
     return;
   }
   if (!/^\d{4}$/.test(pin)) {
@@ -240,7 +276,7 @@ async function accessQuiz(event) {
   setButtonLoading(refs.startChallengeButton, true, "جاري التحقق...");
   refs.pinError.textContent = "";
   try {
-    const credentials = { name, className, pin };
+    const credentials = { name, className, halaqa, pin };
     const challenge = await requestJson(
       `/api/quizzes/${encodeURIComponent(quizId)}/access/challenge`,
       {
@@ -288,7 +324,7 @@ function questionOptions() {
 
 function renderQuiz() {
   refs.studentGreeting.textContent = `أهلًا ${currentStudent.name.split(" ")[0]} 👋`;
-  refs.studentClassLabel.textContent = `الصف ${currentStudent.className}`;
+  refs.studentClassLabel.textContent = `${currentStudent.className} · ${currentStudent.halaqa}`;
   refs.questionType.textContent = QUESTION_TYPES[question.type];
   refs.questionPrompt.textContent = question.prompt;
   refs.answerError.textContent = "";
