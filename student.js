@@ -416,11 +416,25 @@ async function submitAnswer(event) {
     showScreen(refs.resultScreen);
     startLeaderboardPolling();
   } catch (error) {
+    if (
+      error.code === "STUDENT_UNAUTHORIZED" ||
+      error.code === "QUIZ_RESET_RETRY"
+    ) {
+      await returnToAccessAfterReset();
+      return;
+    }
     refs.answerError.textContent = error.message;
     resumeTimer();
   } finally {
     setButtonLoading(refs.submitAnswerButton, false, "إرسال الإجابة");
   }
+}
+
+async function returnToAccessAfterReset() {
+  studentToken = "";
+  currentStudent = null;
+  await loadQuiz();
+  showToast("أعاد المشرف ترتيب السؤال؛ يمكنك الحل من جديد");
 }
 
 function renderResult(result) {
@@ -495,10 +509,7 @@ async function refreshLeaderboard(showConfirmation) {
     if (showConfirmation) showToast("تم تحديث ترتيب جميع الطلاب");
   } catch (error) {
     if (error.code === "STUDENT_UNAUTHORIZED") {
-      studentToken = "";
-      currentStudent = null;
-      await loadQuiz();
-      showToast("أعاد المشرف ترتيب السؤال؛ يمكنك الحل من جديد");
+      await returnToAccessAfterReset();
       return;
     }
     if (showConfirmation) showToast(error.message, true);

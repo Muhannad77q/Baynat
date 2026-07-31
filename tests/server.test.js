@@ -568,6 +568,110 @@ test("resets participant and answer records so students can answer again", async
   );
 });
 
+test("revalidates in-flight access and submissions against edits and resets", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-race-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const { server, baseUrl } = await listen(dataFile);
+  context.after(async () => {
+    await close(server);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const created = await request(baseUrl, "/api/quizzes", {
+    method: "POST",
+    body: JSON.stringify({
+      question: {
+        type: "boolean",
+        prompt: "الأرض تدور حول الشمس.",
+        options: ["صح", "خطأ"],
+        correctAnswer: "صح",
+      },
+      students: [
+        {
+          id: "student-race",
+          name: "نورة علي",
+          className: "أولى ثانوي",
+          halaqa: "زكاء",
+          pin: "1122",
+        },
+      ],
+    }),
+  });
+  const oldCredentials = {
+    name: "نورة علي",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
+    pin: "1122",
+  };
+  const oldProof = await createStudentProof(
+    baseUrl,
+    created.payload.quizId,
+    oldCredentials
+  );
+  const [racingAccess, edit] = await Promise.all([
+    accessStudentWithProof(
+      baseUrl,
+      created.payload.quizId,
+      oldCredentials,
+      oldProof
+    ),
+    request(baseUrl, "/api/students/student-race", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "نورة علي",
+        className: "ثاني ثانوي",
+        halaqa: "سواعد",
+        pin: "3344",
+      }),
+    }),
+  ]);
+  assert.equal(edit.response.status, 200);
+  assert.ok([200, 401, 409].includes(racingAccess.response.status));
+  if (racingAccess.response.status === 200) {
+    const staleSubmission = await request(
+      baseUrl,
+      `/api/quizzes/${created.payload.quizId}/submissions`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${racingAccess.payload.token}` },
+        body: JSON.stringify({ answer: "صح" }),
+      }
+    );
+    assert.equal(staleSubmission.response.status, 401);
+  }
+
+  const currentAccess = await accessStudent(baseUrl, created.payload.quizId, {
+    name: "نورة علي",
+    className: "ثاني ثانوي",
+    halaqa: "سواعد",
+    pin: "3344",
+  });
+  assert.equal(currentAccess.response.status, 200);
+  const [racingSubmission, reset] = await Promise.all([
+    request(baseUrl, `/api/quizzes/${created.payload.quizId}/submissions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${currentAccess.payload.token}` },
+      body: JSON.stringify({ answer: "صح" }),
+    }),
+    request(
+      baseUrl,
+      `/api/quizzes/${created.payload.quizId}/leaderboard/reset`,
+      {
+        method: "POST",
+        headers: { "X-Admin-Token": created.payload.adminToken },
+      }
+    ),
+  ]);
+  assert.equal(reset.response.status, 200);
+  assert.ok([200, 401].includes(racingSubmission.response.status));
+  const snapshot = await request(
+    baseUrl,
+    `/api/quizzes/${created.payload.quizId}/admin`,
+    { headers: { "X-Admin-Token": created.payload.adminToken } }
+  );
+  assert.deepEqual(snapshot.payload.quiz.submissions, []);
+  assert.equal(snapshot.payload.quiz.round, 2);
+});
+
 test("rejects duplicate PINs while allowing namesakes with distinct codes", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "baynat-security-"));
   const dataFile = path.join(directory, "baynat.json");

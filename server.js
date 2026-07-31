@@ -92,6 +92,10 @@ function validateStoredData(parsed, initialSetupKey) {
       student.halaqa = "غير محدد";
       migrated = true;
     }
+    if (!Number.isInteger(student.revision) || student.revision < 1) {
+      student.revision = 1;
+      migrated = true;
+    }
     const expectedIdentityLookup = studentIdentityLookup(
       parsed.secret,
       student.name,
@@ -175,6 +179,23 @@ function validateStoredData(parsed, initialSetupKey) {
         quiz.round = 1;
         migrated = true;
       }
+      for (const session of Object.values(quiz.sessions)) {
+        const sessionStudent = quiz.students.find(
+          (student) => student.id === session?.studentId
+        );
+        if (
+          sessionStudent &&
+          (!Number.isInteger(session.studentRevision) ||
+            session.studentRevision < 1)
+        ) {
+          session.studentRevision = sessionStudent.revision;
+          migrated = true;
+        }
+        if (!Number.isInteger(session.round) || session.round < 1) {
+          session.round = quiz.round;
+          migrated = true;
+        }
+      }
       if (!Array.isArray(quiz.answerRecords)) {
         quiz.answerRecords = quiz.submissions.map((submission) => ({
           ...structuredClone(submission),
@@ -206,6 +227,8 @@ function validateStoredData(parsed, initialSetupKey) {
           typeof student.name === "string" &&
           typeof student.className === "string" &&
           typeof student.halaqa === "string" &&
+          Number.isInteger(student.revision) &&
+          student.revision >= 1 &&
           typeof student.identityLookup === "string" &&
           (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
           typeof student.pinSalt === "string" &&
@@ -229,6 +252,10 @@ function validateStoredData(parsed, initialSetupKey) {
         (session) =>
           typeof session?.tokenHash === "string" &&
           typeof session.studentId === "string" &&
+          Number.isInteger(session.studentRevision) &&
+          session.studentRevision >= 1 &&
+          Number.isInteger(session.round) &&
+          session.round >= 1 &&
           Number.isFinite(new Date(session.createdAt).getTime())
       );
     const validParticipants =
@@ -313,6 +340,8 @@ function validateStoredData(parsed, initialSetupKey) {
         typeof student.name === "string" &&
         typeof student.className === "string" &&
         typeof student.halaqa === "string" &&
+        Number.isInteger(student.revision) &&
+        student.revision >= 1 &&
         typeof student.identityLookup === "string" &&
         (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
         typeof student.pinSalt === "string" &&
@@ -830,6 +859,7 @@ function sanitizeStudentInputs(students, secret, quizId) {
       name: validation.value.name,
       className: validation.value.className,
       halaqa: validation.value.halaqa,
+      revision: 1,
       pin: validation.value.pin,
       pinLookup: lookup,
       identityLookup,
@@ -933,7 +963,11 @@ function requireStudent(request, quiz) {
     throw new HttpError(401, "أعد إدخال رمز الطالب للمتابعة.", "STUDENT_UNAUTHORIZED");
   }
   const student = quiz.students.find((item) => item.id === session.studentId);
-  if (!student) {
+  if (
+    !student ||
+    session.studentRevision !== student.revision ||
+    session.round !== quiz.round
+  ) {
     throw new HttpError(401, "لم يعد الطالب موجودًا في هذا التحدّي.", "STUDENT_UNAUTHORIZED");
   }
   return { student, session };
@@ -1152,7 +1186,7 @@ export async function createBaynatServer({
         }
         const password = readSupervisorPassword(body);
         const credential = await hashSupervisorPassword(password);
-        await store.update((data) => {
+        const accessResult = await store.update((data) => {
           if (data.adminCredential) {
             throw new HttpError(
               409,
@@ -1266,6 +1300,7 @@ export async function createBaynatServer({
             name: validation.value.name,
             className: validation.value.className,
             halaqa: validation.value.halaqa,
+            revision: 1,
             identityLookup: studentIdentityLookup(
               store.data.secret,
               validation.value.name,
@@ -1326,6 +1361,7 @@ export async function createBaynatServer({
             name: validation.value.name,
             className: validation.value.className,
             halaqa: validation.value.halaqa,
+            revision: existing.revision + 1,
             identityLookup: studentIdentityLookup(
               store.data.secret,
               validation.value.name,
@@ -1567,6 +1603,7 @@ export async function createBaynatServer({
           name: validation.value.name,
           className: validation.value.className,
           halaqa: validation.value.halaqa,
+          revision: 1,
           pinLookup: lookup,
           identityLookup,
           ...(await hashPin(validation.value.pin)),
@@ -1687,11 +1724,34 @@ export async function createBaynatServer({
           );
         }
         const token = randomBytes(32).toString("base64url");
-        const startedAt = quiz.starts?.[student.id] || Date.now();
+        const expectedStudentRevision = student.revision;
+        const expectedRound = quiz.round;
         await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
+          const draftStudent = draftQuiz.students.find(
+            (item) => item.id === student.id
+          );
+          if (
+            !draftStudent ||
+            draftStudent.revision !== expectedStudentRevision ||
+            draftStudent.identityLookup !== identityLookup
+          ) {
+            throw new HttpError(
+              409,
+              "تغيّرت بيانات الطالب أثناء الدخول. تحقق من البيانات وحاول مجددًا.",
+              "STUDENT_CHANGED_RETRY"
+            );
+          }
+          if (draftQuiz.round !== expectedRound) {
+            throw new HttpError(
+              409,
+              "أعاد المشرف ترتيب السؤال. ابدأ الدخول من جديد.",
+              "QUIZ_RESET_RETRY"
+            );
+          }
           draftQuiz.starts ||= {};
           draftQuiz.participants ||= {};
+          const startedAt = draftQuiz.starts[student.id] || Date.now();
           draftQuiz.starts[student.id] ||= startedAt;
           const accessedAt = new Date().toISOString();
           const previousParticipant = draftQuiz.participants[student.id];
@@ -1720,15 +1780,17 @@ export async function createBaynatServer({
           draftQuiz.sessions[hashToken(token)] = {
             tokenHash: hashToken(token),
             studentId: student.id,
+            studentRevision: draftStudent.revision,
+            round: draftQuiz.round,
             createdAt: new Date().toISOString(),
             startedAt: draftQuiz.starts[student.id],
           };
           draftQuiz.updatedAt = new Date().toISOString();
+          const existing = draftQuiz.submissions.find(
+            (submission) => submission.studentId === student.id
+          );
+          return existing ? serializeResult(draftQuiz, existing) : null;
         });
-        quiz = requireQuiz(store, accessMatch[1]);
-        const existing = quiz.submissions.find(
-          (submission) => submission.studentId === student.id
-        );
         json(
           response,
           200,
@@ -1736,7 +1798,7 @@ export async function createBaynatServer({
             token,
             student: publicStudent(student),
             question: publicQuestion(quiz),
-            result: existing ? serializeResult(quiz, existing) : null,
+            result: accessResult,
           },
           securityHeaders()
         );
@@ -1755,13 +1817,31 @@ export async function createBaynatServer({
           throw new HttpError(400, "اكتب إجابة صالحة قبل الإرسال.", "INVALID_ANSWER");
         }
 
-        const startedAt = Number(session.startedAt) || new Date(session.createdAt).getTime();
-        const submission = await store.update((data) => {
+        const result = await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
+          const draftSession = draftQuiz.sessions[session.tokenHash];
+          const draftStudent = draftQuiz.students.find(
+            (item) => item.id === student.id
+          );
+          if (
+            !draftSession ||
+            !draftStudent ||
+            draftSession.studentRevision !== draftStudent.revision ||
+            draftSession.round !== draftQuiz.round
+          ) {
+            throw new HttpError(
+              401,
+              "أعد إدخال رمز الطالب للمتابعة.",
+              "STUDENT_UNAUTHORIZED"
+            );
+          }
           const existing = draftQuiz.submissions.find(
             (item) => item.studentId === student.id
           );
-          if (existing) return existing;
+          if (existing) return serializeResult(draftQuiz, existing);
+          const startedAt =
+            Number(draftSession.startedAt) ||
+            new Date(draftSession.createdAt).getTime();
           const created = {
             id: `submission-${randomBytes(8).toString("base64url")}`,
             studentId: student.id,
@@ -1777,13 +1857,12 @@ export async function createBaynatServer({
             round: draftQuiz.round,
           });
           draftQuiz.updatedAt = new Date().toISOString();
-          return created;
+          return serializeResult(draftQuiz, created);
         });
-        quiz = requireQuiz(store, submissionMatch[1]);
         json(
           response,
           200,
-          { result: serializeResult(quiz, submission) },
+          { result },
           securityHeaders()
         );
         return;
