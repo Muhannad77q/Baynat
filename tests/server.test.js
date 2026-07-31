@@ -187,8 +187,9 @@ test("shares one server-backed quiz across independent student sessions", async 
   assert.equal(JSON.stringify(publicQuiz.payload).includes("4821"), false);
   assert.equal(JSON.stringify(publicQuiz.payload).includes("سارة"), false);
   assert.deepEqual(publicQuiz.payload.quiz.accessOptions, [
-    { className: "أولى ثانوي", halaqas: ["زكاء"] },
-    { className: "ثاني ثانوي", halaqas: ["سواعد"] },
+    { className: "أولى ثانوي", halaqas: ["زكاء", "سواعد"] },
+    { className: "ثاني ثانوي", halaqas: ["زكاء", "سواعد"] },
+    { className: "ثالث ثانوي", halaqas: ["زكاء", "سواعد"] },
   ]);
 
   const rejectedAccess = await accessStudent(firstRun.baseUrl, quizId, {

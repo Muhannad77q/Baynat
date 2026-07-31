@@ -11,6 +11,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  DEFAULT_CLASS_OPTIONS,
+  DEFAULT_HALAQA_OPTIONS,
   buildLeaderboard,
   isAnswerCorrect,
   normalizeAnswer,
@@ -667,7 +669,12 @@ function publicQuestionSummary(quiz) {
 }
 
 function publicAccessOptions(quiz) {
-  const byClass = new Map();
+  const byClass = new Map(
+    DEFAULT_CLASS_OPTIONS.map((className) => [
+      className,
+      new Set(DEFAULT_HALAQA_OPTIONS),
+    ])
+  );
   for (const student of quiz.students) {
     if (!byClass.has(student.className)) byClass.set(student.className, new Set());
     byClass.get(student.className).add(student.halaqa);
