@@ -159,13 +159,24 @@ async function requestJson(path, options = {}) {
   }
 
   let payload = {};
+  let parsedAsJson = true;
   try {
     payload = await response.json();
   } catch {
-    // A readable fallback is more useful than exposing a parsing error.
+    parsedAsJson = false;
+  }
+  if (!parsedAsJson) {
+    const error = new Error(
+      "هذا النشر لا يعيد استجابة API صالحة. اطلب من المشرف إعادة نشر مجلد المصدر مع Build وFunctions وDatabase في Netlify."
+    );
+    error.code = "INVALID_API_RESPONSE";
+    error.status = response.status;
+    throw error;
   }
   if (!response.ok) {
-    const error = new Error(payload.error?.message || "تعذّر إكمال الطلب.");
+    const error = new Error(
+      payload.error?.message || "تعذّر إكمال الطلب."
+    );
     error.code = payload.error?.code;
     error.status = response.status;
     throw error;

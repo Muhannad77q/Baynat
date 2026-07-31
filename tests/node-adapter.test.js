@@ -2,30 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createNetlifyApiHandler } from "../netlify/functions/api.mjs";
 import { invokeNodeHandler } from "../netlify/node-adapter.js";
-
-class SingleEntryBlobs {
-  constructor() {
-    this.entry = null;
-    this.version = 0;
-  }
-
-  async getWithMetadata() {
-    return this.entry ? structuredClone(this.entry) : null;
-  }
-
-  async set(_key, value, options = {}) {
-    const current = this.entry;
-    if (
-      (options.onlyIfNew && current) ||
-      (options.onlyIfMatch && current?.etag !== options.onlyIfMatch)
-    ) {
-      return { modified: false };
-    }
-    const etag = `"adapter-${++this.version}"`;
-    this.entry = { data: JSON.parse(value), etag, metadata: {} };
-    return { modified: true, etag };
-  }
-}
+import { TransactionalFakePool } from "./transactional-fake-pool.js";
 
 test("node adapter streams request chunks into the Node handler", async () => {
   const expected = ["first", "second", "third"];
@@ -60,10 +37,10 @@ test("node adapter streams request chunks into the Node handler", async () => {
 });
 
 test("node adapter lets Baynat reject an oversized body before consuming it all", async () => {
-  const blobs = new SingleEntryBlobs();
+  const pool = new TransactionalFakePool();
   const handler = createNetlifyApiHandler({
     environment: { BAYNAT_SETUP_KEY: "adapter-setup-key-123" },
-    getBlobStore: () => blobs,
+    getDatabaseClient: () => ({ driver: "fake", pool }),
     logger: { error() {} },
     serverOptions: {
       accessDifficultyBits: 8,
@@ -91,7 +68,6 @@ test("node adapter lets Baynat reject an oversized body before consuming it all"
 
   const response = await handler(request, {
     ip: "203.0.113.10",
-    deploy: { context: "production", id: "production-deploy" },
   });
   const payload = await response.json();
   assert.equal(response.status, 413);

@@ -10,6 +10,8 @@ const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 const WESTERN_DIGITS = "0123456789";
 const PLACE_BONUSES = [30, 20, 10];
 const DEFAULT_OPTIONS = ["الزهرة", "المريخ", "المشتري", "عطارد"];
+const PENDING_OPERATION_STORAGE_KEY = "baynat.pending-operations.v1";
+const MAX_PENDING_OPERATIONS = 20;
 const LEGACY_DEMO_STUDENT_IDS = Object.freeze([
   "student-sarah",
   "student-omar",
@@ -37,6 +39,155 @@ export const DEFAULT_HALAQA_OPTIONS = Object.freeze([
   "زكاء",
   "سواعد",
 ]);
+
+function canonicalRequestJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalRequestJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalRequestJson(value[key])}`
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function randomIdempotencyKey() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `baynat-${globalThis.crypto.randomUUID()}`;
+  }
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    return `baynat-${[...bytes]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("")}`;
+  }
+  throw new Error("تعذّر إنشاء مفتاح آمن لإعادة المحاولة.");
+}
+
+export function createIdempotencyKeyManager({
+  createKey = randomIdempotencyKey,
+  storage = null,
+  storageKey = PENDING_OPERATION_STORAGE_KEY,
+} = {}) {
+  const pending = new Map();
+  try {
+    const stored = JSON.parse(storage?.getItem(storageKey) || "null");
+    if (Array.isArray(stored)) {
+      for (const [scope, attempt] of stored.slice(-MAX_PENDING_OPERATIONS)) {
+        if (
+          typeof scope === "string" &&
+          scope &&
+          attempt &&
+          typeof attempt.key === "string" &&
+          attempt.key &&
+          attempt.key.length <= 255 &&
+          typeof attempt.fingerprint === "string"
+        ) {
+          pending.set(scope, {
+            key: attempt.key,
+            fingerprint: attempt.fingerprint,
+            payload: attempt.payload,
+          });
+        }
+      }
+    }
+  } catch {
+    // Browser storage is only an optimization; in-memory retries still work.
+  }
+  const persist = () => {
+    if (!storage) return;
+    try {
+      if (!pending.size) {
+        storage.removeItem(storageKey);
+        return;
+      }
+      storage.setItem(
+        storageKey,
+        JSON.stringify([...pending.entries()].slice(-MAX_PENDING_OPERATIONS))
+      );
+    } catch {
+      // Keep the in-memory attempts when browser storage is unavailable.
+    }
+  };
+  return {
+    keyFor(scope, payload) {
+      const fingerprint = canonicalRequestJson(payload);
+      const existing = pending.get(scope);
+      if (existing?.fingerprint === fingerprint) return existing.key;
+      const key = String(createKey());
+      if (!key || key.length > 255) {
+        throw new Error("تعذّر إنشاء مفتاح صالح لإعادة المحاولة.");
+      }
+      pending.set(scope, {
+        fingerprint,
+        key,
+        payload: structuredClone(payload),
+      });
+      persist();
+      return key;
+    },
+    pending(scope) {
+      const existing = pending.get(scope);
+      return existing
+        ? {
+            key: existing.key,
+            payload: structuredClone(existing.payload),
+          }
+        : null;
+    },
+    complete(scope, payload, key) {
+      const existing = pending.get(scope);
+      if (
+        existing?.key === key &&
+        existing.fingerprint === canonicalRequestJson(payload)
+      ) {
+        pending.delete(scope);
+        persist();
+      }
+    },
+    forget(scope) {
+      if (pending.delete(scope)) persist();
+    },
+  };
+}
+
+let operationStorage = null;
+try {
+  operationStorage = globalThis.localStorage || null;
+} catch {
+  // Some privacy modes deny storage access during module initialization.
+}
+const createAttemptKeys = createIdempotencyKeyManager({
+  storage: operationStorage,
+});
+
+export function createQuizPublishRequest(state, pendingAttempt = null) {
+  const currentRequest = {
+    expectedCurrentQuizId:
+      state.expectedCurrentQuizId ??
+      state.currentQuestion.remote?.quizId ??
+      null,
+    question: structuredClone(state.currentQuestion),
+    students: structuredClone(state.students),
+  };
+  const pendingRequest = pendingAttempt?.payload;
+  if (
+    pendingRequest &&
+    pendingRequest.expectedCurrentQuizId ===
+      currentRequest.expectedCurrentQuizId &&
+    canonicalRequestJson(pendingRequest.question) ===
+      canonicalRequestJson(currentRequest.question)
+  ) {
+    return structuredClone(pendingRequest);
+  }
+  return currentRequest;
+}
 
 export function normalizeDigits(value = "") {
   return String(value)
@@ -331,6 +482,7 @@ export function createInitialState(now = Date.now()) {
     answerRecords: [],
     participationRecords: [],
     currentRound: 1,
+    expectedCurrentQuizId: null,
   };
 }
 
@@ -410,6 +562,16 @@ function loadAdminState() {
         Number.isInteger(stored.currentRound) && stored.currentRound > 0
           ? stored.currentRound
           : 1;
+      const expectedCurrentQuizId =
+        stored.expectedCurrentQuizId ??
+        stored.currentQuestion.remote?.quizId ??
+        null;
+      stored.expectedCurrentQuizId =
+        expectedCurrentQuizId === null
+          ? null
+          : /^[A-Za-z0-9_-]{3,80}$/.test(String(expectedCurrentQuizId))
+            ? String(expectedCurrentQuizId)
+            : null;
       return stored;
     }
   } catch {
@@ -1199,6 +1361,10 @@ async function saveQuestion(event) {
     return;
   }
 
+  const expectedCurrentQuizId =
+    state.currentQuestion.remote?.quizId ??
+    state.expectedCurrentQuizId ??
+    null;
   state.currentQuestion = {
     ...question,
     options: question.type === "multiple" ? question.options.filter(Boolean) : question.options,
@@ -1212,6 +1378,7 @@ async function saveQuestion(event) {
   state.answerRecords = [];
   state.participationRecords = [];
   state.currentRound = 1;
+  state.expectedCurrentQuizId = expectedCurrentQuizId;
   persistState();
   refs.questionFormError.textContent = "";
   hydrateQuestionEditor(state.currentQuestion);
@@ -1303,13 +1470,27 @@ async function saveStudent(event) {
     const path = isEditing
       ? `/api/students/${encodeURIComponent(editingStudentId)}`
       : "/api/students";
+    const requestBody = validation.value;
+    const idempotencyKey = isEditing
+      ? ""
+      : createAttemptKeys.keyFor("student-create", requestBody);
     const payload = await supervisorRequest(path, {
       method: isEditing ? "PATCH" : "POST",
-      body: JSON.stringify(validation.value),
+      body: JSON.stringify(requestBody),
+      ...(!isEditing
+        ? { headers: { "Idempotency-Key": idempotencyKey } }
+        : {}),
     });
     await refreshSupervisorRoster({
       [payload.student.id]: validation.value.pin,
     });
+    if (!isEditing) {
+      createAttemptKeys.complete(
+        "student-create",
+        requestBody,
+        idempotencyKey
+      );
+    }
   } catch (error) {
     refs.studentFormError.textContent = error.message;
     return;
@@ -1837,20 +2018,60 @@ async function resetLeaderboard() {
   }
   try {
     if (state.currentQuestion.remote) {
-      await adminRequest(
-        `/api/quizzes/${encodeURIComponent(
-          state.currentQuestion.remote.quizId
-        )}/leaderboard/reset`,
-        { method: "POST" }
+      const quizId = state.currentQuestion.remote.quizId;
+      const scope = `leaderboard-reset:${quizId}`;
+      const pendingReset = createAttemptKeys.pending(scope);
+      const pendingPayload =
+        pendingReset?.payload?.quizId === quizId &&
+        Number.isInteger(pendingReset.payload.expectedRound) &&
+        pendingReset.payload.expectedRound > 0
+          ? pendingReset.payload
+          : null;
+      const attemptPayload =
+        pendingPayload || {
+          quizId,
+          expectedRound: state.currentRound || 1,
+        };
+      const requestBody = { expectedRound: attemptPayload.expectedRound };
+      const idempotencyKey = createAttemptKeys.keyFor(
+        scope,
+        attemptPayload
       );
+      const resetResult = await adminRequest(
+        `/api/quizzes/${encodeURIComponent(
+          quizId
+        )}/leaderboard/reset`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify(requestBody),
+        }
+      );
+      createAttemptKeys.complete(scope, attemptPayload, idempotencyKey);
+      if ((state.currentRound || 1) === attemptPayload.expectedRound) {
+        state.submissions = [];
+        state.participants = [];
+        state.currentRound = resetResult.round;
+      } else if (state.currentRound !== resetResult.round) {
+        await syncAdminResults();
+      }
+    } else {
+      state.submissions = [];
+      state.participants = [];
+      state.currentRound = (state.currentRound || 1) + 1;
     }
-    state.submissions = [];
-    state.participants = [];
-    state.currentRound = (state.currentRound || 1) + 1;
     persistState();
     renderAll();
     showToast("تمت إعادة تعيين المتصدرين وبقي السجل محفوظًا");
   } catch (error) {
+    const quizId = state.currentQuestion.remote?.quizId;
+    if (
+      quizId &&
+      ["QUIZ_ROUND_CONFLICT", "IDEMPOTENCY_KEY_REUSED"].includes(error.code)
+    ) {
+      createAttemptKeys.forget(`leaderboard-reset:${quizId}`);
+      await syncAdminResults();
+    }
     showToast(error.message, true);
   }
 }
@@ -1875,13 +2096,24 @@ async function requestJson(path, options = {}) {
   }
 
   let payload = {};
+  let parsedAsJson = true;
   try {
     payload = await response.json();
   } catch {
-    // Keep the user-facing fallback below.
+    parsedAsJson = false;
+  }
+  if (!parsedAsJson) {
+    const error = new Error(
+      "هذا النشر لا يعيد استجابة API صالحة. أعد نشر مجلد المصدر مع Build وFunctions وDatabase في Netlify."
+    );
+    error.code = "INVALID_API_RESPONSE";
+    error.status = response.status;
+    throw error;
   }
   if (!response.ok) {
-    const error = new Error(payload.error?.message || "تعذّر إكمال الطلب.");
+    const error = new Error(
+      payload.error?.message || "تعذّر إكمال الطلب."
+    );
     error.code = payload.error?.code;
     error.status = response.status;
     error.details = payload.error?.details || null;
@@ -1961,6 +2193,7 @@ function applySharedQuiz(quiz) {
   state.answerRecords = quiz.answerRecords || quiz.submissions || [];
   state.participationRecords = quiz.participationRecords || [];
   state.currentRound = quiz.round || 1;
+  state.expectedCurrentQuizId = quiz.id;
   persistState();
   renderAll();
   startAdminSync();
@@ -1969,8 +2202,30 @@ function applySharedQuiz(quiz) {
 async function refreshSupervisorWorkspace() {
   await refreshSupervisorRoster();
   await refreshSupervisors();
+  if (
+    !state.currentQuestion.remote?.quizId &&
+    createAttemptKeys.pending("quiz-create")
+  ) {
+    try {
+      await ensureRemoteQuiz();
+      return;
+    } catch (error) {
+      if (error.code !== "QUIZ_PUBLISH_CONFLICT") {
+        showToast(
+          "تعذّرت إعادة محاولة نشر السؤال المحفوظ؛ سيبقى جاهزًا للمحاولة التالية.",
+          true
+        );
+        return;
+      }
+    }
+  }
   const dashboard = await supervisorRequest("/api/admin/dashboard");
-  if (dashboard.quiz) applySharedQuiz(dashboard.quiz);
+  if (dashboard.quiz) {
+    applySharedQuiz(dashboard.quiz);
+  } else {
+    state.expectedCurrentQuizId = null;
+    persistState();
+  }
 }
 
 function showSupervisorModal(configured, supervisorNames = []) {
@@ -2049,7 +2304,8 @@ async function submitSupervisorAccess(event) {
     return;
   }
   if (supervisorAuthMode === "setup" && !setupKey) {
-    refs.adminAuthError.textContent = "أدخل مفتاح التهيئة من سجل تشغيل الخادم.";
+    refs.adminAuthError.textContent =
+      "أدخل قيمة BAYNAT_SETUP_KEY المضبوطة في إعدادات Netlify.";
     refs.adminSetupKey.focus();
     return;
   }
@@ -2216,13 +2472,25 @@ function adminRequest(path, options = {}) {
 
 async function ensureRemoteQuiz() {
   if (state.currentQuestion.remote?.quizId) return state.currentQuestion.remote;
-  const payload = await supervisorRequest("/api/quizzes", {
-    method: "POST",
-    body: JSON.stringify({
-      question: state.currentQuestion,
-      students: state.students,
-    }),
-  });
+  const pendingAttempt = createAttemptKeys.pending("quiz-create");
+  const requestBody = createQuizPublishRequest(state, pendingAttempt);
+  const idempotencyKey = createAttemptKeys.keyFor(
+    "quiz-create",
+    requestBody
+  );
+  let payload;
+  try {
+    payload = await supervisorRequest("/api/quizzes", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (error) {
+    if (error.code === "QUIZ_PUBLISH_CONFLICT") {
+      createAttemptKeys.complete("quiz-create", requestBody, idempotencyKey);
+    }
+    throw error;
+  }
   state.currentQuestion.id = payload.questionId;
   state.currentQuestion.remote = {
     quizId: payload.quizId,
@@ -2234,9 +2502,11 @@ async function ensureRemoteQuiz() {
   state.answerRecords = [];
   state.participationRecords = [];
   state.currentRound = 1;
+  state.expectedCurrentQuizId = payload.quizId;
   persistState();
   renderAll();
   startAdminSync();
+  createAttemptKeys.complete("quiz-create", requestBody, idempotencyKey);
   return state.currentQuestion.remote;
 }
 
@@ -2301,6 +2571,7 @@ async function syncAdminResults() {
     state.answerRecords = payload.quiz.answerRecords || payload.quiz.submissions;
     state.participationRecords = payload.quiz.participationRecords || [];
     state.currentRound = payload.quiz.round || 1;
+    state.expectedCurrentQuizId = payload.quiz.id;
     persistState();
     renderAll();
   } catch (error) {

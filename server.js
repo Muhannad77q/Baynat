@@ -5,7 +5,12 @@ import {
   scrypt,
   timingSafeEqual,
 } from "node:crypto";
-import { closeSync, openSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  openSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -32,6 +37,7 @@ const SUPERVISOR_ATTEMPTS_LIMIT = 10;
 const ACCESS_CHALLENGE_MS = 2 * 60 * 1000;
 const MAX_RATE_LIMIT_KEYS = 2_000;
 const MAX_CONSUMED_PROOFS = 10_000;
+const MAX_RESET_REQUESTS = 32;
 const QUIZ_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const QUIZ_CREATION_WINDOW_MS = 60 * 60 * 1000;
 const QUIZ_CREATION_IP_LIMIT = 5;
@@ -57,7 +63,7 @@ const MIME_TYPES = {
   ".png": "image/png",
 };
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(status, message, code = "REQUEST_FAILED", details = null) {
     super(message);
     this.status = status;
@@ -381,6 +387,10 @@ export function validateStoredData(parsed, initialSetupKey) {
         );
         migrated = true;
       }
+      if (!Array.isArray(quiz.resetRequests)) {
+        quiz.resetRequests = [];
+        migrated = true;
+      }
       const quizTime = new Date(quiz.updatedAt || quiz.createdAt).getTime();
       if (Number.isFinite(quizTime) && quizTime >= latestQuizTime) {
         latestQuizTime = quizTime;
@@ -460,6 +470,33 @@ export function validateStoredData(parsed, initialSetupKey) {
           Number.isInteger(record.round) &&
           record.round >= 1
       );
+    const validResetRequests =
+      validQuiz &&
+      quiz.resetRequests.length <= MAX_RESET_REQUESTS &&
+      quiz.resetRequests.every(
+        (record) =>
+          isRecord(record) &&
+          isRecord(record.creationRequest) &&
+          typeof record.creationRequest.keyHash === "string" &&
+          record.creationRequest.keyHash.length > 0 &&
+          typeof record.creationRequest.requestHash === "string" &&
+          record.creationRequest.requestHash.length > 0 &&
+          isRecord(record.response) &&
+          record.response.ok === true &&
+          Number.isInteger(record.response.round) &&
+          record.response.round >= 2 &&
+          isRecord(record.response.cleared) &&
+          Number.isInteger(record.response.cleared.submissions) &&
+          record.response.cleared.submissions >= 0 &&
+          Number.isInteger(record.response.cleared.participants) &&
+          record.response.cleared.participants >= 0 &&
+          isRecord(record.response.recordsPreserved) &&
+          Number.isInteger(record.response.recordsPreserved.answers) &&
+          record.response.recordsPreserved.answers >= 0 &&
+          Number.isInteger(record.response.recordsPreserved.participations) &&
+          record.response.recordsPreserved.participations >= 0 &&
+          Number.isFinite(new Date(record.completedAt).getTime())
+      );
     const uniqueStudents =
       validStudents &&
       new Set(quiz.students.map((student) => student.id)).size === quiz.students.length;
@@ -478,6 +515,7 @@ export function validateStoredData(parsed, initialSetupKey) {
       !validRound ||
       !validAnswerRecords ||
       !validParticipationRecords ||
+      !validResetRequests ||
       !uniqueStudents ||
       !uniqueSubmissions
     ) {
@@ -492,6 +530,39 @@ export function validateStoredData(parsed, initialSetupKey) {
     } else if (!Number.isFinite(new Date(quiz.expiresAt).getTime())) {
       throw new Error("تاريخ انتهاء غرفة في ملف بَيّنات غير صالح.");
     }
+  }
+
+  const now = Date.now();
+  const activeCandidates = Object.values(parsed.quizzes)
+    .filter(
+      (quiz) =>
+        new Date(quiz.expiresAt).getTime() > now &&
+        !quiz.supersededBy
+    )
+    .sort(
+      (first, second) =>
+        new Date(second.createdAt).getTime() -
+        new Date(first.createdAt).getTime()
+    );
+  if (
+    !Object.hasOwn(parsed, "activeQuizId") ||
+    (parsed.activeQuizId === null && activeCandidates.length)
+  ) {
+    parsed.activeQuizId = activeCandidates[0]?.id || null;
+    migrated = true;
+  } else if (
+    parsed.activeQuizId !== null &&
+    (typeof parsed.activeQuizId !== "string" ||
+      !parsed.quizzes[parsed.activeQuizId])
+  ) {
+    throw new Error("مرجع سؤال اليوم النشط في ملف بَيّنات غير صالح.");
+  }
+  if (
+    parsed.activeQuizId &&
+    new Date(parsed.quizzes[parsed.activeQuizId].expiresAt).getTime() <= now
+  ) {
+    parsed.activeQuizId = null;
+    migrated = true;
   }
 
   if (!Array.isArray(parsed.students)) {
@@ -532,6 +603,7 @@ export function createInitialData(initialSetupKey = "") {
     security: createSecurityState(),
     students: [],
     quizzes: {},
+    activeQuizId: null,
   };
 }
 
@@ -703,6 +775,64 @@ function hashToken(token) {
   return createHash("sha256").update(String(token)).digest("hex");
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function readIdempotencyRequest(request, secret, scope, actorId, body) {
+  const key = request.headers["idempotency-key"];
+  if (key === undefined) return null;
+  if (
+    typeof key !== "string" ||
+    key.length === 0 ||
+    Buffer.byteLength(key) > 255
+  ) {
+    throw new HttpError(
+      400,
+      "مفتاح إعادة المحاولة غير صالح.",
+      "INVALID_IDEMPOTENCY_KEY"
+    );
+  }
+  return {
+    keyHash: createHmac("sha256", secret)
+      .update(`idempotency-key:${scope}:${actorId}:${key}`)
+      .digest("base64url"),
+    requestHash: createHmac("sha256", secret)
+      .update(`idempotency-request:${scope}:${canonicalJson(body)}`)
+      .digest("base64url"),
+  };
+}
+
+function findIdempotentResource(resources, idempotency) {
+  if (!idempotency) return null;
+  const existing = resources.find(
+    (resource) => resource.creationRequest?.keyHash === idempotency.keyHash
+  );
+  if (!existing) return null;
+  if (
+    !safeEqual(
+      existing.creationRequest.requestHash,
+      idempotency.requestHash
+    )
+  ) {
+    throw new HttpError(
+      409,
+      "استُخدم مفتاح إعادة المحاولة لطلب مختلف.",
+      "IDEMPOTENCY_KEY_REUSED"
+    );
+  }
+  return existing;
+}
+
 function pinLookup(secret, quizId, pin) {
   return createHmac("sha256", secret).update(`${quizId}:${normalizeDigits(pin)}`).digest("hex");
 }
@@ -871,13 +1001,25 @@ function verifyAccessProof({
 }
 
 async function consumeProof(store, { tokenHash, expiresAt }) {
+  if (typeof store.consumeProof === "function") {
+    const consumed = await store.consumeProof({ tokenHash, expiresAt });
+    if (!consumed) {
+      throw new HttpError(
+        409,
+        "استُخدم تحقق الدخول مسبقًا. أعد المحاولة للحصول على تحقق جديد.",
+        "ACCESS_PROOF_REPLAYED"
+      );
+    }
+    return;
+  }
   await store.update((data) => {
     const now = Date.now();
     data.consumedProofs ||= {};
     for (const [key, expiry] of Object.entries(data.consumedProofs)) {
       if (expiry <= now) delete data.consumedProofs[key];
     }
-    if (Object.hasOwn(data.consumedProofs, tokenHash)) {
+    const replayed = Object.hasOwn(data.consumedProofs, tokenHash);
+    if (replayed) {
       throw new HttpError(
         409,
         "استُخدم تحقق الدخول مسبقًا. أعد المحاولة للحصول على تحقق جديد.",
@@ -919,6 +1061,15 @@ function publicQuestion(quiz) {
 
 function publicQuestionSummary(quiz) {
   return { type: quiz.question.type };
+}
+
+function quizCreationPayload(quiz, adminToken) {
+  return {
+    quizId: quiz.id,
+    questionId: quiz.question.id,
+    adminToken,
+    studentPath: `/student.html?q=${encodeURIComponent(quiz.id)}`,
+  };
 }
 
 function publicAccessOptions(quiz) {
@@ -1091,6 +1242,13 @@ function requireQuiz(store, quizId) {
   if (quiz.expiresAt && new Date(quiz.expiresAt).getTime() <= Date.now()) {
     throw new HttpError(410, "انتهت صلاحية سؤال اليوم. اطلب رابطًا جديدًا.", "QUIZ_EXPIRED");
   }
+  if (store.data.activeQuizId !== quiz.id) {
+    throw new HttpError(
+      410,
+      "استُبدل هذا الرابط بسؤال يوم جديد. اطلب الرابط الأحدث من المشرف.",
+      "QUIZ_SUPERSEDED"
+    );
+  }
   return quiz;
 }
 
@@ -1238,10 +1396,10 @@ function currentSupervisorAttempts(data, key, now) {
 }
 
 function createQuizCreationLimiter(store, trustProxy) {
-  return async (request, recordCreation = false) => {
+  return (request, recordCreation = false) => {
     const now = Date.now();
     const key = rateLimitKey(store, request, trustProxy, "quiz-creation");
-    await store.update((data) => {
+    return (data) => {
       const recentForIp = (data.security.quizCreations.byIp[key] || []).filter(
         (timestamp) => now - timestamp < QUIZ_CREATION_WINDOW_MS
       );
@@ -1268,7 +1426,7 @@ function createQuizCreationLimiter(store, trustProxy) {
         data.security.quizCreations.byIp,
         (timestamps) => Math.max(...timestamps)
       );
-    });
+    };
   };
 }
 
@@ -1449,20 +1607,19 @@ export async function createBaynatServer({
       if (pathname === "/api/admin/dashboard" && request.method === "GET") {
         requireSupervisor(request, store);
         const now = Date.now();
-        const latestQuiz = Object.values(store.data.quizzes)
-          .filter(
-            (quiz) =>
-              !quiz.expiresAt || new Date(quiz.expiresAt).getTime() > now
-          )
-          .sort(
-            (first, second) =>
-              new Date(second.createdAt).getTime() -
-              new Date(first.createdAt).getTime()
-          )[0];
+        const latestQuiz = store.data.activeQuizId
+          ? store.data.quizzes[store.data.activeQuizId]
+          : null;
+        const activeQuiz =
+          latestQuiz &&
+          (!latestQuiz.expiresAt ||
+            new Date(latestQuiz.expiresAt).getTime() > now)
+            ? latestQuiz
+            : null;
         json(
           response,
           200,
-          { quiz: latestQuiz ? serializeAdminQuiz(latestQuiz) : null },
+          { quiz: activeQuiz ? serializeAdminQuiz(activeQuiz) : null },
           securityHeaders()
         );
         return;
@@ -1509,6 +1666,16 @@ export async function createBaynatServer({
               409,
               "تم إعداد رمز المشرف مسبقًا.",
               "SUPERVISOR_ALREADY_CONFIGURED"
+            );
+          }
+          if (
+            !data.setupKey ||
+            !safeEqual(body.setupKey, data.setupKey)
+          ) {
+            throw new HttpError(
+              401,
+              "مفتاح التهيئة غير صحيح. تحقّق من المفتاح ثم حاول مجددًا.",
+              "SETUP_KEY_REJECTED"
             );
           }
           data.supervisors.push(supervisor);
@@ -1737,7 +1904,7 @@ export async function createBaynatServer({
 
       const rosterMatch = pathname.match(/^\/api\/students(?:\/([A-Za-z0-9_-]+))?$/);
       if (rosterMatch) {
-        requireSupervisor(request, store);
+        const currentSupervisor = requireSupervisor(request, store);
         if (request.method === "GET" && !rosterMatch[1]) {
           json(
             response,
@@ -1752,6 +1919,13 @@ export async function createBaynatServer({
         }
         if (request.method === "POST" && !rosterMatch[1]) {
           const body = await readJsonBody(request);
+          const idempotency = readIdempotencyRequest(
+            request,
+            store.data.secret,
+            "student-create",
+            currentSupervisor.id,
+            body
+          );
           const validation = validateStudentInput(body);
           if (!validation.valid) {
             throw new HttpError(400, validation.error, "INVALID_STUDENT");
@@ -1778,8 +1952,20 @@ export async function createBaynatServer({
             ),
             pinLookup: pinLookup(store.data.secret, "roster", validation.value.pin),
             ...(await hashPin(validation.value.pin)),
+            ...(idempotency ? { creationRequest: idempotency } : {}),
           };
-          await store.update((data) => {
+          const committedStudent = await store.update((data) => {
+            const duplicateId = data.students.some(
+              (existing) => existing.id === student.id
+            );
+            const duplicatePin = data.students.some(
+              (existing) => existing.pinLookup === student.pinLookup
+            );
+            const replayedStudent = findIdempotentResource(
+              data.students,
+              idempotency
+            );
+            if (replayedStudent) return replayedStudent;
             if (data.students.length >= MAX_STUDENTS) {
               throw new HttpError(
                 400,
@@ -1787,8 +1973,15 @@ export async function createBaynatServer({
                 "ROSTER_TOO_LARGE"
               );
             }
-            if (data.students.some((existing) => existing.id === student.id)) {
+            if (duplicateId) {
               throw new HttpError(409, "الطالب مضاف بالفعل.", "DUPLICATE_STUDENT");
+            }
+            if (duplicatePin) {
+              throw new HttpError(
+                409,
+                "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا.",
+                "DUPLICATE_PIN"
+              );
             }
             data.students.push(student);
             for (const quiz of Object.values(data.quizzes)) {
@@ -1797,8 +1990,14 @@ export async function createBaynatServer({
                 quiz.updatedAt = new Date().toISOString();
               }
             }
+            return student;
           });
-          json(response, 201, { student: publicStudent(student) }, securityHeaders());
+          json(
+            response,
+            201,
+            { student: publicStudent(committedStudent) },
+            securityHeaders()
+          );
           return;
         }
         if (request.method === "PATCH" && rosterMatch[1]) {
@@ -1846,6 +2045,21 @@ export async function createBaynatServer({
             const rosterIndex = data.students.findIndex((student) => student.id === studentId);
             if (rosterIndex === -1) {
               throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
+            }
+            const duplicatePin = Boolean(
+              updatedPinFields &&
+                data.students.some(
+                  (student) =>
+                    student.id !== studentId &&
+                    student.pinLookup === updatedPinFields.pinLookup
+                )
+            );
+            if (duplicatePin) {
+              throw new HttpError(
+                409,
+                "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا.",
+                "DUPLICATE_PIN"
+              );
             }
             committedReplacement = {
               ...data.students[rosterIndex],
@@ -1918,19 +2132,45 @@ export async function createBaynatServer({
       }
 
       if (pathname === "/api/quizzes" && request.method === "POST") {
-        requireSupervisor(request, store);
+        const currentSupervisor = requireSupervisor(request, store);
         if (request.headers["sec-fetch-site"] === "cross-site") {
           throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
         }
         const body = await readJsonBody(request);
+        const expectedCurrentQuizId =
+          body.expectedCurrentQuizId === null ||
+          body.expectedCurrentQuizId === undefined
+            ? null
+            : String(body.expectedCurrentQuizId);
+        if (
+          expectedCurrentQuizId !== null &&
+          !/^[A-Za-z0-9_-]{3,80}$/.test(expectedCurrentQuizId)
+        ) {
+          throw new HttpError(
+            400,
+            "مرجع سؤال مساحة العمل غير صالح.",
+            "INVALID_EXPECTED_QUIZ"
+          );
+        }
+        const idempotency = readIdempotencyRequest(
+          request,
+          store.data.secret,
+          "quiz-create",
+          currentSupervisor.id,
+          body
+        );
         const quizId = randomBytes(6).toString("base64url");
-        const adminToken = randomBytes(32).toString("base64url");
+        const adminToken = idempotency
+          ? createHmac("sha256", store.data.secret)
+              .update(`idempotent-quiz-admin:${idempotency.keyHash}`)
+              .digest("base64url")
+          : randomBytes(32).toString("base64url");
         const question = sanitizeQuestion(body.question, quizId);
         const studentInputs =
           store.data.students.length === 0
             ? sanitizeStudentInputs(body.students, store.data.secret, quizId)
             : null;
-        await recordQuizCreation(request, true);
+        const applyQuizCreationLimit = recordQuizCreation(request, true);
         const bootstrapStudents = studentInputs ? await hashStudentInputs(studentInputs) : null;
         const createdAt = new Date();
         const quiz = {
@@ -1944,20 +2184,42 @@ export async function createBaynatServer({
           round: 1,
           answerRecords: [],
           participationRecords: [],
+          resetRequests: [],
           adminTokenHash: hashToken(adminToken),
           createdAt: createdAt.toISOString(),
           updatedAt: createdAt.toISOString(),
           expiresAt: new Date(createdAt.getTime() + QUIZ_RETENTION_MS).toISOString(),
+          ...(idempotency ? { creationRequest: idempotency } : {}),
         };
-        await store.update((data) => {
+        const creationPayload = await store.update((data) => {
+          const replayedQuiz = findIdempotentResource(
+            Object.values(data.quizzes),
+            idempotency
+          );
+          if (replayedQuiz) {
+            return quizCreationPayload(replayedQuiz, adminToken);
+          }
           for (const [storedQuizId, storedQuiz] of Object.entries(data.quizzes)) {
             if (
               storedQuiz.expiresAt &&
               new Date(storedQuiz.expiresAt).getTime() <= createdAt.getTime()
             ) {
               delete data.quizzes[storedQuizId];
+              if (data.activeQuizId === storedQuizId) {
+                data.activeQuizId = null;
+              }
             }
           }
+          const authoritativeActiveQuizId = data.activeQuizId || null;
+          if (authoritativeActiveQuizId !== expectedCurrentQuizId) {
+            throw new HttpError(
+              409,
+              "نشر مشرف آخر سؤالًا جديدًا من هذه المساحة. حدّث الصفحة قبل إعادة النشر.",
+              "QUIZ_PUBLISH_CONFLICT",
+              { currentQuizId: authoritativeActiveQuizId }
+            );
+          }
+          applyQuizCreationLimit(data);
           if (data.students.length === 0 && bootstrapStudents) {
             data.students = structuredClone(bootstrapStudents);
           }
@@ -1969,17 +2231,19 @@ export async function createBaynatServer({
             );
           }
           quiz.students = structuredClone(data.students);
+          if (authoritativeActiveQuizId) {
+            const previousQuiz = data.quizzes[authoritativeActiveQuizId];
+            previousQuiz.supersededAt = createdAt.toISOString();
+            previousQuiz.supersededBy = quiz.id;
+          }
           data.quizzes[quizId] = quiz;
+          data.activeQuizId = quiz.id;
+          return quizCreationPayload(quiz, adminToken);
         });
         json(
           response,
           201,
-          {
-            quizId,
-            questionId: question.id,
-            adminToken,
-            studentPath: `/student.html?q=${encodeURIComponent(quizId)}`,
-          },
+          creationPayload,
           securityHeaders()
         );
         return;
@@ -2004,33 +2268,87 @@ export async function createBaynatServer({
       if (resetLeaderboardMatch && request.method === "POST") {
         const quiz = requireQuiz(store, resetLeaderboardMatch[1]);
         requireAdmin(request, quiz, store);
-        let cleared;
-        let recordsPreserved;
-        await store.update((data) => {
+        const resetBody = await readJsonBody(request);
+        if (
+          !Number.isInteger(resetBody.expectedRound) ||
+          resetBody.expectedRound < 1
+        ) {
+          throw new HttpError(
+            400,
+            "رقم الجولة المتوقع غير صالح.",
+            "INVALID_EXPECTED_ROUND"
+          );
+        }
+        const idempotency = readIdempotencyRequest(
+          request,
+          store.data.secret,
+          "leaderboard-reset",
+          quiz.id,
+          resetBody
+        );
+        if (!idempotency) {
+          throw new HttpError(
+            400,
+            "مفتاح إعادة المحاولة مطلوب لإعادة تعيين النتائج.",
+            "IDEMPOTENCY_KEY_REQUIRED"
+          );
+        }
+        const resetResult = await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
-          cleared = {
-            submissions: draftQuiz.submissions.length,
-            participants: serializeParticipants(draftQuiz).length,
-          };
-          recordsPreserved = {
-            answers: draftQuiz.answerRecords.length,
-            participations: draftQuiz.participationRecords.length,
+          draftQuiz.resetRequests ||= [];
+          const replayedReset = findIdempotentResource(
+            draftQuiz.resetRequests,
+            idempotency
+          );
+          if (replayedReset) return structuredClone(replayedReset.response);
+          if (data.activeQuizId !== quiz.id) {
+            throw new HttpError(
+              410,
+              "استُبدل هذا الرابط بسؤال يوم جديد. اطلب الرابط الأحدث من المشرف.",
+              "QUIZ_SUPERSEDED"
+            );
+          }
+          if (draftQuiz.round !== resetBody.expectedRound) {
+            throw new HttpError(
+              409,
+              "تغيّرت جولة السؤال قبل اكتمال الطلب. حدّث النتائج ثم حاول مجددًا.",
+              "QUIZ_ROUND_CONFLICT",
+              { currentRound: draftQuiz.round }
+            );
+          }
+          const result = {
+            ok: true,
+            round: draftQuiz.round + 1,
+            cleared: {
+              submissions: draftQuiz.submissions.length,
+              participants: serializeParticipants(draftQuiz).length,
+            },
+            recordsPreserved: {
+              answers: draftQuiz.answerRecords.length,
+              participations: draftQuiz.participationRecords.length,
+            },
           };
           draftQuiz.submissions = [];
           draftQuiz.sessions = {};
           draftQuiz.starts = {};
           draftQuiz.participants = {};
-          draftQuiz.round += 1;
-          draftQuiz.updatedAt = new Date().toISOString();
+          draftQuiz.round = result.round;
+          const completedAt = new Date().toISOString();
+          draftQuiz.updatedAt = completedAt;
+          draftQuiz.resetRequests.push({
+            creationRequest: idempotency,
+            response: structuredClone(result),
+            completedAt,
+          });
+          draftQuiz.resetRequests = draftQuiz.resetRequests.slice(
+            -MAX_RESET_REQUESTS
+          );
+          return result;
         });
         json(
           response,
           200,
-          {
-            ok: true,
-            cleared,
-            recordsPreserved,
-          },
+          resetResult,
           securityHeaders()
         );
         return;

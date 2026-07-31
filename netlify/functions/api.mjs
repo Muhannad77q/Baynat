@@ -1,19 +1,17 @@
-import { getDeployStore, getStore } from "@netlify/blobs";
+import {
+  MissingDatabaseConnectionError,
+  getDatabase,
+} from "@netlify/database";
 import { createBaynatServer } from "../../server.js";
 import {
-  NetlifyBlobStore,
+  DatabaseBusyError,
+  DatabaseConfigurationError,
+  DatabaseStateError,
+  DatabaseUnavailableError,
+  NetlifyDatabaseStore,
   SetupKeyConfigurationError,
-} from "../blob-store.js";
+} from "../database-store.js";
 import { invokeNodeHandler } from "../node-adapter.js";
-
-const DEFAULT_STORE_NAME = "baynat-data";
-
-class DeploymentContextError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "DeploymentContextError";
-  }
-}
 
 function jsonError(status, code, message) {
   return new Response(JSON.stringify({ error: { code, message } }), {
@@ -25,53 +23,26 @@ function jsonError(status, code, message) {
   });
 }
 
-function readConfiguration(environment, context) {
+function readConfiguration(environment) {
   const setupKey = String(environment.BAYNAT_SETUP_KEY || "").trim();
   if (setupKey && (setupKey.length < 12 || setupKey.length > 128)) {
     throw new SetupKeyConfigurationError(
       "BAYNAT_SETUP_KEY must contain 12 to 128 characters."
     );
   }
-  const deploymentContext = String(context.deploy?.context || "")
-    .trim()
-    .toLowerCase();
-  if (!deploymentContext) {
-    throw new DeploymentContextError(
-      "Netlify did not provide context.deploy.context."
-    );
-  }
-  const deployID = String(context.deploy?.id || "").trim();
-  if (deploymentContext !== "production" && !deployID) {
-    throw new DeploymentContextError(
-      "Netlify did not provide context.deploy.id for a non-production deploy."
-    );
-  }
-  const storeName = String(
-    environment.BAYNAT_BLOB_STORE || DEFAULT_STORE_NAME
-  ).trim();
-  if (
-    !storeName ||
-    storeName.includes("/") ||
-    storeName.includes(":") ||
-    Buffer.byteLength(storeName) > 64
-  ) {
-    throw new Error("BAYNAT_BLOB_STORE is not a valid Netlify Blobs store name.");
-  }
-  return { deployID, deploymentContext, setupKey, storeName };
+  return { setupKey };
 }
 
 export function createNetlifyApiHandler({
   environment = process.env,
-  getBlobStore = (storeName) =>
-    getStore({ name: storeName, consistency: "strong" }),
-  getDeployBlobStore = (options) => getDeployStore(options),
+  getDatabaseClient = getDatabase,
   logger = console,
   serverOptions = {},
 } = {}) {
   return async (request, context = {}) => {
     let configuration;
     try {
-      configuration = readConfiguration(environment, context);
+      configuration = readConfiguration(environment);
     } catch (error) {
       logger.error?.(`Baynat Netlify configuration error: ${error.message}`);
       if (error instanceof SetupKeyConfigurationError) {
@@ -81,33 +52,35 @@ export function createNetlifyApiHandler({
           "اضبط BAYNAT_SETUP_KEY بقيمة سرية من ١٢ إلى ١٢٨ خانة قبل تهيئة أول مشرف."
         );
       }
-      if (error instanceof DeploymentContextError) {
-        return jsonError(
-          500,
-          "DEPLOYMENT_CONTEXT_ERROR",
-          "تعذّر تحديد سياق نشر Netlify بأمان."
-        );
-      }
       return jsonError(
         500,
         "SERVICE_CONFIGURATION_ERROR",
-        "إعداد تخزين بَيّنات غير مكتمل. راجع متغيرات بيئة Netlify."
+        "إعداد بَيّنات غير مكتمل. راجع متغيرات بيئة Netlify."
       );
     }
 
+    let database;
     try {
-      const blobs =
-        configuration.deploymentContext === "production"
-          ? getBlobStore(configuration.storeName)
-          : getDeployBlobStore({
-              name: configuration.storeName,
-              deployID: configuration.deployID,
-              consistency: "strong",
-            });
-      const store = new NetlifyBlobStore({
-        blobs,
-        setupKey: configuration.setupKey,
-      });
+      try {
+        database = await Promise.resolve().then(() => getDatabaseClient());
+      } catch (error) {
+        if (error instanceof MissingDatabaseConnectionError) {
+          throw new DatabaseConfigurationError(error);
+        }
+        throw new DatabaseUnavailableError(error);
+      }
+      let store;
+      try {
+        store = new NetlifyDatabaseStore({
+          database,
+          setupKey: configuration.setupKey,
+        });
+      } catch (error) {
+        if (error instanceof TypeError) {
+          throw new DatabaseConfigurationError(error);
+        }
+        throw new DatabaseUnavailableError(error);
+      }
       const { handler } = await createBaynatServer({
         ...serverOptions,
         store,
@@ -126,11 +99,49 @@ export function createNetlifyApiHandler({
           "اضبط BAYNAT_SETUP_KEY بقيمة سرية من ١٢ إلى ١٢٨ خانة قبل تهيئة أول مشرف."
         );
       }
+      if (error instanceof DatabaseStateError) {
+        return jsonError(
+          500,
+          "DATABASE_STATE_INVALID",
+          "حالة بَيّنات المحفوظة غير صالحة. أوقفنا الكتابة لحماية البيانات."
+        );
+      }
+      if (error instanceof DatabaseConfigurationError) {
+        return jsonError(
+          500,
+          "DATABASE_CONFIGURATION_ERROR",
+          "قاعدة بيانات بَيّنات غير مهيأة. تحقّق من ربط Database وتطبيق الترحيلات."
+        );
+      }
+      if (error instanceof DatabaseBusyError) {
+        return jsonError(
+          503,
+          "DATABASE_BUSY",
+          "قاعدة بيانات بَيّنات مشغولة الآن. حاول مرة أخرى بعد قليل."
+        );
+      }
+      if (error instanceof DatabaseUnavailableError) {
+        return jsonError(
+          503,
+          "DATABASE_UNAVAILABLE",
+          "تعذّر الوصول إلى قاعدة بيانات بَيّنات. حاول مرة أخرى بعد قليل."
+        );
+      }
       return jsonError(
         500,
-        "STORAGE_UNAVAILABLE",
-        "تعذّر الوصول إلى التخزين المشترك. حاول مرة أخرى بعد قليل."
+        "SERVICE_CONFIGURATION_ERROR",
+        "تعذّر تشغيل خدمة بَيّنات. راجع إعدادات Netlify."
       );
+    } finally {
+      if (typeof database?.pool?.end === "function") {
+        try {
+          await database.pool.end();
+        } catch (error) {
+          logger.error?.(
+            `Baynat Netlify database pool close failed: ${error.message}`
+          );
+        }
+      }
     }
   };
 }

@@ -556,10 +556,15 @@ test("resets participant and answer records so students can answer again", async
     `/api/quizzes/${created.payload.quizId}/leaderboard/reset`,
     {
       method: "POST",
-      headers: { "X-Admin-Token": created.payload.adminToken },
+      headers: {
+        "X-Admin-Token": created.payload.adminToken,
+        "Idempotency-Key": "server-reset-round-one-0001",
+      },
+      body: JSON.stringify({ expectedRound: 1 }),
     }
   );
   assert.equal(reset.response.status, 200);
+  assert.equal(reset.payload.round, 2);
   assert.deepEqual(reset.payload.cleared, { submissions: 1, participants: 1 });
   assert.deepEqual(reset.payload.recordsPreserved, {
     answers: 1,
@@ -697,7 +702,11 @@ test("revalidates in-flight access and submissions against edits and resets", as
       `/api/quizzes/${created.payload.quizId}/leaderboard/reset`,
       {
         method: "POST",
-        headers: { "X-Admin-Token": created.payload.adminToken },
+        headers: {
+          "X-Admin-Token": created.payload.adminToken,
+          "Idempotency-Key": "racing-reset-round-one-0001",
+        },
+        body: JSON.stringify({ expectedRound: 1 }),
       }
     ),
   ]);
@@ -802,6 +811,7 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
   const created = await request(baseUrl, "/api/quizzes", {
     method: "POST",
     body: JSON.stringify({
+      expectedCurrentQuizId: namesakeRoster.payload.quizId,
       question: {
         type: "boolean",
         prompt: "الشمس نجم يمد الأرض بالضوء.",
@@ -882,25 +892,29 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
     assert.equal(invalidCreation.response.status, 400);
   }
 
-  const validQuizBody = JSON.stringify({
-    question: {
-      type: "boolean",
-      prompt: "الأرض تدور حول الشمس.",
-      options: ["صح", "خطأ"],
-      correctAnswer: "صح",
-    },
-    students: [{ name: "عمر الحربي", className: "٢ / أ", pin: "7350" }],
-  });
+  const validQuizBody = (expectedCurrentQuizId) =>
+    JSON.stringify({
+      expectedCurrentQuizId,
+      question: {
+        type: "boolean",
+        prompt: "الأرض تدور حول الشمس.",
+        options: ["صح", "خطأ"],
+        correctAnswer: "صح",
+      },
+      students: [{ name: "عمر الحربي", className: "٢ / أ", pin: "7350" }],
+    });
+  let expectedCurrentQuizId = created.payload.quizId;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const allowedCreation = await request(baseUrl, "/api/quizzes", {
       method: "POST",
-      body: validQuizBody,
+      body: validQuizBody(expectedCurrentQuizId),
     });
     assert.equal(allowedCreation.response.status, 201);
+    expectedCurrentQuizId = allowedCreation.payload.quizId;
   }
   const creationLimited = await request(baseUrl, "/api/quizzes", {
     method: "POST",
-    body: validQuizBody,
+    body: validQuizBody(expectedCurrentQuizId),
   });
   assert.equal(creationLimited.response.status, 429);
   assert.equal(creationLimited.payload.error.code, "QUIZ_CREATION_LIMIT");

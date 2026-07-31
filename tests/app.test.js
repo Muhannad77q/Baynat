@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   buildLeaderboard,
   calculateScore,
+  createIdempotencyKeyManager,
   createInitialState,
+  createQuizPublishRequest,
   createSharePayload,
   decodeSharePayload,
   encodeSharePayload,
@@ -18,6 +20,163 @@ test("normalizes Arabic and Persian digits for four-digit student codes", () => 
   assert.equal(normalizeDigits("٤٨٢١"), "4821");
   assert.equal(normalizeDigits("۴۸۲۱"), "4821");
   assert.equal(normalizeDigits("4821"), "4821");
+});
+
+test("reuses create idempotency keys until payload change or success", () => {
+  let sequence = 0;
+  const manager = createIdempotencyKeyManager({
+    createKey: () => `test-key-${++sequence}`,
+  });
+  const firstPayload = {
+    name: "سارة القحطاني",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
+    pin: "1234",
+  };
+  const equivalentPayload = {
+    pin: "1234",
+    halaqa: "زكاء",
+    className: "أولى ثانوي",
+    name: "سارة القحطاني",
+  };
+
+  const firstKey = manager.keyFor("student-create", firstPayload);
+  assert.equal(
+    manager.keyFor("student-create", equivalentPayload),
+    firstKey
+  );
+  const changedKey = manager.keyFor("student-create", {
+    ...firstPayload,
+    pin: "5678",
+  });
+  assert.notEqual(changedKey, firstKey);
+
+  manager.complete("student-create", firstPayload, firstKey);
+  assert.equal(
+    manager.keyFor("student-create", { ...firstPayload, pin: "5678" }),
+    changedKey
+  );
+  manager.complete(
+    "student-create",
+    { ...firstPayload, pin: "5678" },
+    changedKey
+  );
+  assert.notEqual(
+    manager.keyFor("student-create", { ...firstPayload, pin: "5678" }),
+    changedKey
+  );
+});
+
+test("persists publish and reset attempts across a failed request and reload", () => {
+  const values = new Map();
+  const storage = {
+    getItem(key) {
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+  let sequence = 0;
+  const options = {
+    createKey: () => `persistent-key-${++sequence}`,
+    storage,
+    storageKey: "baynat.test.pending-operations",
+  };
+  const publishRequest = {
+    expectedCurrentQuizId: "quiz-current",
+    question: { type: "boolean", prompt: "هل الأرض كروية؟" },
+  };
+  const resetRequest = {
+    quizId: "quiz-current",
+    expectedRound: 3,
+  };
+  const firstManager = createIdempotencyKeyManager(options);
+  const publishKey = firstManager.keyFor("quiz-create", publishRequest);
+  const resetKey = firstManager.keyFor("leaderboard-reset:quiz-current", resetRequest);
+
+  const reloadedManager = createIdempotencyKeyManager(options);
+  assert.deepEqual(
+    reloadedManager.pending("quiz-create"),
+    { key: publishKey, payload: publishRequest }
+  );
+  assert.equal(
+    reloadedManager.keyFor("quiz-create", structuredClone(publishRequest)),
+    publishKey
+  );
+  assert.equal(
+    reloadedManager.keyFor(
+      "leaderboard-reset:quiz-current",
+      structuredClone(resetRequest)
+    ),
+    resetKey
+  );
+
+  reloadedManager.complete("quiz-create", publishRequest, publishKey);
+  const afterSuccessReload = createIdempotencyKeyManager(options);
+  assert.notEqual(
+    afterSuccessReload.keyFor("quiz-create", publishRequest),
+    publishKey
+  );
+});
+
+test("rebuilds a failed publish with its persisted expected quiz after reload", () => {
+  const values = new Map();
+  const storage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+  const state = createInitialState(
+    Date.parse("2026-07-31T12:00:00.000Z")
+  );
+  state.expectedCurrentQuizId = "quiz-authoritative";
+  state.currentQuestion.published = true;
+  state.students = [
+    {
+      id: "student-one",
+      name: "سارة القحطاني",
+      className: "أولى ثانوي",
+      halaqa: "زكاء",
+      pin: "1234",
+    },
+  ];
+  const firstRequest = createQuizPublishRequest(state);
+  const firstManager = createIdempotencyKeyManager({
+    createKey: () => "persisted-publish-key",
+    storage,
+    storageKey: "baynat.test.publish-reload",
+  });
+  firstManager.keyFor("quiz-create", firstRequest);
+
+  const reloadedState = structuredClone(state);
+  reloadedState.students[0].revision = 2;
+  const reloadedManager = createIdempotencyKeyManager({
+    createKey: () => "must-not-be-used",
+    storage,
+    storageKey: "baynat.test.publish-reload",
+  });
+  const retriedRequest = createQuizPublishRequest(
+    reloadedState,
+    reloadedManager.pending("quiz-create")
+  );
+  assert.deepEqual(retriedRequest, firstRequest);
+  assert.equal(
+    retriedRequest.expectedCurrentQuizId,
+    "quiz-authoritative"
+  );
+
+  reloadedState.currentQuestion.prompt = "سؤال جديد مختلف تمامًا";
+  assert.notDeepEqual(
+    createQuizPublishRequest(
+      reloadedState,
+      reloadedManager.pending("quiz-create")
+    ),
+    firstRequest
+  );
 });
 
 test("validates student class and halaqa selections and supports PIN-free edits", () => {
@@ -272,6 +431,7 @@ test("starts with a clean classroom and an unpublished question draft", () => {
   assert.equal(state.answerRecords.length, 0);
   assert.equal(state.participationRecords.length, 0);
   assert.equal(state.currentRound, 1);
+  assert.equal(state.expectedCurrentQuizId, null);
   assert.equal(state.currentQuestion.published, false);
   assert.equal(state.currentQuestion.id, "question-draft");
 });
