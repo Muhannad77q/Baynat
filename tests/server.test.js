@@ -504,6 +504,75 @@ test("shares one server-backed quiz across independent student sessions", async 
   );
 });
 
+test("preserves Arabic roster names and shares quiz IDs instead of student IDs", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-roster-link-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const { server, baseUrl } = await listen(dataFile);
+  context.after(async () => {
+    await close(server);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const credentials = {
+    name: "سارة أحمد",
+    className: "أولى ثانوي",
+    halaqa: "زكاء",
+    pin: "4821",
+  };
+  const added = await request(baseUrl, "/api/students", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
+  assert.equal(added.response.status, 201);
+  assert.equal(added.payload.student.name, credentials.name);
+
+  const created = await request(baseUrl, "/api/quizzes", {
+    method: "POST",
+    body: JSON.stringify({
+      question: {
+        type: "boolean",
+        prompt: "هل يُحفظ الاسم والرابط كما أُدخلا؟",
+        options: ["صح", "خطأ"],
+        correctAnswer: "صح",
+      },
+      students: [],
+    }),
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(
+    created.payload.studentPath,
+    `/student.html?q=${encodeURIComponent(created.payload.quizId)}`
+  );
+  assert.notEqual(created.payload.quizId, added.payload.student.id);
+  assert.equal(created.payload.studentPath.includes(added.payload.student.id), false);
+
+  const sharedPage = await fetch(`${baseUrl}${created.payload.studentPath}`);
+  assert.equal(sharedPage.status, 200);
+  assert.match(await sharedPage.text(), /بوابة الطالب/);
+
+  const mistakenStudentIdPath = await request(
+    baseUrl,
+    `/${encodeURIComponent(added.payload.student.id)}`
+  );
+  assert.equal(mistakenStudentIdPath.response.status, 404);
+  assert.equal(mistakenStudentIdPath.payload.error.code, "NOT_FOUND");
+
+  const access = await accessStudent(
+    baseUrl,
+    created.payload.quizId,
+    credentials
+  );
+  assert.equal(access.response.status, 200);
+  assert.equal(access.payload.student.name, credentials.name);
+
+  const persisted = JSON.parse(await readFile(dataFile, "utf8"));
+  assert.equal(persisted.students[0].name, credentials.name);
+  assert.equal(
+    persisted.quizzes[created.payload.quizId].students[0].name,
+    credentials.name
+  );
+});
+
 test("resets participant and answer records so students can answer again", async (context) => {
   const directory = await mkdtemp(path.join(tmpdir(), "baynat-reset-"));
   const dataFile = path.join(directory, "baynat.json");
