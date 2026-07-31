@@ -816,13 +816,12 @@ test("rejects duplicate PINs while allowing namesakes with distinct codes", asyn
       ],
     }),
   });
-  const unauthorized = await request(
-    baseUrl,
-    `/api/quizzes/${created.payload.quizId}/admin`,
+  const unauthorized = await fetch(
+    `${baseUrl}/api/quizzes/${created.payload.quizId}/admin`,
     { headers: { "X-Admin-Token": "wrong-token" } }
   );
-  assert.equal(unauthorized.response.status, 401);
-  assert.equal(unauthorized.payload.error.code, "ADMIN_UNAUTHORIZED");
+  assert.equal(unauthorized.status, 401);
+  assert.equal((await unauthorized.json()).error.code, "ADMIN_UNAUTHORIZED");
 
   const sarahCredentials = {
     name: "سارة القحطاني",
