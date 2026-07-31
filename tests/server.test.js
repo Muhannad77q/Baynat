@@ -8,6 +8,7 @@ import { createBaynatServer } from "../server.js";
 
 const supervisorTokens = new Map();
 const TEST_SUPERVISOR_PASSWORD = "baynat-test-admin";
+const TEST_SUPERVISOR_NAME = "مشرف الاختبار";
 
 async function listen(dataFile) {
   const { server, store } = await createBaynatServer({
@@ -26,6 +27,8 @@ async function listen(dataFile) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        displayName:
+          store.data.supervisors[0]?.displayName || TEST_SUPERVISOR_NAME,
         password: TEST_SUPERVISOR_PASSWORD,
         setupKey: store.data.setupKey,
       }),
@@ -140,6 +143,14 @@ test("shares one server-backed quiz across independent student sessions", async 
     const privateResponse = await fetch(`${firstRun.baseUrl}${privatePath}`);
     assert.equal(privateResponse.status, 404);
   }
+  const supervisorSession = await request(
+    firstRun.baseUrl,
+    "/api/admin/session"
+  );
+  assert.equal(
+    supervisorSession.payload.supervisor.displayName,
+    TEST_SUPERVISOR_NAME
+  );
 
   await assert.rejects(
     createBaynatServer({ dataFile }),
@@ -353,15 +364,44 @@ test("shares one server-backed quiz across independent student sessions", async 
   });
   assert.equal(rejectedRosterSelection.response.status, 400);
   assert.equal(rejectedRosterSelection.payload.error.code, "INVALID_STUDENT_CLASS");
+  const addedSupervisor = await request(
+    firstRun.baseUrl,
+    "/api/admin/supervisors",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: "المشرف المساعد",
+        password: "assistant-password",
+      }),
+    }
+  );
+  assert.equal(addedSupervisor.response.status, 201);
   const secondSupervisorLogin = await fetch(`${firstRun.baseUrl}/api/admin/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+    body: JSON.stringify({
+      displayName: "المشرف المساعد",
+      password: "assistant-password",
+    }),
   }).then((response) => response.json());
   const secondSupervisorRoster = await fetch(`${firstRun.baseUrl}/api/students`, {
     headers: { "X-Supervisor-Token": secondSupervisorLogin.token },
   }).then((response) => response.json());
   assert.deepEqual(secondSupervisorRoster.students, sharedRoster.payload.students);
+  const secondSupervisorDashboard = await fetch(
+    `${firstRun.baseUrl}/api/admin/dashboard`,
+    {
+      headers: { "X-Supervisor-Token": secondSupervisorLogin.token },
+    }
+  ).then((response) => response.json());
+  assert.equal(secondSupervisorDashboard.quiz.id, quizId);
+  const secondSupervisorSnapshot = await fetch(
+    `${firstRun.baseUrl}/api/quizzes/${quizId}/admin`,
+    {
+      headers: { "X-Supervisor-Token": secondSupervisorLogin.token },
+    }
+  );
+  assert.equal(secondSupervisorSnapshot.status, 200);
   const reemSessionBeforeEdit = await accessStudent(firstRun.baseUrl, quizId, {
     name: "ريم السبيعي",
     className: "أولى ثانوي",
@@ -890,6 +930,7 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
     const attackerSetup = await request(baseUrl, "/api/admin/setup", {
       method: "POST",
       body: JSON.stringify({
+        displayName: TEST_SUPERVISOR_NAME,
         setupKey: "wrong-bootstrap-key",
         password: "attacker-password",
       }),
@@ -901,6 +942,7 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
   const configured = await request(baseUrl, "/api/admin/setup", {
     method: "POST",
     body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
       setupKey,
       password: TEST_SUPERVISOR_PASSWORD,
     }),
@@ -911,6 +953,7 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
   const takeover = await request(baseUrl, "/api/admin/setup", {
     method: "POST",
     body: JSON.stringify({
+      displayName: "مشرف آخر",
       setupKey,
       password: "another-password",
     }),
@@ -920,13 +963,19 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const rejectedLogin = await request(baseUrl, "/api/admin/login", {
       method: "POST",
-      body: JSON.stringify({ password: "wrong-password" }),
+      body: JSON.stringify({
+        displayName: TEST_SUPERVISOR_NAME,
+        password: "wrong-password",
+      }),
     });
     assert.equal(rejectedLogin.response.status, 401);
   }
   const limitedLogin = await request(baseUrl, "/api/admin/login", {
     method: "POST",
-    body: JSON.stringify({ password: "wrong-password" }),
+    body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
+      password: "wrong-password",
+    }),
   });
   assert.equal(limitedLogin.response.status, 429);
   assert.equal(limitedLogin.payload.error.code, "SUPERVISOR_PROOF_REQUIRED");
@@ -934,7 +983,10 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
 
   const legitimateStepUp = await request(baseUrl, "/api/admin/login", {
     method: "POST",
-    body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+    body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
+      password: TEST_SUPERVISOR_PASSWORD,
+    }),
   });
   assert.equal(legitimateStepUp.response.status, 429);
   assert.equal(
@@ -946,6 +998,7 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
   const legitimateLogin = await request(baseUrl, "/api/admin/login", {
     method: "POST",
     body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
       password: TEST_SUPERVISOR_PASSWORD,
       challengeToken,
       challengeCounter: solveChallenge(challengeToken, difficultyBits),
@@ -958,7 +1011,10 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
     Array.from({ length: 24 }, (_, index) =>
       request(baseUrl, "/api/admin/login", {
         method: "POST",
-        body: JSON.stringify({ password: `wrong-burst-${index}` }),
+        body: JSON.stringify({
+          displayName: TEST_SUPERVISOR_NAME,
+          password: `wrong-burst-${index}`,
+        }),
       })
     )
   );
@@ -977,13 +1033,17 @@ test("requires the server bootstrap key and rate-limits supervisor login", async
 
   const postBurstStepUp = await request(baseUrl, "/api/admin/login", {
     method: "POST",
-    body: JSON.stringify({ password: TEST_SUPERVISOR_PASSWORD }),
+    body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
+      password: TEST_SUPERVISOR_PASSWORD,
+    }),
   });
   assert.equal(postBurstStepUp.response.status, 429);
   const postBurstChallenge = postBurstStepUp.payload.error.details;
   const postBurstLogin = await request(baseUrl, "/api/admin/login", {
     method: "POST",
     body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
       password: TEST_SUPERVISOR_PASSWORD,
       challengeToken: postBurstChallenge.challengeToken,
       challengeCounter: solveChallenge(
@@ -1105,6 +1165,49 @@ test("migrates legacy rooms onto the 31-day expiration policy", async (context) 
   assert.equal(expired.payload.error.code, "QUIZ_EXPIRED");
   const migrated = JSON.parse(await readFile(dataFile, "utf8"));
   assert.ok(migrated.quizzes[created.payload.quizId].expiresAt);
+});
+
+test("migrates the legacy supervisor credential into a named account", async (context) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "baynat-supervisor-migration-"));
+  const dataFile = path.join(directory, "baynat.json");
+  const firstRun = await listen(dataFile);
+  await close(firstRun.server);
+
+  const legacy = JSON.parse(await readFile(dataFile, "utf8"));
+  legacy.version = 1;
+  legacy.adminCredential = legacy.supervisors[0].credential;
+  legacy.setupKey = null;
+  delete legacy.supervisors;
+  await writeFile(dataFile, `${JSON.stringify(legacy, null, 2)}\n`);
+
+  const { server, store } = await createBaynatServer({
+    dataFile,
+    accessDifficultyBits: 8,
+    supervisorDifficultyBits: 8,
+    logger: { error() {} },
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  context.after(async () => {
+    if (server.listening) await close(server);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  assert.equal(store.data.version, 2);
+  assert.equal(store.data.supervisors.length, 1);
+  assert.equal(store.data.supervisors[0].displayName, "المشرف الرئيسي");
+  assert.equal(Object.hasOwn(store.data, "adminCredential"), false);
+
+  const login = await request(baseUrl, "/api/admin/login", {
+    method: "POST",
+    body: JSON.stringify({
+      displayName: "المشرف الرئيسي",
+      password: TEST_SUPERVISOR_PASSWORD,
+    }),
+  });
+  assert.equal(login.response.status, 200);
+  assert.equal(login.payload.supervisor.displayName, "المشرف الرئيسي");
 });
 
 test("derives a legacy shared roster from the latest room only", async (context) => {
@@ -1249,6 +1352,7 @@ test("uses strong production proof difficulty defaults and floors", async (conte
   const setup = await request(baseUrl, "/api/admin/setup", {
     method: "POST",
     body: JSON.stringify({
+      displayName: TEST_SUPERVISOR_NAME,
       setupKey: store.data.setupKey,
       password: TEST_SUPERVISOR_PASSWORD,
     }),

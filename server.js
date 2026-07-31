@@ -25,6 +25,7 @@ const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DATA_FILE = path.join(ROOT_DIR, ".data", "baynat.json");
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_STUDENTS = 80;
+const MAX_SUPERVISORS = 20;
 const ACCESS_WINDOW_MS = 10 * 60 * 1000;
 const SUPERVISOR_SESSION_MS = 12 * 60 * 60 * 1000;
 const SUPERVISOR_ATTEMPTS_LIMIT = 10;
@@ -70,8 +71,9 @@ function isRecord(value) {
 }
 
 function validateStoredData(parsed, initialSetupKey) {
+  const storedVersion = parsed?.version;
   if (
-    parsed?.version !== 1 ||
+    ![1, 2].includes(storedVersion) ||
     typeof parsed.secret !== "string" ||
     parsed.secret.length < 20 ||
     !isRecord(parsed.quizzes)
@@ -107,19 +109,56 @@ function validateStoredData(parsed, initialSetupKey) {
       migrated = true;
     }
   };
-  if (parsed.adminCredential === undefined) {
-    parsed.adminCredential = null;
+  const validSupervisorCredential = (credential) =>
+    isRecord(credential) &&
+    typeof credential.salt === "string" &&
+    typeof credential.hash === "string" &&
+    Number.isFinite(new Date(credential.createdAt).getTime());
+  if (storedVersion === 1) {
+    const legacyCredential = parsed.adminCredential ?? null;
+    if (legacyCredential !== null && !validSupervisorCredential(legacyCredential)) {
+      throw new Error("بيانات دخول المشرف في ملف بَيّنات غير صالحة.");
+    }
+    parsed.supervisors = legacyCredential
+      ? [
+          {
+            id: "supervisor-legacy",
+            displayName: "المشرف الرئيسي",
+            credential: legacyCredential,
+          },
+        ]
+      : [];
+    delete parsed.adminCredential;
+    parsed.version = 2;
     migrated = true;
-  } else if (
-    parsed.adminCredential !== null &&
-    (!isRecord(parsed.adminCredential) ||
-      typeof parsed.adminCredential.salt !== "string" ||
-      typeof parsed.adminCredential.hash !== "string" ||
-      !Number.isFinite(new Date(parsed.adminCredential.createdAt).getTime()))
-  ) {
-    throw new Error("بيانات دخول المشرف في ملف بَيّنات غير صالحة.");
+  } else if (!Array.isArray(parsed.supervisors)) {
+    throw new Error("قائمة المشرفين في ملف بَيّنات غير صالحة.");
   }
-  if (parsed.adminCredential) {
+  if (Object.hasOwn(parsed, "adminCredential")) {
+    delete parsed.adminCredential;
+    migrated = true;
+  }
+  const validSupervisors =
+    parsed.supervisors.length <= MAX_SUPERVISORS &&
+    parsed.supervisors.every(
+      (supervisor) =>
+        isRecord(supervisor) &&
+        typeof supervisor.id === "string" &&
+        /^[A-Za-z0-9_-]{3,80}$/.test(supervisor.id) &&
+        typeof supervisor.displayName === "string" &&
+        supervisor.displayName.trim().length >= 2 &&
+        supervisor.displayName.trim().length <= 60 &&
+        validSupervisorCredential(supervisor.credential)
+    ) &&
+    new Set(parsed.supervisors.map((supervisor) => supervisor.id)).size ===
+      parsed.supervisors.length &&
+    new Set(
+      parsed.supervisors.map((supervisor) => normalizeAnswer(supervisor.displayName))
+    ).size === parsed.supervisors.length;
+  if (!validSupervisors) {
+    throw new Error("قائمة المشرفين في ملف بَيّنات غير صالحة.");
+  }
+  if (parsed.supervisors.length > 0) {
     if (parsed.setupKey !== null) {
       parsed.setupKey = null;
       migrated = true;
@@ -404,9 +443,9 @@ class JsonStore {
     }
 
     this.data = {
-      version: 1,
+      version: 2,
       secret: randomBytes(32).toString("base64url"),
-      adminCredential: null,
+      supervisors: [],
       setupKey: this.initialSetupKey || randomBytes(9).toString("base64url"),
       students: [],
       quizzes: {},
@@ -583,31 +622,34 @@ async function verifySupervisorPassword(password, credential) {
   return safeEqual(candidate.toString("hex"), credential.hash);
 }
 
-function issueSupervisorToken(secret) {
+function issueSupervisorToken(secret, supervisorId) {
   const expiresAt = Date.now() + SUPERVISOR_SESSION_MS;
   const nonce = randomBytes(24).toString("base64url");
-  const payload = `${expiresAt}.${nonce}`;
+  const payload = `${supervisorId}.${expiresAt}.${nonce}`;
   const signature = createHmac("sha256", secret).update(`supervisor:${payload}`).digest("base64url");
   return `${payload}.${signature}`;
 }
 
 function verifySupervisorToken(token, secret) {
-  const [expiresAtValue, nonce, signature, ...extra] = String(token || "").split(".");
+  const [supervisorId, expiresAtValue, nonce, signature, ...extra] = String(
+    token || ""
+  ).split(".");
   if (
     extra.length ||
+    !/^[A-Za-z0-9_-]{3,80}$/.test(supervisorId || "") ||
     !/^\d{10,16}$/.test(expiresAtValue || "") ||
     !/^[A-Za-z0-9_-]{20,80}$/.test(nonce || "") ||
     !/^[A-Za-z0-9_-]{30,80}$/.test(signature || "")
   ) {
-    return false;
+    return null;
   }
   const expiresAt = Number(expiresAtValue);
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
-  const payload = `${expiresAtValue}.${nonce}`;
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+  const payload = `${supervisorId}.${expiresAtValue}.${nonce}`;
   const expected = createHmac("sha256", secret)
     .update(`supervisor:${payload}`)
     .digest("base64url");
-  return safeEqual(signature, expected);
+  return safeEqual(signature, expected) ? supervisorId : null;
 }
 
 function canonicalStudentIdentity(name, className, halaqa) {
@@ -731,6 +773,14 @@ function publicStudent(student) {
   };
 }
 
+function publicSupervisor(supervisor) {
+  return {
+    id: supervisor.id,
+    displayName: supervisor.displayName,
+    createdAt: supervisor.credential.createdAt,
+  };
+}
+
 function publicQuestion(quiz) {
   const { type, prompt, options, createdAt } = quiz.question;
   return { id: quiz.question.id, type, prompt, options, createdAt };
@@ -783,6 +833,21 @@ function serializeLeaderboard(quiz) {
     placePoints: entry.placePoints,
     total: entry.total,
   }));
+}
+
+function serializeAdminQuiz(quiz) {
+  return {
+    id: quiz.id,
+    question: quiz.question,
+    students: quiz.students.map(publicStudent),
+    submissions: quiz.submissions,
+    participants: serializeParticipants(quiz),
+    answerRecords: quiz.answerRecords,
+    participationRecords: quiz.participationRecords,
+    round: quiz.round,
+    leaderboard: serializeLeaderboard(quiz),
+    updatedAt: quiz.updatedAt,
+  };
 }
 
 function serializeResult(quiz, submission) {
@@ -898,22 +963,48 @@ function requireQuiz(store, quizId) {
   return quiz;
 }
 
-function requireAdmin(request, quiz) {
+function requireAdmin(request, quiz, store) {
   const token = request.headers["x-admin-token"];
-  if (!token || !safeEqual(hashToken(token), quiz.adminTokenHash)) {
-    throw new HttpError(401, "انتهت صلاحية جلسة المشرف.", "ADMIN_UNAUTHORIZED");
+  if (token && safeEqual(hashToken(token), quiz.adminTokenHash)) return;
+  const supervisorId = verifySupervisorToken(
+    request.headers["x-supervisor-token"],
+    store.data.secret
+  );
+  if (
+    supervisorId &&
+    store.data.supervisors.some((supervisor) => supervisor.id === supervisorId)
+  ) {
+    return;
   }
+  throw new HttpError(401, "انتهت صلاحية جلسة المشرف.", "ADMIN_UNAUTHORIZED");
 }
 
 function requireSupervisor(request, store) {
   const token = request.headers["x-supervisor-token"];
-  if (!verifySupervisorToken(token, store.data.secret)) {
+  const supervisorId = verifySupervisorToken(token, store.data.secret);
+  const supervisor = supervisorId
+    ? store.data.supervisors.find((item) => item.id === supervisorId)
+    : null;
+  if (!supervisor) {
     throw new HttpError(
       401,
       "سجّل دخول المشرف للمتابعة.",
       "SUPERVISOR_UNAUTHORIZED"
     );
   }
+  return supervisor;
+}
+
+function readSupervisorDisplayName(body) {
+  const displayName = String(body?.displayName || "").trim().replace(/\s+/g, " ");
+  if (displayName.length < 2 || displayName.length > 60) {
+    throw new HttpError(
+      400,
+      "اكتب اسم المشرف من حرفين إلى ٦٠ حرفًا.",
+      "INVALID_SUPERVISOR_NAME"
+    );
+  }
+  return displayName;
 }
 
 function readSupervisorPassword(body) {
@@ -1142,8 +1233,11 @@ export async function createBaynatServer({
           response,
           200,
           {
-            configured: Boolean(store.data.adminCredential),
-            requiresSetupKey: !store.data.adminCredential,
+            configured: store.data.supervisors.length > 0,
+            requiresSetupKey: store.data.supervisors.length === 0,
+            supervisorNames: store.data.supervisors.map(
+              (supervisor) => supervisor.displayName
+            ),
           },
           securityHeaders()
         );
@@ -1151,8 +1245,35 @@ export async function createBaynatServer({
       }
 
       if (pathname === "/api/admin/session" && request.method === "GET") {
+        const supervisor = requireSupervisor(request, store);
+        json(
+          response,
+          200,
+          { ok: true, supervisor: publicSupervisor(supervisor) },
+          securityHeaders()
+        );
+        return;
+      }
+
+      if (pathname === "/api/admin/dashboard" && request.method === "GET") {
         requireSupervisor(request, store);
-        json(response, 200, { ok: true }, securityHeaders());
+        const now = Date.now();
+        const latestQuiz = Object.values(store.data.quizzes)
+          .filter(
+            (quiz) =>
+              !quiz.expiresAt || new Date(quiz.expiresAt).getTime() > now
+          )
+          .sort(
+            (first, second) =>
+              new Date(second.createdAt).getTime() -
+              new Date(first.createdAt).getTime()
+          )[0];
+        json(
+          response,
+          200,
+          { quiz: latestQuiz ? serializeAdminQuiz(latestQuiz) : null },
+          securityHeaders()
+        );
         return;
       }
 
@@ -1160,7 +1281,7 @@ export async function createBaynatServer({
         if (request.headers["sec-fetch-site"] === "cross-site") {
           throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
         }
-        if (store.data.adminCredential) {
+        if (store.data.supervisors.length > 0) {
           throw new HttpError(
             409,
             "تم إعداد رمز المشرف مسبقًا.",
@@ -1184,24 +1305,33 @@ export async function createBaynatServer({
             "SETUP_KEY_REJECTED"
           );
         }
+        const displayName = readSupervisorDisplayName(body);
         const password = readSupervisorPassword(body);
         const credential = await hashSupervisorPassword(password);
+        const supervisor = {
+          id: `supervisor-${randomBytes(7).toString("base64url")}`,
+          displayName,
+          credential,
+        };
         await store.update((data) => {
-          if (data.adminCredential) {
+          if (data.supervisors.length > 0) {
             throw new HttpError(
               409,
               "تم إعداد رمز المشرف مسبقًا.",
               "SUPERVISOR_ALREADY_CONFIGURED"
             );
           }
-          data.adminCredential = credential;
+          data.supervisors.push(supervisor);
           data.setupKey = null;
         });
         supervisorLimiter.clear(request);
         json(
           response,
           201,
-          { token: issueSupervisorToken(store.data.secret) },
+          {
+            token: issueSupervisorToken(store.data.secret, supervisor.id),
+            supervisor: publicSupervisor(supervisor),
+          },
           securityHeaders()
         );
         return;
@@ -1209,13 +1339,15 @@ export async function createBaynatServer({
 
       if (pathname === "/api/admin/login" && request.method === "POST") {
         const body = await readJsonBody(request);
+        const displayName = readSupervisorDisplayName(body);
         const password = readSupervisorPassword(body);
+        const loginCredential = `${normalizeAnswer(displayName)}|${password}`;
         const reservedAttempt = supervisorLimiter.tryReserve(request);
         if (!reservedAttempt) {
           const proof = verifyAccessProof({
             secret: challengeSecret,
             quizId: "supervisor-login",
-            credential: password,
+            credential: loginCredential,
             token: body.challengeToken,
             counter: body.challengeCounter,
             difficultyBits: supervisorDifficultyBits,
@@ -1229,7 +1361,7 @@ export async function createBaynatServer({
                 challengeToken: issueAccessChallenge(
                   challengeSecret,
                   "supervisor-login",
-                  password,
+                  loginCredential,
                   supervisorDifficultyBits
                 ),
                 difficultyBits: supervisorDifficultyBits,
@@ -1238,21 +1370,27 @@ export async function createBaynatServer({
           }
           consumeProof(proof);
         }
+        const supervisor = store.data.supervisors.find(
+          (item) =>
+            normalizeAnswer(item.displayName) === normalizeAnswer(displayName)
+        );
+        const credential =
+          supervisor?.credential || store.data.supervisors[0]?.credential;
         let validPassword;
         try {
           validPassword = await verifySupervisorPassword(
             password,
-            store.data.adminCredential
+            credential
           );
         } catch (error) {
           if (reservedAttempt) supervisorLimiter.release(request);
           throw error;
         }
-        if (!validPassword) {
+        if (!supervisor || !validPassword) {
           if (reservedAttempt) supervisorLimiter.finishFailure(request);
           throw new HttpError(
             401,
-            "رمز المشرف غير صحيح.",
+            "اسم المشرف أو الرمز غير صحيح.",
             "SUPERVISOR_LOGIN_REJECTED"
           );
         }
@@ -1260,10 +1398,147 @@ export async function createBaynatServer({
         json(
           response,
           200,
-          { token: issueSupervisorToken(store.data.secret) },
+          {
+            token: issueSupervisorToken(store.data.secret, supervisor.id),
+            supervisor: publicSupervisor(supervisor),
+          },
           securityHeaders()
         );
         return;
+      }
+
+      const supervisorAccountMatch = pathname.match(
+        /^\/api\/admin\/supervisors(?:\/([A-Za-z0-9_-]+))?$/
+      );
+      if (supervisorAccountMatch) {
+        const currentSupervisor = requireSupervisor(request, store);
+        const supervisorId = supervisorAccountMatch[1];
+        if (request.method === "GET" && !supervisorId) {
+          json(
+            response,
+            200,
+            {
+              supervisors: store.data.supervisors.map(publicSupervisor),
+              currentSupervisorId: currentSupervisor.id,
+            },
+            securityHeaders()
+          );
+          return;
+        }
+        if (request.headers["sec-fetch-site"] === "cross-site") {
+          throw new HttpError(403, "الطلب غير مسموح من موقع آخر.", "CROSS_SITE_REQUEST");
+        }
+        if (request.method === "POST" && !supervisorId) {
+          const body = await readJsonBody(request);
+          const displayName = readSupervisorDisplayName(body);
+          const password = readSupervisorPassword(body);
+          const credential = await hashSupervisorPassword(password);
+          const supervisor = {
+            id: `supervisor-${randomBytes(7).toString("base64url")}`,
+            displayName,
+            credential,
+          };
+          await store.update((data) => {
+            if (data.supervisors.length >= MAX_SUPERVISORS) {
+              throw new HttpError(
+                400,
+                `الحد الأعلى هو ${MAX_SUPERVISORS} مشرفًا.`,
+                "SUPERVISOR_LIMIT"
+              );
+            }
+            if (
+              data.supervisors.some(
+                (item) =>
+                  normalizeAnswer(item.displayName) ===
+                  normalizeAnswer(displayName)
+              )
+            ) {
+              throw new HttpError(
+                409,
+                "اسم المشرف مستخدم بالفعل.",
+                "DUPLICATE_SUPERVISOR"
+              );
+            }
+            data.supervisors.push(supervisor);
+          });
+          json(
+            response,
+            201,
+            { supervisor: publicSupervisor(supervisor) },
+            securityHeaders()
+          );
+          return;
+        }
+        if (request.method === "PATCH" && supervisorId) {
+          const body = await readJsonBody(request);
+          const displayName = readSupervisorDisplayName(body);
+          let updatedSupervisor;
+          await store.update((data) => {
+            const supervisor = data.supervisors.find(
+              (item) => item.id === supervisorId
+            );
+            if (!supervisor) {
+              throw new HttpError(
+                404,
+                "حساب المشرف غير موجود.",
+                "SUPERVISOR_NOT_FOUND"
+              );
+            }
+            if (
+              data.supervisors.some(
+                (item) =>
+                  item.id !== supervisorId &&
+                  normalizeAnswer(item.displayName) ===
+                    normalizeAnswer(displayName)
+              )
+            ) {
+              throw new HttpError(
+                409,
+                "اسم المشرف مستخدم بالفعل.",
+                "DUPLICATE_SUPERVISOR"
+              );
+            }
+            supervisor.displayName = displayName;
+            updatedSupervisor = structuredClone(supervisor);
+          });
+          json(
+            response,
+            200,
+            { supervisor: publicSupervisor(updatedSupervisor) },
+            securityHeaders()
+          );
+          return;
+        }
+        if (request.method === "DELETE" && supervisorId) {
+          if (supervisorId === currentSupervisor.id) {
+            throw new HttpError(
+              400,
+              "لا يمكنك حذف الحساب الذي تستخدمه الآن.",
+              "CANNOT_DELETE_CURRENT_SUPERVISOR"
+            );
+          }
+          await store.update((data) => {
+            if (!data.supervisors.some((item) => item.id === supervisorId)) {
+              throw new HttpError(
+                404,
+                "حساب المشرف غير موجود.",
+                "SUPERVISOR_NOT_FOUND"
+              );
+            }
+            if (data.supervisors.length <= 1) {
+              throw new HttpError(
+                400,
+                "يجب أن يبقى حساب مشرف واحد على الأقل.",
+                "CANNOT_DELETE_LAST_SUPERVISOR"
+              );
+            }
+            data.supervisors = data.supervisors.filter(
+              (item) => item.id !== supervisorId
+            );
+          });
+          json(response, 200, { ok: true }, securityHeaders());
+          return;
+        }
       }
 
       const rosterMatch = pathname.match(/^\/api\/students(?:\/([A-Za-z0-9_-]+))?$/);
@@ -1508,24 +1783,11 @@ export async function createBaynatServer({
       const adminMatch = pathname.match(/^\/api\/quizzes\/([A-Za-z0-9_-]+)\/admin$/);
       if (adminMatch && request.method === "GET") {
         const quiz = requireQuiz(store, adminMatch[1]);
-        requireAdmin(request, quiz);
+        requireAdmin(request, quiz, store);
         json(
           response,
           200,
-          {
-            quiz: {
-              id: quiz.id,
-              question: quiz.question,
-              students: quiz.students.map(publicStudent),
-              submissions: quiz.submissions,
-              participants: serializeParticipants(quiz),
-              answerRecords: quiz.answerRecords,
-              participationRecords: quiz.participationRecords,
-              round: quiz.round,
-              leaderboard: serializeLeaderboard(quiz),
-              updatedAt: quiz.updatedAt,
-            },
-          },
+          { quiz: serializeAdminQuiz(quiz) },
           securityHeaders()
         );
         return;
@@ -1536,7 +1798,7 @@ export async function createBaynatServer({
       );
       if (resetLeaderboardMatch && request.method === "POST") {
         const quiz = requireQuiz(store, resetLeaderboardMatch[1]);
-        requireAdmin(request, quiz);
+        requireAdmin(request, quiz, store);
         const cleared = {
           submissions: quiz.submissions.length,
           participants: serializeParticipants(quiz).length,
@@ -1571,7 +1833,7 @@ export async function createBaynatServer({
       );
       if (studentAdminMatch && request.method === "POST" && !studentAdminMatch[2]) {
         const quiz = requireQuiz(store, studentAdminMatch[1]);
-        requireAdmin(request, quiz);
+        requireAdmin(request, quiz, store);
         const body = await readJsonBody(request);
         const validation = validateStudentInput(body, quiz.students);
         if (!validation.valid) {
@@ -1632,7 +1894,7 @@ export async function createBaynatServer({
 
       if (studentAdminMatch && request.method === "DELETE" && studentAdminMatch[2]) {
         const quiz = requireQuiz(store, studentAdminMatch[1]);
-        requireAdmin(request, quiz);
+        requireAdmin(request, quiz, store);
         const studentId = studentAdminMatch[2];
         if (!quiz.students.some((student) => student.id === studentId)) {
           throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");

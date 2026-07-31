@@ -1696,6 +1696,16 @@ input::placeholder {
   padding: 0;
 }
 
+.supervisors-panel {
+  padding: 0;
+}
+
+.supervisor-panel-note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
 .students-toolbar {
   display: flex;
   align-items: center;
@@ -3224,7 +3234,7 @@ tbody tr:hover {
 
   .side-nav {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 5px;
     margin: 0;
   }
@@ -3325,6 +3335,15 @@ tbody tr:hover {
   .preview-student-button {
     width: 42px;
     padding: 8px;
+  }
+
+  .logout-button {
+    width: 42px;
+    padding: 8px;
+  }
+
+  .logout-button span {
+    display: none;
   }
 
   .welcome-card {

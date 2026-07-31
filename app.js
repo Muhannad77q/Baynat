@@ -10,6 +10,24 @@ const ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
 const WESTERN_DIGITS = "0123456789";
 const PLACE_BONUSES = [30, 20, 10];
 const DEFAULT_OPTIONS = ["الزهرة", "المريخ", "المشتري", "عطارد"];
+const LEGACY_DEMO_STUDENT_IDS = Object.freeze([
+  "student-sarah",
+  "student-omar",
+  "student-noura",
+  "student-yousef",
+  "student-layan",
+  "student-rakan",
+  "student-joud",
+  "student-salman",
+]);
+const LEGACY_DEMO_SUBMISSION_IDS = Object.freeze([
+  "submission-omar",
+  "submission-noura",
+  "submission-yousef",
+  "submission-layan",
+  "submission-rakan",
+  "submission-joud",
+]);
 export const DEFAULT_CLASS_OPTIONS = Object.freeze([
   "أولى ثانوي",
   "ثاني ثانوي",
@@ -296,68 +314,22 @@ export function createSharePayload(state) {
 }
 
 export function createInitialState(now = Date.now()) {
-  const questionId = "question-red-planet";
-  const students = [
-    { id: "student-sarah", name: "سارة القحطاني", className: "أولى ثانوي", halaqa: "زكاء", pin: "4821" },
-    { id: "student-omar", name: "عمر الحربي", className: "أولى ثانوي", halaqa: "زكاء", pin: "7350" },
-    { id: "student-noura", name: "نورة الغامدي", className: "أولى ثانوي", halaqa: "زكاء", pin: "1643" },
-    { id: "student-yousef", name: "يوسف الدوسري", className: "ثاني ثانوي", halaqa: "سواعد", pin: "2904" },
-    { id: "student-layan", name: "ليان الشهري", className: "ثاني ثانوي", halaqa: "سواعد", pin: "6185" },
-    { id: "student-rakan", name: "راكان المطيري", className: "ثاني ثانوي", halaqa: "سواعد", pin: "9032" },
-    { id: "student-joud", name: "جود العتيبي", className: "ثالث ثانوي", halaqa: "زكاء", pin: "4278" },
-    { id: "student-salman", name: "سلمان الزهراني", className: "ثالث ثانوي", halaqa: "سواعد", pin: "5519" },
-  ];
-  const createSubmission = (id, studentId, elapsedMs, isCorrect, minutesAgo) => ({
-    id,
-    studentId,
-    questionId,
-    answer: isCorrect ? "المريخ" : "المشتري",
-    isCorrect,
-    elapsedMs,
-    submittedAt: new Date(now - minutesAgo * 60_000).toISOString(),
-  });
-  const submissions = [
-    createSubmission("submission-omar", "student-omar", 8400, true, 22),
-    createSubmission("submission-noura", "student-noura", 10_200, true, 18),
-    createSubmission("submission-yousef", "student-yousef", 13_100, true, 14),
-    createSubmission("submission-layan", "student-layan", 9400, false, 11),
-    createSubmission("submission-rakan", "student-rakan", 16_700, true, 8),
-    createSubmission("submission-joud", "student-joud", 21_100, true, 4),
-  ];
-  const participants = [
-    "student-omar",
-    "student-noura",
-    "student-yousef",
-    "student-layan",
-    "student-rakan",
-    "student-joud",
-  ].map((studentId, index) => ({
-    studentId,
-    firstAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
-    lastAccessedAt: new Date(now - (24 - index * 3) * 60_000).toISOString(),
-    sessionCount: 1,
-  }));
-
   return {
     version: 2,
     currentQuestion: {
-      id: questionId,
+      id: "question-draft",
       type: "multiple",
-      prompt: "أيّ كوكب يُعرف بالكوكب الأحمر؟",
-      options: DEFAULT_OPTIONS.slice(),
-      correctAnswer: "المريخ",
-      createdAt: new Date(now - 2 * 60 * 60_000).toISOString(),
-      published: true,
+      prompt: "ما السؤال الذي تريد طرحه اليوم؟",
+      options: ["الخيار الأول", "الخيار الثاني"],
+      correctAnswer: "الخيار الأول",
+      createdAt: new Date(now).toISOString(),
+      published: false,
     },
-    students,
-    submissions,
-    participants,
-    answerRecords: submissions.map((submission) => ({ ...submission, round: 1 })),
-    participationRecords: participants.map((participant) => ({
-      studentId: participant.studentId,
-      accessedAt: participant.firstAccessedAt,
-      round: 1,
-    })),
+    students: [],
+    submissions: [],
+    participants: [],
+    answerRecords: [],
+    participationRecords: [],
     currentRound: 1,
   };
 }
@@ -378,7 +350,36 @@ let rosterSyncInterval = null;
 let rosterSyncInFlight = false;
 let supervisorToken = "";
 let supervisorAuthMode = "login";
+let currentSupervisor = null;
+let supervisors = [];
 let editingStudentId = "";
+let editingSupervisorId = "";
+
+function isLegacyDemoState(stored) {
+  if (
+    stored?.currentQuestion?.id !== "question-red-planet" ||
+    !Array.isArray(stored.submissions) ||
+    stored.submissions.length !== LEGACY_DEMO_SUBMISSION_IDS.length
+  ) {
+    return false;
+  }
+  const submissionIds = new Set(
+    stored.submissions.map((submission) => submission.id)
+  );
+  if (
+    LEGACY_DEMO_SUBMISSION_IDS.every((id) => submissionIds.has(id))
+  ) {
+    return true;
+  }
+  if (
+    !Array.isArray(stored.students) ||
+    stored.students.length !== LEGACY_DEMO_STUDENT_IDS.length
+  ) {
+    return false;
+  }
+  const studentIds = new Set(stored.students.map((student) => student.id));
+  return LEGACY_DEMO_STUDENT_IDS.every((id) => studentIds.has(id));
+}
 
 function loadAdminState() {
   try {
@@ -387,7 +388,8 @@ function loadAdminState() {
       stored?.version === 2 &&
       stored.currentQuestion?.id &&
       Array.isArray(stored.students) &&
-      Array.isArray(stored.submissions)
+      Array.isArray(stored.submissions) &&
+      !isLegacyDemoState(stored)
     ) {
       stored.students = stored.students.map((student) => ({
         ...student,
@@ -460,7 +462,13 @@ function cacheRefs() {
     viewPanels: [...document.querySelectorAll("[data-admin-view]")],
     pageTitle: document.querySelector("#pageTitle"),
     pageKicker: document.querySelector("#pageKicker"),
+    teacherAvatar: document.querySelector("#teacherAvatar"),
+    teacherName: document.querySelector("#teacherName"),
+    openSupervisorView: document.querySelector("#openSupervisorView"),
+    logoutSupervisorButton: document.querySelector("#logoutSupervisorButton"),
     todayLabel: document.querySelector("#todayLabel"),
+    dashboardStatusLabel: document.querySelector("#dashboardStatusLabel"),
+    dashboardWelcomeTitle: document.querySelector("#dashboardWelcomeTitle"),
     sideStudentCount: document.querySelector("#sideStudentCount"),
     studentMetric: document.querySelector("#studentMetric"),
     answeredMetric: document.querySelector("#answeredMetric"),
@@ -498,6 +506,25 @@ function cacheRefs() {
     studentListCount: document.querySelector("#studentListCount"),
     studentsTableBody: document.querySelector("#studentsTableBody"),
     studentEmptyState: document.querySelector("#studentEmptyState"),
+    openSupervisorModal: document.querySelector("#openSupervisorModal"),
+    supervisorsTableBody: document.querySelector("#supervisorsTableBody"),
+    supervisorListCount: document.querySelector("#supervisorListCount"),
+    supervisorEmptyState: document.querySelector("#supervisorEmptyState"),
+    supervisorModal: document.querySelector("#supervisorModal"),
+    supervisorForm: document.querySelector("#supervisorForm"),
+    supervisorModalLabel: document.querySelector("#supervisorModalLabel"),
+    supervisorModalTitle: document.querySelector("#supervisorModalTitle"),
+    supervisorName: document.querySelector("#supervisorName"),
+    supervisorPasswordGroup: document.querySelector("#supervisorPasswordGroup"),
+    supervisorPassword: document.querySelector("#supervisorPassword"),
+    supervisorPasswordConfirmGroup: document.querySelector(
+      "#supervisorPasswordConfirmGroup"
+    ),
+    supervisorPasswordConfirm: document.querySelector(
+      "#supervisorPasswordConfirm"
+    ),
+    supervisorFormError: document.querySelector("#supervisorFormError"),
+    saveSupervisorButtonText: document.querySelector("#saveSupervisorButtonText"),
     adminPodium: document.querySelector("#adminPodium"),
     adminLeaderboardRows: document.querySelector("#adminLeaderboardRows"),
     leaderboardEmptyState: document.querySelector("#leaderboardEmptyState"),
@@ -515,6 +542,11 @@ function cacheRefs() {
     adminAuthForm: document.querySelector("#adminAuthForm"),
     adminAuthTitle: document.querySelector("#adminAuthTitle"),
     adminAuthDescription: document.querySelector("#adminAuthDescription"),
+    adminDisplayName: document.querySelector("#adminDisplayName"),
+    adminDisplayNameLabel: document.querySelector("#adminDisplayNameLabel"),
+    adminSupervisorNameOptions: document.querySelector(
+      "#adminSupervisorNameOptions"
+    ),
     adminSetupKey: document.querySelector("#adminSetupKey"),
     adminSetupKeyGroup: document.querySelector("#adminSetupKeyGroup"),
     adminPassword: document.querySelector("#adminPassword"),
@@ -593,9 +625,26 @@ function bindEvents() {
   refs.studentForm.addEventListener("submit", saveStudent);
   refs.studentSearch.addEventListener("input", renderStudents);
   refs.studentsTableBody.addEventListener("click", handleStudentTableAction);
+  refs.openSupervisorModal.addEventListener("click", () =>
+    openSupervisorEditor()
+  );
+  refs.supervisorForm.addEventListener("submit", saveSupervisor);
+  refs.supervisorsTableBody.addEventListener(
+    "click",
+    handleSupervisorTableAction
+  );
+  refs.openSupervisorView.addEventListener("click", () =>
+    switchAdminView("supervisors")
+  );
+  refs.logoutSupervisorButton.addEventListener("click", logoutSupervisor);
   refs.resetLeaderboardButton.addEventListener("click", resetLeaderboard);
   refs.adminAuthForm.addEventListener("submit", submitSupervisorAccess);
-  [refs.adminSetupKey, refs.adminPassword, refs.adminPasswordConfirm].forEach((input) =>
+  [
+    refs.adminDisplayName,
+    refs.adminSetupKey,
+    refs.adminPassword,
+    refs.adminPasswordConfirm,
+  ].forEach((input) =>
     input.addEventListener("input", () => {
       refs.adminAuthError.textContent = "";
     })
@@ -637,7 +686,7 @@ function bindEvents() {
     switchAdminView("leaderboard");
   });
 
-  [refs.studentModal, refs.shareModal].forEach((dialog) => {
+  [refs.studentModal, refs.supervisorModal, refs.shareModal].forEach((dialog) => {
     dialog.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
@@ -669,6 +718,22 @@ function avatarFor(student, index = 0) {
   return createElement("span", `avatar avatar-tone-${index % 5}`, getInitials(student.name));
 }
 
+function applySupervisorProfile(supervisor) {
+  currentSupervisor = supervisor || null;
+  const displayName = currentSupervisor?.displayName || "المشرف";
+  refs.teacherName.textContent = displayName;
+  refs.teacherAvatar.textContent = getInitials(displayName);
+  if (
+    refs.viewPanels.some(
+      (panel) => panel.classList.contains("active") && panel.dataset.adminView === "dashboard"
+    )
+  ) {
+    refs.pageTitle.textContent = currentSupervisor
+      ? `أهلًا ${displayName} 👋`
+      : "أهلًا بك في بَيّنات";
+  }
+}
+
 function questionOptions(question) {
   if (question.type === "boolean") return ["صح", "خطأ"];
   if (question.type === "multiple") return question.options || [];
@@ -682,9 +747,15 @@ function switchAdminView(viewName) {
   refs.navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === viewName));
 
   const labels = {
-    dashboard: ["لوحة المشرف", "أهلًا أستاذ محمد 👋"],
+    dashboard: [
+      "لوحة المشرف",
+      currentSupervisor
+        ? `أهلًا ${currentSupervisor.displayName} 👋`
+        : "أهلًا بك في بَيّنات",
+    ],
     question: ["سؤال اليوم", "أنشئ تحدّيًا جديدًا"],
     students: ["إدارة الطلاب", "الطلاب المشتركون"],
+    supervisors: ["إدارة الحسابات", "مشرفو بَيّنات"],
     leaderboard: ["نتائج اليوم", "لوحة المتصدرين"],
     records: ["سجل اليوم", "الأجوبة والمشاركون"],
   };
@@ -693,6 +764,7 @@ function switchAdminView(viewName) {
   refs.pageTitle.textContent = title;
   if (viewName === "question") hydrateQuestionEditor(state.currentQuestion);
   if (viewName === "students") renderStudents();
+  if (viewName === "supervisors") renderSupervisors();
   if (viewName === "leaderboard") renderAdminLeaderboard();
   if (viewName === "records") renderRecords();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -740,6 +812,7 @@ function renderAll() {
   renderDate();
   renderDashboard();
   renderStudents();
+  renderSupervisors();
   renderAdminLeaderboard();
   renderRecords();
 }
@@ -771,6 +844,12 @@ function renderDashboard() {
   refs.correctMetric.textContent = submissions.length
     ? `${formatNumber(Math.round((correct.length / submissions.length) * 100))}٪`
     : "٠٪";
+  refs.dashboardStatusLabel.textContent = question.published
+    ? "منشور الآن"
+    : "جاهز للإعداد";
+  refs.dashboardWelcomeTitle.innerHTML = question.published
+    ? "سؤال اليوم جاهز<br />لبداية التحدّي!"
+    : "ابدأ بإضافة الطلاب<br />ثم أنشئ سؤال اليوم";
 
   refs.dashboardQuestionType.textContent = QUESTION_TYPES[question.type];
   refs.dashboardQuestionPrompt.textContent = question.prompt;
@@ -1347,6 +1426,192 @@ function renderStudents() {
   );
 }
 
+function openSupervisorEditor(supervisor = null) {
+  editingSupervisorId = supervisor?.id || "";
+  const isEditing = Boolean(editingSupervisorId);
+  refs.supervisorForm.reset();
+  refs.supervisorFormError.textContent = "";
+  refs.supervisorModalLabel.textContent = isEditing ? "تعديل الحساب" : "مشرف جديد";
+  refs.supervisorModalTitle.textContent = isEditing
+    ? "تعديل اسم المشرف"
+    : "إضافة مشرف إلى بَيّنات";
+  refs.supervisorName.value = supervisor?.displayName || "";
+  refs.supervisorPasswordGroup.hidden = isEditing;
+  refs.supervisorPasswordConfirmGroup.hidden = isEditing;
+  refs.supervisorPassword.required = !isEditing;
+  refs.supervisorPasswordConfirm.required = !isEditing;
+  refs.saveSupervisorButtonText.textContent = isEditing
+    ? "حفظ التعديل"
+    : "إضافة المشرف";
+  refs.supervisorModal.showModal();
+  window.setTimeout(() => refs.supervisorName.focus(), 80);
+}
+
+async function saveSupervisor(event) {
+  event.preventDefault();
+  const displayName = refs.supervisorName.value.trim();
+  const isEditing = Boolean(editingSupervisorId);
+  if (displayName.length < 2) {
+    refs.supervisorFormError.textContent = "اكتب اسم المشرف كاملًا.";
+    refs.supervisorName.focus();
+    return;
+  }
+  if (!isEditing && refs.supervisorPassword.value.length < 6) {
+    refs.supervisorFormError.textContent = "اكتب رمزًا لا يقل عن ٦ خانات.";
+    refs.supervisorPassword.focus();
+    return;
+  }
+  if (
+    !isEditing &&
+    refs.supervisorPassword.value !== refs.supervisorPasswordConfirm.value
+  ) {
+    refs.supervisorFormError.textContent = "رمزا المشرف غير متطابقين.";
+    refs.supervisorPasswordConfirm.select();
+    return;
+  }
+
+  const submitButton = refs.supervisorForm.querySelector("[type='submit']");
+  submitButton.disabled = true;
+  try {
+    const payload = await supervisorRequest(
+      isEditing
+        ? `/api/admin/supervisors/${encodeURIComponent(editingSupervisorId)}`
+        : "/api/admin/supervisors",
+      {
+        method: isEditing ? "PATCH" : "POST",
+        body: JSON.stringify({
+          displayName,
+          ...(!isEditing ? { password: refs.supervisorPassword.value } : {}),
+        }),
+      }
+    );
+    if (payload.supervisor.id === currentSupervisor?.id) {
+      applySupervisorProfile(payload.supervisor);
+    }
+    await refreshSupervisors();
+    refs.supervisorModal.close();
+    showToast(isEditing ? "تم تعديل اسم المشرف" : "تمت إضافة المشرف");
+  } catch (error) {
+    refs.supervisorFormError.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function handleSupervisorTableAction(event) {
+  const button = event.target.closest("[data-supervisor-action]");
+  if (!button) return;
+  const supervisor = supervisors.find(
+    (item) => item.id === button.dataset.supervisorId
+  );
+  if (!supervisor) return;
+  if (button.dataset.supervisorAction === "edit") {
+    openSupervisorEditor(supervisor);
+    return;
+  }
+  if (
+    button.dataset.supervisorAction !== "delete" ||
+    !window.confirm(`هل تريد حذف حساب ${supervisor.displayName}؟`)
+  ) {
+    return;
+  }
+  try {
+    await supervisorRequest(
+      `/api/admin/supervisors/${encodeURIComponent(supervisor.id)}`,
+      { method: "DELETE" }
+    );
+    await refreshSupervisors();
+    showToast("تم حذف حساب المشرف");
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function formatSupervisorDate(dateString) {
+  const date = new Date(dateString);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function renderSupervisors() {
+  if (!refs.supervisorsTableBody) return;
+  refs.supervisorListCount.textContent = formatNumber(supervisors.length);
+  refs.supervisorEmptyState.hidden = supervisors.length > 0;
+  refs.supervisorsTableBody.closest(".table-wrap").hidden =
+    supervisors.length === 0;
+  refs.supervisorsTableBody.replaceChildren(
+    ...supervisors.map((supervisor, index) => {
+      const row = document.createElement("tr");
+      const identityColumn = document.createElement("td");
+      const identity = createElement("div", "student-cell");
+      const details = createElement("div");
+      details.append(
+        createElement("strong", "", supervisor.displayName),
+        createElement(
+          "span",
+          "",
+          supervisor.id === currentSupervisor?.id
+            ? "الحساب المستخدم الآن"
+            : "حساب مشرف"
+        )
+      );
+      identity.append(
+        createElement(
+          "span",
+          `avatar avatar-tone-${index % 5}`,
+          getInitials(supervisor.displayName)
+        ),
+        details
+      );
+      identityColumn.append(identity);
+
+      const statusColumn = document.createElement("td");
+      const isCurrent = supervisor.id === currentSupervisor?.id;
+      const status = createElement(
+        "span",
+        `student-status ${isCurrent ? "joined" : "waiting"}`
+      );
+      status.append(
+        createElement("i"),
+        document.createTextNode(isCurrent ? "أنت" : "نشط")
+      );
+      statusColumn.append(status);
+
+      const actionColumn = document.createElement("td");
+      const actions = createElement("div", "row-actions");
+      const editButton = createElement("button", "row-action-button");
+      editButton.type = "button";
+      editButton.dataset.supervisorAction = "edit";
+      editButton.dataset.supervisorId = supervisor.id;
+      editButton.title = `تعديل ${supervisor.displayName}`;
+      editButton.setAttribute("aria-label", `تعديل ${supervisor.displayName}`);
+      editButton.append(createIcon("icon-edit"));
+      actions.append(editButton);
+      if (!isCurrent) {
+        const deleteButton = createElement("button", "row-menu", "×");
+        deleteButton.type = "button";
+        deleteButton.dataset.supervisorAction = "delete";
+        deleteButton.dataset.supervisorId = supervisor.id;
+        deleteButton.title = `حذف ${supervisor.displayName}`;
+        deleteButton.setAttribute("aria-label", `حذف ${supervisor.displayName}`);
+        actions.append(deleteButton);
+      }
+      actionColumn.append(actions);
+      row.append(
+        identityColumn,
+        createElement("td", "", formatSupervisorDate(supervisor.createdAt)),
+        statusColumn,
+        actionColumn
+      );
+      return row;
+    })
+  );
+}
+
 function renderAdminLeaderboard() {
   const leaderboard = buildLeaderboard(
     state.students,
@@ -1661,23 +1926,87 @@ function saveSupervisorToken(token) {
   }
 }
 
-function showSupervisorModal(configured) {
+async function refreshSupervisors() {
+  const payload = await supervisorRequest("/api/admin/supervisors");
+  supervisors = payload.supervisors || [];
+  const active = supervisors.find(
+    (supervisor) => supervisor.id === payload.currentSupervisorId
+  );
+  if (active) applySupervisorProfile(active);
+  renderSupervisors();
+}
+
+function applySharedQuiz(quiz) {
+  if (!quiz) return;
+  const previousRemote = state.currentQuestion.remote;
+  const localStudentsById = new Map(
+    state.students.map((student) => [student.id, student])
+  );
+  state.currentQuestion = {
+    ...quiz.question,
+    published: true,
+    remote: {
+      quizId: quiz.id,
+      adminToken:
+        previousRemote?.quizId === quiz.id ? previousRemote.adminToken || "" : "",
+      studentPath: `/student.html?q=${encodeURIComponent(quiz.id)}`,
+    },
+  };
+  state.students = quiz.students.map((student) => {
+    const pin = localStudentsById.get(student.id)?.pin;
+    return pin ? { ...student, pin } : student;
+  });
+  state.submissions = quiz.submissions || [];
+  state.participants = quiz.participants || [];
+  state.answerRecords = quiz.answerRecords || quiz.submissions || [];
+  state.participationRecords = quiz.participationRecords || [];
+  state.currentRound = quiz.round || 1;
+  persistState();
+  renderAll();
+  startAdminSync();
+}
+
+async function refreshSupervisorWorkspace() {
+  await refreshSupervisorRoster();
+  await refreshSupervisors();
+  const dashboard = await supervisorRequest("/api/admin/dashboard");
+  if (dashboard.quiz) applySharedQuiz(dashboard.quiz);
+}
+
+function showSupervisorModal(configured, supervisorNames = []) {
   supervisorAuthMode = configured ? "login" : "setup";
   refs.adminAuthForm.reset();
+  refs.adminSupervisorNameOptions.replaceChildren(
+    ...supervisorNames.map((displayName) => {
+      const option = document.createElement("option");
+      option.value = displayName;
+      return option;
+    })
+  );
+  if (configured && supervisorNames.length === 1) {
+    refs.adminDisplayName.value = supervisorNames[0];
+  }
   refs.adminAuthError.textContent = "";
   refs.adminSetupKeyGroup.hidden = configured;
   refs.adminPasswordConfirmGroup.hidden = configured;
   refs.adminPassword.autocomplete = configured ? "current-password" : "new-password";
-  refs.adminAuthTitle.textContent = configured ? "دخول المشرف" : "أنشئ رمز المشرف";
+  refs.adminAuthTitle.textContent = configured
+    ? "دخول المشرف"
+    : "أنشئ حساب المشرف الأول";
   refs.adminAuthDescription.textContent = configured
-    ? "أدخل رمز المشرف لفتح إدارة سؤال اليوم."
-    : "أدخل مفتاح التهيئة الظاهر في سجل تشغيل الخادم، ثم اختر رمزًا خاصًا بك.";
-  refs.adminAuthSubmit.textContent = configured ? "دخول لوحة المشرف" : "حفظ رمز المشرف";
+    ? "أدخل اسمك ورمزك لفتح مساحة المشرفين المشتركة."
+    : "اكتب اسمك، ثم أدخل مفتاح التهيئة واختر رمزًا خاصًا بك.";
+  refs.adminDisplayNameLabel.textContent = configured
+    ? "اسم المشرف"
+    : "اسم المشرف الأول";
+  refs.adminAuthSubmit.textContent = configured
+    ? "دخول لوحة المشرف"
+    : "إنشاء حساب المشرف";
   refs.adminAuthNote.textContent = configured
-    ? "لا يطلب الطلاب هذا الرمز؛ هو خاص بلوحة المشرف فقط."
-    : "مفتاح التهيئة يُستخدم مرة واحدة فقط. احفظ رمز المشرف في مكان آمن.";
+    ? "لكل مشرف اسم ورمز مستقل، وجميعهم يرون الطلاب والسؤال والنتائج نفسها."
+    : "بعد الدخول يمكنك إضافة بقية المشرفين من صفحة المشرفين.";
   if (!refs.adminAuthModal.open) refs.adminAuthModal.showModal();
-  window.setTimeout(() => refs.adminPassword.focus(), 80);
+  window.setTimeout(() => refs.adminDisplayName.focus(), 80);
 }
 
 async function initializeSupervisorAccess() {
@@ -1689,19 +2018,21 @@ async function initializeSupervisorAccess() {
 
   if (supervisorToken) {
     try {
-      await requestJson("/api/admin/session", {
+      const session = await requestJson("/api/admin/session", {
         headers: { "X-Supervisor-Token": supervisorToken },
       });
-      await refreshSupervisorRoster();
+      applySupervisorProfile(session.supervisor);
+      await refreshSupervisorWorkspace();
       return;
     } catch {
       saveSupervisorToken("");
+      applySupervisorProfile(null);
     }
   }
 
   try {
     const status = await requestJson("/api/admin/status");
-    showSupervisorModal(status.configured);
+    showSupervisorModal(status.configured, status.supervisorNames);
   } catch (error) {
     showToast(error.message, true);
   }
@@ -1709,8 +2040,14 @@ async function initializeSupervisorAccess() {
 
 async function submitSupervisorAccess(event) {
   event.preventDefault();
+  const displayName = refs.adminDisplayName.value.trim();
   const password = refs.adminPassword.value;
   const setupKey = refs.adminSetupKey.value.trim();
+  if (displayName.length < 2) {
+    refs.adminAuthError.textContent = "اكتب اسم المشرف كاملًا.";
+    refs.adminDisplayName.focus();
+    return;
+  }
   if (supervisorAuthMode === "setup" && !setupKey) {
     refs.adminAuthError.textContent = "أدخل مفتاح التهيئة من سجل تشغيل الخادم.";
     refs.adminSetupKey.focus();
@@ -1734,7 +2071,7 @@ async function submitSupervisorAccess(event) {
     supervisorAuthMode === "setup" ? "جارٍ الحفظ..." : "جارٍ التحقق...";
   try {
     const endpoint = `/api/admin/${supervisorAuthMode}`;
-    const credentials = { password, setupKey };
+    const credentials = { displayName, password, setupKey };
     let payload;
     try {
       payload = await requestJson(endpoint, {
@@ -1766,7 +2103,8 @@ async function submitSupervisorAccess(event) {
       });
     }
     saveSupervisorToken(payload.token);
-    await refreshSupervisorRoster();
+    applySupervisorProfile(payload.supervisor);
+    await refreshSupervisorWorkspace();
     refs.adminAuthModal.close();
     showToast(
       supervisorAuthMode === "setup" ? "تم تأمين لوحة المشرف" : "مرحبًا بعودتك"
@@ -1781,14 +2119,30 @@ async function submitSupervisorAccess(event) {
   } finally {
     refs.adminAuthSubmit.disabled = false;
     refs.adminAuthSubmit.textContent =
-      supervisorAuthMode === "setup" ? "حفظ رمز المشرف" : "دخول لوحة المشرف";
+      supervisorAuthMode === "setup"
+        ? "إنشاء حساب المشرف"
+        : "دخول لوحة المشرف";
   }
+}
+
+function logoutSupervisor() {
+  const supervisorNames = supervisors.map(
+    (supervisor) => supervisor.displayName
+  );
+  saveSupervisorToken("");
+  applySupervisorProfile(null);
+  supervisors = [];
+  if (rosterSyncInterval) window.clearInterval(rosterSyncInterval);
+  rosterSyncInterval = null;
+  stopAdminSync();
+  renderSupervisors();
+  showSupervisorModal(true, supervisorNames);
 }
 
 async function supervisorRequest(path, options = {}) {
   if (!supervisorToken) {
     const status = await requestJson("/api/admin/status");
-    showSupervisorModal(status.configured);
+    showSupervisorModal(status.configured, status.supervisorNames);
     throw new Error("سجّل دخول المشرف أولًا.");
   }
   try {
@@ -1802,7 +2156,11 @@ async function supervisorRequest(path, options = {}) {
   } catch (error) {
     if (error.code === "SUPERVISOR_UNAUTHORIZED") {
       saveSupervisorToken("");
-      showSupervisorModal(true);
+      applySupervisorProfile(null);
+      showSupervisorModal(
+        true,
+        supervisors.map((supervisor) => supervisor.displayName)
+      );
     }
     throw error;
   }
@@ -1825,6 +2183,13 @@ async function syncSupervisorRosterSilently() {
   rosterSyncInFlight = true;
   try {
     await refreshSupervisorRoster();
+    const dashboard = await supervisorRequest("/api/admin/dashboard");
+    if (
+      dashboard.quiz &&
+      dashboard.quiz.id !== state.currentQuestion.remote?.quizId
+    ) {
+      applySharedQuiz(dashboard.quiz);
+    }
   } catch {
     // Authentication errors are handled by supervisorRequest; transient polling errors stay silent.
   } finally {
@@ -1843,6 +2208,7 @@ function adminRequest(path, options = {}) {
     ...options,
     headers: {
       "X-Admin-Token": token || "",
+      "X-Supervisor-Token": supervisorToken || "",
       ...(options.headers || {}),
     },
   });
@@ -1915,6 +2281,16 @@ async function syncAdminResults() {
     const payload = await adminRequest(
       `/api/quizzes/${encodeURIComponent(remote.quizId)}/admin`
     );
+    state.currentQuestion = {
+      ...payload.quiz.question,
+      published: true,
+      remote: {
+        ...remote,
+        studentPath:
+          remote.studentPath ||
+          `/student.html?q=${encodeURIComponent(payload.quiz.id)}`,
+      },
+    };
     const localStudentsById = new Map(state.students.map((student) => [student.id, student]));
     state.students = payload.quiz.students.map((student) => {
       const pin = localStudentsById.get(student.id)?.pin;

@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=6" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -106,6 +106,10 @@
             <span>الطلاب</span>
             <span class="nav-count" id="sideStudentCount">٠</span>
           </button>
+          <button class="nav-item" type="button" data-view="supervisors">
+            <svg><use href="#icon-users"></use></svg>
+            <span>المشرفون</span>
+          </button>
           <button class="nav-item" type="button" data-view="leaderboard">
             <svg><use href="#icon-trophy"></use></svg>
             <span>المتصدرون</span>
@@ -123,12 +127,17 @@
         </div>
 
         <div class="teacher-profile">
-          <div class="avatar avatar-purple">م</div>
+          <div class="avatar avatar-purple" id="teacherAvatar">م</div>
           <div>
-            <strong>محمد العتيبي</strong>
+            <strong id="teacherName">المشرف</strong>
             <span>مشرف الفصل</span>
           </div>
-          <button class="icon-button" type="button" aria-label="خيارات الحساب">•••</button>
+          <button
+            class="icon-button"
+            id="openSupervisorView"
+            type="button"
+            aria-label="إدارة المشرفين"
+          >•••</button>
         </div>
       </aside>
 
@@ -140,7 +149,7 @@
           </button>
           <div>
             <p class="page-kicker" id="pageKicker">لوحة المشرف</p>
-            <h1 id="pageTitle">أهلًا أستاذ محمد 👋</h1>
+            <h1 id="pageTitle">أهلًا بك في بَيّنات</h1>
           </div>
           <div class="header-actions">
             <div class="date-chip">
@@ -151,6 +160,15 @@
               <span>فتح رابط الطالب</span>
               <svg><use href="#icon-arrow"></use></svg>
             </button>
+            <button
+              class="button button-secondary logout-button"
+              id="logoutSupervisorButton"
+              type="button"
+              aria-label="تسجيل خروج المشرف"
+            >
+              <svg><use href="#icon-log-out"></use></svg>
+              <span>خروج</span>
+            </button>
           </div>
         </header>
 
@@ -159,9 +177,9 @@
             <div class="welcome-copy">
               <span class="status-badge">
                 <span class="live-dot"></span>
-                منشور الآن
+                <span id="dashboardStatusLabel">جاهز للإعداد</span>
               </span>
-              <h2>سؤال اليوم جاهز<br />لبداية التحدّي!</h2>
+              <h2 id="dashboardWelcomeTitle">ابدأ بإضافة الطلاب<br />ثم أنشئ سؤال اليوم</h2>
               <p>شارك الرابط، وتابع إجابات الطلاب من جوالاتهم وترتيبهم لحظة بلحظة.</p>
               <div class="welcome-actions">
                 <button class="button button-light share-question-button" type="button">
@@ -461,6 +479,48 @@
           </div>
         </section>
 
+        <section id="supervisorsView" class="view-panel" data-admin-view="supervisors">
+          <div class="section-intro">
+            <div>
+              <span class="section-label">إدارة الحسابات</span>
+              <h2>مشرفو بَيّنات</h2>
+              <p>لكل مشرف اسم ورمز دخول مستقل، والجميع يشاهدون قائمة الطلاب والسؤال والنتائج نفسها.</p>
+            </div>
+            <button class="button button-primary" id="openSupervisorModal" type="button">
+              <svg><use href="#icon-plus"></use></svg>
+              إضافة مشرف
+            </button>
+          </div>
+
+          <div class="panel supervisors-panel">
+            <div class="students-toolbar">
+              <div>
+                <strong>الحسابات المصرّح لها</strong>
+                <p class="supervisor-panel-note">استخدم اسمًا ورمزًا مختلفين لكل مشرف.</p>
+              </div>
+              <div class="student-total"><span id="supervisorListCount">٠</span> مشرف</div>
+            </div>
+            <div class="table-wrap">
+              <table class="supervisors-table">
+                <thead>
+                  <tr>
+                    <th>المشرف</th>
+                    <th>تاريخ الإضافة</th>
+                    <th>الحالة</th>
+                    <th><span class="sr-only">الإجراءات</span></th>
+                  </tr>
+                </thead>
+                <tbody id="supervisorsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="supervisorEmptyState" hidden>
+              <span>🔐</span>
+              <h3>لا توجد حسابات مشرفين</h3>
+              <p>أضف حساب المشرف الأول للبدء.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="leaderboardView" class="view-panel" data-admin-view="leaderboard">
           <div class="section-intro">
             <div>
@@ -720,7 +780,22 @@
         <div class="auth-lock" aria-hidden="true">🔐</div>
         <span class="section-label">لوحة المشرف</span>
         <h2 id="adminAuthTitle">دخول المشرف</h2>
-        <p id="adminAuthDescription">أدخل رمز المشرف للمتابعة إلى إدارة سؤال اليوم.</p>
+        <p id="adminAuthDescription">أدخل اسمك ورمزك للمتابعة إلى إدارة سؤال اليوم.</p>
+        <div class="field-group">
+          <label class="field-label" id="adminDisplayNameLabel" for="adminDisplayName">اسم المشرف</label>
+          <input
+            id="adminDisplayName"
+            name="displayName"
+            type="text"
+            minlength="2"
+            maxlength="60"
+            autocomplete="username"
+            list="adminSupervisorNameOptions"
+            placeholder="مثال: الأستاذ خالد"
+            required
+          />
+          <datalist id="adminSupervisorNameOptions"></datalist>
+        </div>
         <div class="field-group" id="adminSetupKeyGroup" hidden>
           <label class="field-label" for="adminSetupKey">مفتاح التهيئة</label>
           <input
@@ -762,6 +837,65 @@
           دخول لوحة المشرف
         </button>
         <p class="auth-note" id="adminAuthNote">هذا الرمز يحمي إنشاء الأسئلة من أي استخدام غير مصرح.</p>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="supervisorModal">
+      <form class="modal-card" id="supervisorForm" novalidate>
+        <div class="modal-header">
+          <div>
+            <span class="section-label" id="supervisorModalLabel">مشرف جديد</span>
+            <h2 id="supervisorModalTitle">إضافة مشرف إلى بَيّنات</h2>
+          </div>
+          <button class="modal-close" type="button" data-close-dialog="supervisorModal" aria-label="إغلاق">×</button>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="supervisorName">اسم المشرف</label>
+          <input
+            id="supervisorName"
+            name="displayName"
+            type="text"
+            minlength="2"
+            maxlength="60"
+            autocomplete="off"
+            placeholder="مثال: الأستاذ خالد"
+            required
+          />
+        </div>
+        <div class="field-group" id="supervisorPasswordGroup">
+          <label class="field-label" for="supervisorPassword">رمز الدخول</label>
+          <input
+            id="supervisorPassword"
+            name="password"
+            type="password"
+            minlength="6"
+            maxlength="128"
+            autocomplete="new-password"
+            placeholder="٦ خانات على الأقل"
+            required
+          />
+        </div>
+        <div class="field-group" id="supervisorPasswordConfirmGroup">
+          <label class="field-label" for="supervisorPasswordConfirm">تأكيد رمز الدخول</label>
+          <input
+            id="supervisorPasswordConfirm"
+            name="passwordConfirm"
+            type="password"
+            minlength="6"
+            maxlength="128"
+            autocomplete="new-password"
+            placeholder="أعد كتابة الرمز"
+            required
+          />
+        </div>
+        <p class="form-error" id="supervisorFormError" role="alert"></p>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit">
+            <svg><use href="#icon-check"></use></svg>
+            <span id="saveSupervisorButtonText">إضافة المشرف</span>
+          </button>
+          <button class="button button-secondary" type="button" data-close-dialog="supervisorModal">إلغاء</button>
+        </div>
       </form>
     </dialog>
 
@@ -847,6 +981,6 @@
       <span id="toastMessage">تم الحفظ بنجاح</span>
     </div>
 
-    <script type="module" src="./app.js?v=7"></script>
+    <script type="module" src="./app.js?v=8"></script>
   </body>
 </html>

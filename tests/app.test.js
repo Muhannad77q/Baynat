@@ -188,8 +188,49 @@ test("ranks correct students by speed ahead of incorrect attempts", () => {
   );
 });
 
-test("creates a Unicode-safe share link payload without exposing raw PIN fields", () => {
+function createPopulatedState() {
   const state = createInitialState(Date.parse("2026-07-30T12:00:00.000Z"));
+  state.currentQuestion = {
+    id: "question-red-planet",
+    type: "multiple",
+    prompt: "أيّ كوكب يُعرف بالكوكب الأحمر؟",
+    options: ["الزهرة", "المريخ"],
+    correctAnswer: "المريخ",
+    createdAt: "2026-07-30T12:00:00.000Z",
+    published: true,
+  };
+  state.students = [
+    {
+      id: "student-sarah",
+      name: "سارة القحطاني",
+      className: "أولى ثانوي",
+      halaqa: "زكاء",
+      pin: "4821",
+    },
+    {
+      id: "student-yousef",
+      name: "يوسف الدوسري",
+      className: "ثاني ثانوي",
+      halaqa: "سواعد",
+      pin: "2904",
+    },
+  ];
+  state.submissions = [
+    {
+      id: "submission-sarah",
+      studentId: "student-sarah",
+      questionId: state.currentQuestion.id,
+      answer: "المريخ",
+      isCorrect: true,
+      elapsedMs: 1_500,
+      submittedAt: "2026-07-30T12:01:00.000Z",
+    },
+  ];
+  return state;
+}
+
+test("creates a Unicode-safe share link payload without exposing raw PIN fields", () => {
+  const state = createPopulatedState();
   const payload = createSharePayload(state);
 
   assert.equal(payload.question.prompt, "أيّ كوكب يُعرف بالكوكب الأحمر؟");
@@ -206,7 +247,7 @@ test("creates a Unicode-safe share link payload without exposing raw PIN fields"
 });
 
 test("rejects incomplete or tampered shared-link payloads", () => {
-  const state = createInitialState(Date.parse("2026-07-30T12:00:00.000Z"));
+  const state = createPopulatedState();
   const payload = createSharePayload(state);
   const missingPins = {
     ...payload,
@@ -222,20 +263,15 @@ test("rejects incomplete or tampered shared-link payloads", () => {
   assert.equal(decodeSharePayload(encodeSharePayload(invalidSubmission)), null);
 });
 
-test("ships with a complete demo classroom and one unsubmitted test student", () => {
+test("starts with a clean classroom and an unpublished question draft", () => {
   const state = createInitialState(Date.parse("2026-07-30T12:00:00.000Z"));
-  const sarah = state.students.find((student) => student.pin === "4821");
 
-  assert.ok(sarah);
-  assert.equal(state.students.length, 8);
-  assert.equal(state.submissions.length, 6);
-  assert.equal(state.submissions.some((submission) => submission.studentId === sarah.id), false);
-  assert.deepEqual(
-    [...new Set(state.students.map((student) => student.className))].sort(),
-    ["أولى ثانوي", "ثاني ثانوي", "ثالث ثانوي"].sort()
-  );
-  assert.equal(state.participants.length, 6);
-  assert.equal(state.answerRecords.length, 6);
+  assert.equal(state.students.length, 0);
+  assert.equal(state.submissions.length, 0);
+  assert.equal(state.participants.length, 0);
+  assert.equal(state.answerRecords.length, 0);
+  assert.equal(state.participationRecords.length, 0);
   assert.equal(state.currentRound, 1);
-  assert.equal(state.currentQuestion.correctAnswer, "المريخ");
+  assert.equal(state.currentQuestion.published, false);
+  assert.equal(state.currentQuestion.id, "question-draft");
 });
