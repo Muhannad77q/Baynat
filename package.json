@@ -4,8 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-netlify.js",
     "dev": "node --watch server.js",
     "start": "node server.js",
     "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.11"
   }
 }

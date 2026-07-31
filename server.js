@@ -70,7 +70,109 @@ function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function validateStoredData(parsed, initialSetupKey) {
+function createSecurityState() {
+  return {
+    supervisorAttempts: {},
+    quizCreations: { byIp: {}, global: [] },
+  };
+}
+
+function validateSecurityState(security) {
+  if (
+    !isRecord(security) ||
+    !isRecord(security.supervisorAttempts) ||
+    !isRecord(security.quizCreations) ||
+    !isRecord(security.quizCreations.byIp) ||
+    !Array.isArray(security.quizCreations.global)
+  ) {
+    throw new Error("سجل حماية الطلبات في ملف بَيّنات غير صالح.");
+  }
+  if (
+    Object.keys(security.supervisorAttempts).length > MAX_RATE_LIMIT_KEYS ||
+    Object.keys(security.quizCreations.byIp).length > MAX_RATE_LIMIT_KEYS
+  ) {
+    throw new Error("سجل حماية الطلبات في ملف بَيّنات أكبر من الحد المسموح.");
+  }
+
+  let migrated = false;
+  const now = Date.now();
+  for (const [key, state] of Object.entries(security.supervisorAttempts)) {
+    if (
+      !/^[a-f0-9]{64}$/.test(key) ||
+      !isRecord(state) ||
+      !Array.isArray(state.failures) ||
+      !isRecord(state.reservations) ||
+      state.failures.length > SUPERVISOR_ATTEMPTS_LIMIT ||
+      Object.keys(state.reservations).length > SUPERVISOR_ATTEMPTS_LIMIT ||
+      !state.failures.every(Number.isFinite) ||
+      !Object.entries(state.reservations).every(
+        ([reservationId, timestamp]) =>
+          /^[A-Za-z0-9_-]{8,80}$/.test(reservationId) &&
+          Number.isFinite(timestamp)
+      )
+    ) {
+      throw new Error("سجل حماية دخول المشرف في ملف بَيّنات غير صالح.");
+    }
+    const failures = state.failures.filter(
+      (timestamp) => now - timestamp < ACCESS_WINDOW_MS
+    );
+    const reservations = Object.fromEntries(
+      Object.entries(state.reservations).filter(
+        ([, timestamp]) => now - timestamp < ACCESS_WINDOW_MS
+      )
+    );
+    if (
+      failures.length !== state.failures.length ||
+      Object.keys(reservations).length !== Object.keys(state.reservations).length
+    ) {
+      migrated = true;
+    }
+    if (!failures.length && !Object.keys(reservations).length) {
+      delete security.supervisorAttempts[key];
+      migrated = true;
+    } else {
+      state.failures = failures;
+      state.reservations = reservations;
+    }
+  }
+
+  if (
+    security.quizCreations.global.length > QUIZ_CREATION_GLOBAL_LIMIT ||
+    !security.quizCreations.global.every(Number.isFinite)
+  ) {
+    throw new Error("سجل حماية نشر الأسئلة في ملف بَيّنات غير صالح.");
+  }
+  const recentGlobal = security.quizCreations.global.filter(
+    (timestamp) => now - timestamp < QUIZ_CREATION_WINDOW_MS
+  );
+  if (recentGlobal.length !== security.quizCreations.global.length) {
+    security.quizCreations.global = recentGlobal;
+    migrated = true;
+  }
+  for (const [key, timestamps] of Object.entries(security.quizCreations.byIp)) {
+    if (
+      !/^[a-f0-9]{64}$/.test(key) ||
+      !Array.isArray(timestamps) ||
+      timestamps.length > QUIZ_CREATION_IP_LIMIT ||
+      !timestamps.every(Number.isFinite)
+    ) {
+      throw new Error("سجل حماية نشر الأسئلة في ملف بَيّنات غير صالح.");
+    }
+    const recent = timestamps.filter(
+      (timestamp) => now - timestamp < QUIZ_CREATION_WINDOW_MS
+    );
+    if (!recent.length) {
+      delete security.quizCreations.byIp[key];
+      migrated = true;
+    } else if (recent.length !== timestamps.length) {
+      security.quizCreations.byIp[key] = recent;
+      migrated = true;
+    }
+  }
+  return migrated;
+}
+
+export function validateStoredData(parsed, initialSetupKey) {
   const storedVersion = parsed?.version;
   if (
     ![1, 2].includes(storedVersion) ||
@@ -163,9 +265,36 @@ function validateStoredData(parsed, initialSetupKey) {
       parsed.setupKey = null;
       migrated = true;
     }
+  } else if (initialSetupKey && parsed.setupKey !== initialSetupKey) {
+    parsed.setupKey = initialSetupKey;
+    migrated = true;
   } else if (typeof parsed.setupKey !== "string" || parsed.setupKey.length < 8) {
     parsed.setupKey =
       initialSetupKey || randomBytes(9).toString("base64url");
+    migrated = true;
+  }
+  if (!isRecord(parsed.consumedProofs)) {
+    parsed.consumedProofs = {};
+    migrated = true;
+  } else {
+    const now = Date.now();
+    for (const [tokenHash, expiresAt] of Object.entries(parsed.consumedProofs)) {
+      if (!/^[a-f0-9]{64}$/.test(tokenHash) || !Number.isFinite(expiresAt)) {
+        throw new Error("سجل تحققات الدخول في ملف بَيّنات غير صالح.");
+      }
+      if (expiresAt <= now) {
+        delete parsed.consumedProofs[tokenHash];
+        migrated = true;
+      }
+    }
+    if (Object.keys(parsed.consumedProofs).length > MAX_CONSUMED_PROOFS) {
+      throw new Error("سجل تحققات الدخول في ملف بَيّنات أكبر من الحد المسموح.");
+    }
+  }
+  if (!Object.hasOwn(parsed, "security")) {
+    parsed.security = createSecurityState();
+    migrated = true;
+  } else if (validateSecurityState(parsed.security)) {
     migrated = true;
   }
   let latestQuizRoster = [];
@@ -393,6 +522,19 @@ function validateStoredData(parsed, initialSetupKey) {
   return { data: parsed, migrated };
 }
 
+export function createInitialData(initialSetupKey = "") {
+  return {
+    version: 2,
+    secret: randomBytes(32).toString("base64url"),
+    supervisors: [],
+    setupKey: initialSetupKey || randomBytes(9).toString("base64url"),
+    consumedProofs: {},
+    security: createSecurityState(),
+    students: [],
+    quizzes: {},
+  };
+}
+
 class JsonStore {
   constructor(filePath, initialSetupKey) {
     this.filePath = filePath;
@@ -442,14 +584,7 @@ class JsonStore {
       return;
     }
 
-    this.data = {
-      version: 2,
-      secret: randomBytes(32).toString("base64url"),
-      supervisors: [],
-      setupKey: this.initialSetupKey || randomBytes(9).toString("base64url"),
-      students: [],
-      quizzes: {},
-    };
+    this.data = createInitialData(this.initialSetupKey);
     try {
       await this.persist();
     } catch (error) {
@@ -735,33 +870,29 @@ function verifyAccessProof({
   return { expiresAt, tokenHash: hashToken(token) };
 }
 
-function createProofReplayGuard() {
-  const consumed = new Map();
-  let nextCleanupAt = 0;
-  return ({ tokenHash, expiresAt }) => {
+async function consumeProof(store, { tokenHash, expiresAt }) {
+  await store.update((data) => {
     const now = Date.now();
-    if (now >= nextCleanupAt) {
-      for (const [key, expiry] of consumed) {
-        if (expiry <= now) consumed.delete(key);
-      }
-      nextCleanupAt = now + 1_000;
+    data.consumedProofs ||= {};
+    for (const [key, expiry] of Object.entries(data.consumedProofs)) {
+      if (expiry <= now) delete data.consumedProofs[key];
     }
-    if (consumed.has(tokenHash)) {
+    if (Object.hasOwn(data.consumedProofs, tokenHash)) {
       throw new HttpError(
         409,
         "استُخدم تحقق الدخول مسبقًا. أعد المحاولة للحصول على تحقق جديد.",
         "ACCESS_PROOF_REPLAYED"
       );
     }
-    if (consumed.size >= MAX_CONSUMED_PROOFS) {
+    if (Object.keys(data.consumedProofs).length >= MAX_CONSUMED_PROOFS) {
       throw new HttpError(
         503,
         "تعذّر بدء محاولة جديدة الآن. انتظر قليلًا ثم حاول مرة أخرى.",
         "ACCESS_PROOF_CAPACITY"
       );
     }
-    consumed.set(tokenHash, expiresAt);
-  };
+    data.consumedProofs[tokenHash] = expiresAt;
+  });
 }
 
 function publicStudent(student) {
@@ -1071,95 +1202,153 @@ function getClientIp(request, trustProxy) {
     .trim();
 }
 
-function setBoundedMap(map, key, value) {
-  if (map.has(key)) map.delete(key);
-  map.set(key, value);
-  while (map.size > MAX_RATE_LIMIT_KEYS) {
-    map.delete(map.keys().next().value);
-  }
+function rateLimitKey(store, request, trustProxy, scope) {
+  return createHmac("sha256", store.data.secret)
+    .update(`${scope}:${getClientIp(request, trustProxy)}`)
+    .digest("hex");
 }
 
-function createQuizCreationLimiter(trustProxy) {
-  const byIp = new Map();
-  let globalAttempts = [];
-  return (request, recordCreation = false) => {
-    const now = Date.now();
-    const ip = getClientIp(request, trustProxy);
-    const recentForIp = (byIp.get(ip) || []).filter(
-      (time) => now - time < QUIZ_CREATION_WINDOW_MS
-    );
-    globalAttempts = globalAttempts.filter((time) => now - time < QUIZ_CREATION_WINDOW_MS);
-    if (
-      recentForIp.length >= QUIZ_CREATION_IP_LIMIT ||
-      globalAttempts.length >= QUIZ_CREATION_GLOBAL_LIMIT
-    ) {
-      throw new HttpError(
-        429,
-        "تم إنشاء عدة أسئلة مؤخرًا. انتظر قليلًا قبل نشر سؤال جديد.",
-        "QUIZ_CREATION_LIMIT"
-      );
-    }
-    if (recordCreation) {
-      recentForIp.push(now);
-      globalAttempts.push(now);
-    }
-    setBoundedMap(byIp, ip, recentForIp);
-  };
+function limitRecordSize(record, latestTimestamp) {
+  const entries = Object.entries(record);
+  if (entries.length <= MAX_RATE_LIMIT_KEYS) return;
+  entries
+    .sort(
+      ([, first], [, second]) =>
+        latestTimestamp(first) - latestTimestamp(second)
+    )
+    .slice(0, entries.length - MAX_RATE_LIMIT_KEYS)
+    .forEach(([key]) => delete record[key]);
 }
 
-function createSupervisorLimiter(trustProxy) {
-  const attempts = new Map();
-  const currentState = (request) => {
-    const key = getClientIp(request, trustProxy);
-    const now = Date.now();
-    const stored = attempts.get(key) || { failures: [], inFlight: 0 };
-    const failures = stored.failures.filter(
-      (time) => now - time < ACCESS_WINDOW_MS
-    );
-    const state = {
-      failures,
-      inFlight: Math.max(0, Number(stored.inFlight) || 0),
-    };
-    setBoundedMap(attempts, key, state);
-    return { key, now, state };
+function currentSupervisorAttempts(data, key, now) {
+  const stored = data.security.supervisorAttempts[key] || {
+    failures: [],
+    reservations: {},
   };
   return {
-    isLimited(request) {
-      const { state } = currentState(request);
-      return state.failures.length + state.inFlight >= SUPERVISOR_ATTEMPTS_LIMIT;
-    },
-    tryReserve(request) {
-      const { key, state } = currentState(request);
-      if (state.failures.length + state.inFlight >= SUPERVISOR_ATTEMPTS_LIMIT) {
-        return false;
+    failures: stored.failures.filter(
+      (timestamp) => now - timestamp < ACCESS_WINDOW_MS
+    ),
+    reservations: Object.fromEntries(
+      Object.entries(stored.reservations).filter(
+        ([, timestamp]) => now - timestamp < ACCESS_WINDOW_MS
+      )
+    ),
+  };
+}
+
+function createQuizCreationLimiter(store, trustProxy) {
+  return async (request, recordCreation = false) => {
+    const now = Date.now();
+    const key = rateLimitKey(store, request, trustProxy, "quiz-creation");
+    await store.update((data) => {
+      const recentForIp = (data.security.quizCreations.byIp[key] || []).filter(
+        (timestamp) => now - timestamp < QUIZ_CREATION_WINDOW_MS
+      );
+      const recentGlobal = data.security.quizCreations.global.filter(
+        (timestamp) => now - timestamp < QUIZ_CREATION_WINDOW_MS
+      );
+      if (
+        recentForIp.length >= QUIZ_CREATION_IP_LIMIT ||
+        recentGlobal.length >= QUIZ_CREATION_GLOBAL_LIMIT
+      ) {
+        throw new HttpError(
+          429,
+          "تم إنشاء عدة أسئلة مؤخرًا. انتظر قليلًا قبل نشر سؤال جديد.",
+          "QUIZ_CREATION_LIMIT"
+        );
       }
-      state.inFlight += 1;
-      setBoundedMap(attempts, key, state);
-      return true;
-    },
-    recordFailure(request) {
-      const { key, now, state } = currentState(request);
-      if (state.failures.length < SUPERVISOR_ATTEMPTS_LIMIT) {
-        state.failures.push(now);
+      if (recordCreation) {
+        recentForIp.push(now);
+        recentGlobal.push(now);
       }
-      setBoundedMap(attempts, key, state);
+      data.security.quizCreations.byIp[key] = recentForIp;
+      data.security.quizCreations.global = recentGlobal;
+      limitRecordSize(
+        data.security.quizCreations.byIp,
+        (timestamps) => Math.max(...timestamps)
+      );
+    });
+  };
+}
+
+function createSupervisorLimiter(store, trustProxy) {
+  const keyFor = (request) =>
+    rateLimitKey(store, request, trustProxy, "supervisor-login");
+  const saveState = (data, key, state) => {
+    if (!state.failures.length && !Object.keys(state.reservations).length) {
+      delete data.security.supervisorAttempts[key];
+    } else {
+      data.security.supervisorAttempts[key] = state;
+      limitRecordSize(data.security.supervisorAttempts, (entry) =>
+        Math.max(
+          0,
+          ...entry.failures,
+          ...Object.values(entry.reservations)
+        )
+      );
+    }
+  };
+  return {
+    async tryReserve(request) {
+      const key = keyFor(request);
+      const now = Date.now();
+      const reservationId = randomBytes(9).toString("base64url");
+      return store.update((data) => {
+        const state = currentSupervisorAttempts(data, key, now);
+        if (
+          state.failures.length + Object.keys(state.reservations).length >=
+          SUPERVISOR_ATTEMPTS_LIMIT
+        ) {
+          saveState(data, key, state);
+          return null;
+        }
+        state.reservations[reservationId] = now;
+        saveState(data, key, state);
+        return reservationId;
+      });
     },
-    finishFailure(request) {
-      const { key, now, state } = currentState(request);
-      state.inFlight = Math.max(0, state.inFlight - 1);
-      if (state.failures.length < SUPERVISOR_ATTEMPTS_LIMIT) {
-        state.failures.push(now);
-      }
-      setBoundedMap(attempts, key, state);
+    async recordFailure(request) {
+      const key = keyFor(request);
+      const now = Date.now();
+      return store.update((data) => {
+        const state = currentSupervisorAttempts(data, key, now);
+        const limited =
+          state.failures.length + Object.keys(state.reservations).length >=
+          SUPERVISOR_ATTEMPTS_LIMIT;
+        if (state.failures.length < SUPERVISOR_ATTEMPTS_LIMIT) {
+          state.failures.push(now);
+        }
+        saveState(data, key, state);
+        return limited;
+      });
     },
-    release(request) {
-      const { key, state } = currentState(request);
-      state.inFlight = Math.max(0, state.inFlight - 1);
-      if (!state.failures.length && !state.inFlight) attempts.delete(key);
-      else setBoundedMap(attempts, key, state);
+    async finishFailure(request, reservationId) {
+      const key = keyFor(request);
+      const now = Date.now();
+      await store.update((data) => {
+        const state = currentSupervisorAttempts(data, key, now);
+        delete state.reservations[reservationId];
+        if (state.failures.length < SUPERVISOR_ATTEMPTS_LIMIT) {
+          state.failures.push(now);
+        }
+        saveState(data, key, state);
+      });
     },
-    clear(request) {
-      attempts.delete(getClientIp(request, trustProxy));
+    async release(request, reservationId) {
+      const key = keyFor(request);
+      const now = Date.now();
+      await store.update((data) => {
+        const state = currentSupervisorAttempts(data, key, now);
+        delete state.reservations[reservationId];
+        saveState(data, key, state);
+      });
+    },
+    async clear(request) {
+      const key = keyFor(request);
+      await store.update((data) => {
+        delete data.security.supervisorAttempts[key];
+      });
     },
   };
 }
@@ -1188,6 +1377,7 @@ async function serveStatic(request, response, pathname) {
 
 export async function createBaynatServer({
   dataFile = DEFAULT_DATA_FILE,
+  store: providedStore = null,
   trustProxy = process.env.TRUST_PROXY === "true",
   setupKey = process.env.BAYNAT_SETUP_KEY || "",
   accessDifficultyBits = Number(process.env.BAYNAT_ACCESS_DIFFICULTY || 20),
@@ -1211,14 +1401,15 @@ export async function createBaynatServer({
   ) {
     throw new Error("قيمة BAYNAT_SUPERVISOR_DIFFICULTY يجب أن تكون بين 16 و24 في الإنتاج.");
   }
-  const store = new JsonStore(dataFile, setupKey);
+  const store = providedStore || new JsonStore(dataFile, setupKey);
   await store.init();
-  const challengeSecret = randomBytes(32).toString("base64url");
-  const consumeProof = createProofReplayGuard();
-  const recordQuizCreation = createQuizCreationLimiter(trustProxy);
-  const supervisorLimiter = createSupervisorLimiter(trustProxy);
+  const challengeSecret = createHmac("sha256", store.data.secret)
+    .update("baynat:access-challenge:v1")
+    .digest("base64url");
+  const recordQuizCreation = createQuizCreationLimiter(store, trustProxy);
+  const supervisorLimiter = createSupervisorLimiter(store, trustProxy);
 
-  const server = http.createServer(async (request, response) => {
+  const handler = async (request, response) => {
     try {
       const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
       const pathname = url.pathname.replace(/\/+$/, "") || "/";
@@ -1290,8 +1481,7 @@ export async function createBaynatServer({
         }
         const body = await readJsonBody(request);
         if (!store.data.setupKey || !safeEqual(body.setupKey, store.data.setupKey)) {
-          const limited = supervisorLimiter.isLimited(request);
-          supervisorLimiter.recordFailure(request);
+          const limited = await supervisorLimiter.recordFailure(request);
           if (limited) {
             throw new HttpError(
               429,
@@ -1301,7 +1491,7 @@ export async function createBaynatServer({
           }
           throw new HttpError(
             401,
-            "مفتاح التهيئة غير صحيح. راجعه في سجل تشغيل الخادم.",
+            "مفتاح التهيئة غير صحيح. تحقّق من المفتاح ثم حاول مجددًا.",
             "SETUP_KEY_REJECTED"
           );
         }
@@ -1324,7 +1514,7 @@ export async function createBaynatServer({
           data.supervisors.push(supervisor);
           data.setupKey = null;
         });
-        supervisorLimiter.clear(request);
+        await supervisorLimiter.clear(request);
         json(
           response,
           201,
@@ -1342,7 +1532,7 @@ export async function createBaynatServer({
         const displayName = readSupervisorDisplayName(body);
         const password = readSupervisorPassword(body);
         const loginCredential = `${normalizeAnswer(displayName)}|${password}`;
-        const reservedAttempt = supervisorLimiter.tryReserve(request);
+        const reservedAttempt = await supervisorLimiter.tryReserve(request);
         if (!reservedAttempt) {
           const proof = verifyAccessProof({
             secret: challengeSecret,
@@ -1368,7 +1558,7 @@ export async function createBaynatServer({
               }
             );
           }
-          consumeProof(proof);
+          await consumeProof(store, proof);
         }
         const supervisor = store.data.supervisors.find(
           (item) =>
@@ -1383,18 +1573,22 @@ export async function createBaynatServer({
             credential
           );
         } catch (error) {
-          if (reservedAttempt) supervisorLimiter.release(request);
+          if (reservedAttempt) {
+            await supervisorLimiter.release(request, reservedAttempt);
+          }
           throw error;
         }
         if (!supervisor || !validPassword) {
-          if (reservedAttempt) supervisorLimiter.finishFailure(request);
+          if (reservedAttempt) {
+            await supervisorLimiter.finishFailure(request, reservedAttempt);
+          }
           throw new HttpError(
             401,
             "اسم المشرف أو الرمز غير صحيح.",
             "SUPERVISOR_LOGIN_REJECTED"
           );
         }
-        supervisorLimiter.clear(request);
+        await supervisorLimiter.clear(request);
         json(
           response,
           200,
@@ -1631,40 +1825,46 @@ export async function createBaynatServer({
             validation.value.className,
             validation.value.halaqa
           );
-          const replacement = {
-            ...existing,
-            name: validation.value.name,
-            className: validation.value.className,
-            halaqa: validation.value.halaqa,
-            revision: existing.revision + 1,
-            identityLookup: studentIdentityLookup(
-              store.data.secret,
-              validation.value.name,
-              validation.value.className,
-              validation.value.halaqa
-            ),
-          };
-          if (validation.value.pin) {
-            Object.assign(
-              replacement,
-              {
-                pinLookup: pinLookup(store.data.secret, "roster", validation.value.pin),
-              },
-              await hashPin(validation.value.pin)
-            );
-          }
+          const identityLookup = studentIdentityLookup(
+            store.data.secret,
+            validation.value.name,
+            validation.value.className,
+            validation.value.halaqa
+          );
+          const updatedPinFields = validation.value.pin
+            ? {
+                pinLookup: pinLookup(
+                  store.data.secret,
+                  "roster",
+                  validation.value.pin
+                ),
+                ...(await hashPin(validation.value.pin)),
+              }
+            : null;
+          let committedReplacement;
           await store.update((data) => {
             const rosterIndex = data.students.findIndex((student) => student.id === studentId);
             if (rosterIndex === -1) {
               throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
             }
-            data.students[rosterIndex] = replacement;
+            committedReplacement = {
+              ...data.students[rosterIndex],
+              name: validation.value.name,
+              className: validation.value.className,
+              halaqa: validation.value.halaqa,
+              revision: data.students[rosterIndex].revision + 1,
+              identityLookup,
+              ...(updatedPinFields || {}),
+            };
+            data.students[rosterIndex] = committedReplacement;
             for (const quiz of Object.values(data.quizzes)) {
               const quizStudentIndex = quiz.students.findIndex(
                 (student) => student.id === studentId
               );
               if (quizStudentIndex !== -1) {
-                quiz.students[quizStudentIndex] = structuredClone(replacement);
+                quiz.students[quizStudentIndex] = structuredClone(
+                  committedReplacement
+                );
                 quiz.sessions = Object.fromEntries(
                   Object.entries(quiz.sessions).filter(
                     ([, session]) => session.studentId !== studentId
@@ -1682,7 +1882,12 @@ export async function createBaynatServer({
               }
             }
           });
-          json(response, 200, { student: publicStudent(replacement) }, securityHeaders());
+          json(
+            response,
+            200,
+            { student: publicStudent(committedReplacement) },
+            securityHeaders()
+          );
           return;
         }
         if (request.method === "DELETE" && rosterMatch[1]) {
@@ -1725,7 +1930,7 @@ export async function createBaynatServer({
           store.data.students.length === 0
             ? sanitizeStudentInputs(body.students, store.data.secret, quizId)
             : null;
-        recordQuizCreation(request, true);
+        await recordQuizCreation(request, true);
         const bootstrapStudents = studentInputs ? await hashStudentInputs(studentInputs) : null;
         const createdAt = new Date();
         const quiz = {
@@ -1799,12 +2004,18 @@ export async function createBaynatServer({
       if (resetLeaderboardMatch && request.method === "POST") {
         const quiz = requireQuiz(store, resetLeaderboardMatch[1]);
         requireAdmin(request, quiz, store);
-        const cleared = {
-          submissions: quiz.submissions.length,
-          participants: serializeParticipants(quiz).length,
-        };
+        let cleared;
+        let recordsPreserved;
         await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
+          cleared = {
+            submissions: draftQuiz.submissions.length,
+            participants: serializeParticipants(draftQuiz).length,
+          };
+          recordsPreserved = {
+            answers: draftQuiz.answerRecords.length,
+            participations: draftQuiz.participationRecords.length,
+          };
           draftQuiz.submissions = [];
           draftQuiz.sessions = {};
           draftQuiz.starts = {};
@@ -1818,10 +2029,7 @@ export async function createBaynatServer({
           {
             ok: true,
             cleared,
-            recordsPreserved: {
-              answers: quiz.answerRecords.length,
-              participations: quiz.participationRecords.length,
-            },
+            recordsPreserved,
           },
           securityHeaders()
         );
@@ -1961,7 +2169,7 @@ export async function createBaynatServer({
             "INVALID_ACCESS_PROOF"
           );
         }
-        consumeProof(proof);
+        await consumeProof(store, proof);
         const identityLookup = studentIdentityLookup(
           store.data.secret,
           input.name,
@@ -2208,10 +2416,11 @@ export async function createBaynatServer({
         response.end();
       }
     }
-  });
+  };
+  const server = http.createServer(handler);
 
   server.on("close", () => store.close());
-  return { server, store };
+  return { server, store, handler };
 }
 
 async function start() {
