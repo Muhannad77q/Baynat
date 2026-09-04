@@ -21,7 +21,7 @@ export class DatabaseUnavailableError extends HttpError {
   constructor(cause) {
     super(
       503,
-      "تعذّر الوصول إلى قاعدة بيانات بَيّنات. حاول مرة أخرى بعد قليل.",
+      "تعذّر الوصول إلى قاعدة بيانات السؤال الأسبوعي. حاول مرة أخرى بعد قليل.",
       "DATABASE_UNAVAILABLE"
     );
     this.name = "DatabaseUnavailableError";
@@ -33,7 +33,7 @@ export class DatabaseBusyError extends HttpError {
   constructor(cause) {
     super(
       503,
-      "قاعدة بيانات بَيّنات مشغولة الآن. حاول مرة أخرى بعد قليل.",
+      "قاعدة بيانات السؤال الأسبوعي مشغولة الآن. حاول مرة أخرى بعد قليل.",
       "DATABASE_BUSY"
     );
     this.name = "DatabaseBusyError";
@@ -45,7 +45,7 @@ export class DatabaseConfigurationError extends HttpError {
   constructor(cause) {
     super(
       500,
-      "قاعدة بيانات بَيّنات غير مهيأة. تحقّق من ربط Database وتطبيق الترحيلات.",
+      "قاعدة بيانات السؤال الأسبوعي غير مهيأة. تحقّق من ربط Database وتطبيق الترحيلات.",
       "DATABASE_CONFIGURATION_ERROR"
     );
     this.name = "DatabaseConfigurationError";
@@ -57,7 +57,7 @@ export class DatabaseStateError extends HttpError {
   constructor(cause) {
     super(
       500,
-      "حالة بَيّنات المحفوظة غير صالحة. أوقفنا الكتابة لحماية البيانات.",
+      "حالة السؤال الأسبوعي المحفوظة غير صالحة. أوقفنا الكتابة لحماية البيانات.",
       "DATABASE_STATE_INVALID"
     );
     this.name = "DatabaseStateError";

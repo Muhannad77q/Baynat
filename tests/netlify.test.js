@@ -101,10 +101,9 @@ function studentBody({
   id,
   name = "سارة القحطاني",
   className = "أولى ثانوي",
-  halaqa = "زكاء",
   pin = "1234",
 } = {}) {
-  return { ...(id ? { id } : {}), name, className, halaqa, pin };
+  return { ...(id ? { id } : {}), name, className, pin };
 }
 
 test("uses the current Netlify migration layout for state and proof tables", async () => {
@@ -194,7 +193,7 @@ test("initialization validates and transactionally migrates legacy state", async
 
   await store.init();
 
-  assert.equal(store.data.version, 2);
+  assert.equal(store.data.version, 3);
   assert.deepEqual(store.data.supervisors, []);
   assert.deepEqual(store.data.students, []);
   assert.equal(Object.hasOwn(store.data, "adminCredential"), false);
@@ -687,7 +686,6 @@ test("shared roster atomically rejects duplicate PIN creates and edits", async (
         id: "student-concurrent-b",
         name: "ريم السبيعي",
         className: "ثاني ثانوي",
-        halaqa: "سواعد",
         pin: "5566",
       }),
     }),
@@ -715,7 +713,6 @@ test("shared roster atomically rejects duplicate PIN creates and edits", async (
       id: "student-race-b",
       name: "هند محمد",
       className: "ثاني ثانوي",
-      halaqa: "سواعد",
       pin: "2222",
     }),
   ]) {
@@ -738,7 +735,6 @@ test("shared roster atomically rejects duplicate PIN creates and edits", async (
       body: studentBody({
         name: "هند محمد",
         className: "ثاني ثانوي",
-        halaqa: "سواعد",
         pin: "7788",
       }),
     }),
@@ -793,7 +789,6 @@ test("server idempotency deduplicates concurrent student and quiz creates", asyn
     body: studentBody({
       name: "ريم السبيعي",
       className: "ثاني ثانوي",
-      halaqa: "سواعد",
       pin: "5678",
     }),
   });
@@ -914,11 +909,11 @@ test("lost reset responses replay atomically without clearing intervening answer
       {
         method: "POST",
         bearer: access.payload.token,
-        body: { answer: "صح" },
+        body: { questionId: created.payload.questionId, answer: "صح" },
       }
     );
     assert.equal(submission.response.status, 200);
-    return submission.payload.result.entry.id;
+    return submission.payload.result.submission.id;
   }
 
   await accessAndSubmit();
@@ -1004,7 +999,7 @@ test("retains only a bounded number of completed reset records", async () => {
   assert.equal(quiz.resetRequests.at(-1).response.round, 41);
 });
 
-test("concurrent stale publishers conflict and the winner supersedes the old link", async () => {
+test("concurrent supervisors cannot replace the stable weekly link", async () => {
   const pool = new TransactionalFakePool();
   const first = await setupHandler(pool, "المشرف الأول");
   const secondPassword = "second-supervisor-password";
@@ -1092,41 +1087,35 @@ test("concurrent stale publishers conflict and the winner supersedes the old lin
   );
   assert.deepEqual(
     results.map(({ response }) => response.status).sort(),
-    [201, 409]
+    [409, 409]
   );
-  const winningIndex = results.findIndex(
-    ({ response }) => response.status === 201
+  assert.ok(
+    results.every(
+      ({ payload }) => payload.error.code === "WEEK_ALREADY_ACTIVE"
+    )
   );
-  const winner = results[winningIndex];
-  const conflict = results.find(({ response }) => response.status === 409);
-  assert.equal(conflict.payload.error.code, "QUIZ_PUBLISH_CONFLICT");
-  assert.match(conflict.payload.error.message, /سؤال آخر|حدّث/);
-  assert.equal(pool.state.activeQuizId, winner.payload.quizId);
+  assert.equal(pool.state.activeQuizId, baseline.payload.quizId);
+  assert.equal(Object.keys(pool.state.quizzes).length, 1);
+
+  const appended = await Promise.all(
+    attempts.map((attempt) =>
+      api(
+        attempt.handler,
+        `/api/quizzes/${baseline.payload.quizId}/questions`,
+        {
+          method: "POST",
+          token: attempt.token,
+          idempotencyKey: `append-${attempt.key}`,
+          body: { question: attempt.body.question },
+        }
+      )
+    )
+  );
+  assert.ok(appended.every(({ response }) => response.status === 201));
   assert.equal(
-    pool.state.quizzes[baseline.payload.quizId].supersededBy,
-    winner.payload.quizId
+    pool.state.quizzes[baseline.payload.quizId].questions.length,
+    3
   );
-  assert.equal(Object.keys(pool.state.quizzes).length, 2);
-
-  const winnerReplay = await api(
-    attempts[winningIndex].handler,
-    "/api/quizzes",
-    {
-      method: "POST",
-      token: attempts[winningIndex].token,
-      idempotencyKey: attempts[winningIndex].key,
-      body: attempts[winningIndex].body,
-    }
-  );
-  assert.equal(winnerReplay.response.status, 201);
-  assert.equal(winnerReplay.payload.quizId, winner.payload.quizId);
-
-  const superseded = await api(
-    first.handler,
-    `/api/quizzes/${baseline.payload.quizId}`
-  );
-  assert.equal(superseded.response.status, 410);
-  assert.equal(superseded.payload.error.code, "QUIZ_SUPERSEDED");
 });
 
 test("student proof replay uses the proof table and only one state update", async () => {
@@ -1219,11 +1208,11 @@ test("student proof replay uses the proof table and only one state update", asyn
     {
       method: "POST",
       bearer: successful.payload.token,
-      body: { answer: "صح" },
+      body: { questionId: created.payload.questionId, answer: "صح" },
     }
   );
   assert.equal(submission.response.status, 200);
-  assert.equal(submission.payload.result.entry.isCorrect, true);
+  assert.equal(submission.payload.result.submission.isCorrect, true);
 });
 
 test("configured database no longer requires BAYNAT_SETUP_KEY", async () => {
@@ -1238,4 +1227,134 @@ test("configured database no longer requires BAYNAT_SETUP_KEY", async () => {
   assert.equal(status.response.status, 200);
   assert.equal(status.payload.configured, true);
   assert.equal(pool.state.setupKey, null);
+});
+
+test("Netlify transactions deduplicate question appends and manual grades", async () => {
+  const pool = new TransactionalFakePool();
+  const first = await setupHandler(pool, "مشرف العقد الأسبوعي");
+  const secondHandler = createHandler(pool);
+  const student = await api(first.handler, "/api/students", {
+    method: "POST",
+    token: first.token,
+    body: studentBody({ id: "student-weekly-netlify", pin: "2468" }),
+  });
+  assert.equal(student.response.status, 201);
+
+  const created = await api(first.handler, "/api/quizzes", {
+    method: "POST",
+    token: first.token,
+    idempotencyKey: "netlify-weekly-create-0001",
+    body: {
+      expectedCurrentQuizId: null,
+      questions: [
+        {
+          type: "short",
+          prompt: "اذكر فائدة واحدة للقراءة اليومية.",
+        },
+      ],
+      students: [],
+    },
+  });
+  assert.equal(created.response.status, 201);
+
+  const appendRequest = (handler) =>
+    api(
+      handler,
+      `/api/quizzes/${created.payload.quizId}/questions`,
+      {
+        method: "POST",
+        token: first.token,
+        idempotencyKey: "netlify-append-retry-0001",
+        body: {
+          question: {
+            type: "boolean",
+            prompt: "الماء يتجمد عند درجة الصفر.",
+            correctAnswer: "صح",
+          },
+        },
+      }
+    );
+  const appended = await Promise.all([
+    appendRequest(first.handler),
+    appendRequest(secondHandler),
+  ]);
+  assert.deepEqual(
+    appended.map(({ response }) => response.status),
+    [201, 201]
+  );
+  assert.equal(
+    new Set(appended.map(({ payload }) => payload.questionId)).size,
+    1
+  );
+  assert.equal(pool.state.quizzes[created.payload.quizId].questions.length, 2);
+
+  const challenge = await api(
+    first.handler,
+    `/api/quizzes/${created.payload.quizId}/access/challenge`,
+    { method: "POST", body: { pin: "2468" } }
+  );
+  const access = await api(
+    secondHandler,
+    `/api/quizzes/${created.payload.quizId}/access`,
+    {
+      method: "POST",
+      body: {
+        pin: "2468",
+        challengeToken: challenge.payload.token,
+        challengeCounter: solveChallenge(
+          challenge.payload.token,
+          challenge.payload.difficultyBits
+        ),
+      },
+    }
+  );
+  assert.equal(access.response.status, 200);
+  const remembered = await api(
+    first.handler,
+    `/api/quizzes/${created.payload.quizId}/session`,
+    { bearer: access.payload.token }
+  );
+  assert.equal(remembered.response.status, 200);
+  assert.equal(remembered.payload.question.id, created.payload.questionId);
+
+  const pending = await api(
+    secondHandler,
+    `/api/quizzes/${created.payload.quizId}/submissions`,
+    {
+      method: "POST",
+      bearer: access.payload.token,
+      body: {
+        questionId: created.payload.questionId,
+        answer: "تنمية المعرفة",
+      },
+    }
+  );
+  assert.equal(pending.response.status, 200);
+  assert.equal(pending.payload.result.submission.gradingStatus, "pending");
+  const submissionId = pending.payload.result.submission.id;
+
+  const gradeRequest = (handler) =>
+    api(
+      handler,
+      `/api/quizzes/${created.payload.quizId}/submissions/${submissionId}/grade`,
+      {
+        method: "PATCH",
+        token: first.token,
+        idempotencyKey: "netlify-grade-retry-0001",
+        body: { isCorrect: true },
+      }
+    );
+  const graded = await Promise.all([
+    gradeRequest(first.handler),
+    gradeRequest(secondHandler),
+  ]);
+  assert.deepEqual(
+    graded.map(({ response }) => response.status),
+    [200, 200]
+  );
+  const quiz = pool.state.quizzes[created.payload.quizId];
+  assert.equal(quiz.submissions[0].gradeRevision, 1);
+  assert.equal(quiz.submissions[0].gradeHistory.length, 1);
+  assert.equal(quiz.answerRecords[0].gradeRevision, 1);
+  assert.equal(quiz.answerRecords[0].isCorrect, true);
 });

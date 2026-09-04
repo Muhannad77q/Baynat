@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="بَيّنات — سؤال يومي تفاعلي للفصل مع نقاط السرعة ولوحة المتصدرين."
+      content="السؤال الأسبوعي لفريق زكاء — أسئلة تفاعلية وترتيب تراكمي للطلاب."
     />
-    <meta name="theme-color" content="#f7f8fc" />
-    <title>بَيّنات | سؤال اليوم</title>
-    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <meta name="theme-color" content="#16a6a1" />
+    <title>السؤال الأسبوعي لفريق زكاء</title>
+    <link rel="icon" type="image/jpeg" href="./zakaa-logo.jpg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=7" />
+    <link rel="stylesheet" href="./styles.css?v=10" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -85,10 +85,10 @@
     <div id="adminApp" class="admin-app">
       <aside class="sidebar">
         <div class="brand">
-          <img src="./logo.svg" alt="" />
+          <img src="./zakaa-logo.jpg" alt="شعار فريق زكاء" />
           <div>
-            <strong>بَيّنات</strong>
-            <span>مساحة الفصل</span>
+            <strong>فريق زكاء</strong>
+            <span>السؤال الأسبوعي</span>
           </div>
         </div>
 
@@ -99,7 +99,7 @@
           </button>
           <button class="nav-item" type="button" data-view="question">
             <svg><use href="#icon-question"></use></svg>
-            <span>سؤال اليوم</span>
+            <span>أسئلة الأسبوع</span>
           </button>
           <button class="nav-item" type="button" data-view="students">
             <svg><use href="#icon-users"></use></svg>
@@ -122,8 +122,8 @@
 
         <div class="sidebar-tip">
           <span class="tip-spark">✦</span>
-          <strong>كل يوم فرصة جديدة</strong>
-          <p>حفّز طلابك بسؤال قصير، ونقاط تعتمد على صحة الإجابة وسرعتها.</p>
+          <strong>كل سؤال فرصة جديدة</strong>
+          <p>أضف عدة أسئلة، وتابع الترتيب التراكمي حتى تعيد تعيينه بنفسك.</p>
         </div>
 
         <div class="teacher-profile">
@@ -144,12 +144,12 @@
       <main class="admin-main">
         <header class="admin-header">
           <button class="mobile-brand" type="button" data-view="dashboard" aria-label="الرئيسية">
-            <img src="./logo.svg" alt="" />
-            <strong>بَيّنات</strong>
+            <img src="./zakaa-logo.jpg" alt="شعار فريق زكاء" />
+            <strong>فريق زكاء</strong>
           </button>
           <div>
             <p class="page-kicker" id="pageKicker">لوحة المشرف</p>
-            <h1 id="pageTitle">أهلًا بك في بَيّنات</h1>
+            <h1 id="pageTitle">أهلًا بك في فريق زكاء</h1>
           </div>
           <div class="header-actions">
             <div class="date-chip">
@@ -179,7 +179,7 @@
                 <span class="live-dot"></span>
                 <span id="dashboardStatusLabel">جاهز للإعداد</span>
               </span>
-              <h2 id="dashboardWelcomeTitle">ابدأ بإضافة الطلاب<br />ثم أنشئ سؤال اليوم</h2>
+              <h2 id="dashboardWelcomeTitle">ابدأ بإضافة الطلاب<br />ثم أنشئ أسئلة الأسبوع</h2>
               <p>شارك الرابط، وتابع إجابات الطلاب من جوالاتهم وترتيبهم لحظة بلحظة.</p>
               <div class="welcome-actions">
                 <button class="button button-light share-question-button" type="button">
@@ -188,7 +188,7 @@
                 </button>
                 <button class="button button-ghost-light" type="button" data-view="question">
                   <svg><use href="#icon-edit"></use></svg>
-                  <span>تعديل السؤال</span>
+                  <span>إضافة سؤال</span>
                 </button>
               </div>
             </div>
@@ -197,7 +197,7 @@
               <div class="orbit orbit-two"></div>
               <div class="floating-card floating-card-main">
                 <div class="floating-card-top">
-                  <span>سؤال اليوم</span>
+                  <span>السؤال الأسبوعي</span>
                   <span class="mini-pill">+١٩٠</span>
                 </div>
                 <strong>؟</strong>
@@ -226,7 +226,7 @@
                 <svg><use href="#icon-check"></use></svg>
               </div>
               <div>
-                <span>أجابوا اليوم</span>
+                <span>الإجابات المرسلة</span>
                 <strong id="answeredMetric">٠</strong>
                 <small id="answeredPercent">بانتظار الإجابات</small>
               </div>
@@ -248,7 +248,7 @@
               <div>
                 <span>إجابات صحيحة</span>
                 <strong id="correctMetric">٠٪</strong>
-                <small>من إجابات اليوم</small>
+                <small>من الإجابات المصححة</small>
               </div>
             </article>
           </div>
@@ -257,11 +257,11 @@
             <article class="panel today-question-card">
               <div class="panel-heading">
                 <div>
-                  <span class="section-label">سؤال اليوم</span>
-                  <h3>التحدّي المنشور</h3>
+                  <span class="section-label">أسئلة الأسبوع</span>
+                  <h3>آخر سؤال منشور</h3>
                 </div>
                 <button class="text-button" type="button" data-view="question">
-                  تعديل
+                  إضافة سؤال
                   <svg><use href="#icon-arrow"></use></svg>
                 </button>
               </div>
@@ -290,7 +290,7 @@
               <div class="panel-heading">
                 <div>
                   <span class="section-label">لوحة الشرف</span>
-                  <h3>متصدرو اليوم</h3>
+                  <h3>المتصدرون تراكميًا</h3>
                 </div>
                 <button class="text-button" type="button" data-view="leaderboard">
                   عرض الكل
@@ -317,14 +317,26 @@
           <div class="section-intro">
             <div>
               <span class="section-label">إعداد التحدّي</span>
-              <h2>اكتب سؤال اليوم</h2>
-              <p>اختر نوع السؤال، حدّد الإجابة الصحيحة، ثم احفظه وشارك رابطه.</p>
+              <h2>أضف أسئلة الأسبوع</h2>
+              <p>انشر أكثر من سؤال على الرابط نفسه؛ تبقى النقاط والترتيب محفوظين.</p>
             </div>
             <button class="button button-secondary share-question-button" type="button">
               <svg><use href="#icon-share"></use></svg>
               مشاركة السؤال المنشور
             </button>
           </div>
+
+          <article class="panel published-questions-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="section-label">الأسئلة المنشورة</span>
+                <h3>أسئلة هذا الأسبوع</h3>
+              </div>
+              <span class="record-count" id="publishedQuestionCount">٠</span>
+            </div>
+            <div class="published-question-list" id="publishedQuestionList"></div>
+            <p class="empty-inline" id="publishedQuestionsEmpty">لم تنشر أي سؤال بعد.</p>
+          </article>
 
           <div class="question-builder-layout">
             <form class="panel question-form" id="questionForm" novalidate>
@@ -349,7 +361,7 @@
                   </button>
                   <button class="type-option" type="button" data-question-type="short" aria-pressed="false">
                     <span class="type-icon">ــ</span>
-                    <span><strong>مقالي قصير</strong><small>يُصحّح كنص مطابق تلقائيًا</small></span>
+                    <span><strong>مقالي قصير</strong><small>يصحّحه المشرف يدويًا</small></span>
                     <i></i>
                   </button>
                 </div>
@@ -381,8 +393,8 @@
                 <div class="form-section-heading">
                   <span class="step-number">٣</span>
                   <div>
-                    <h3>الإجابة الصحيحة</h3>
-                    <p>اضغط علامة الصح بجانب الإجابة الصحيحة.</p>
+                    <h3>طريقة التصحيح</h3>
+                    <p>حدّد الإجابة الصحيحة للموضوعي؛ المقالي ينتقل للمشرف.</p>
                   </div>
                 </div>
                 <div id="answerEditor"></div>
@@ -394,16 +406,16 @@
                 </div>
                 <div>
                   <strong>احتساب النقاط تلقائيًا</strong>
-                  <p>١٠٠ نقطة للإجابة الصحيحة، حتى ٦٠ نقطة للسرعة، و٣٠ نقطة إضافية للمراكز الأولى.</p>
+                  <p>الموضوعي يُصحّح فورًا، والمقالي بعد اعتماد المشرف. جميع النقاط تراكمية.</p>
                 </div>
               </div>
 
               <div class="form-actions">
                 <button class="button button-primary" type="submit">
                   <svg><use href="#icon-check"></use></svg>
-                  حفظ ونشر السؤال
+                  إضافة ونشر السؤال
                 </button>
-                <button class="button button-secondary" id="resetQuestionButton" type="button">سؤال جديد</button>
+                <button class="button button-secondary" id="resetQuestionButton" type="button">تفريغ الحقول</button>
               </div>
               <p class="form-error" id="questionFormError" role="alert"></p>
             </form>
@@ -415,8 +427,8 @@
               </div>
               <article class="student-preview-card">
                 <div class="preview-header">
-                  <img src="./logo.svg" alt="" />
-                  <span>سؤال اليوم</span>
+                  <img src="./zakaa-logo.jpg" alt="" />
+                  <span>السؤال الأسبوعي</span>
                   <span class="preview-timer">٠٠:١٢</span>
                 </div>
                 <div class="preview-progress"><i></i></div>
@@ -440,7 +452,7 @@
             <div>
               <span class="section-label">إدارة الفصل</span>
               <h2>قائمة الطلاب</h2>
-              <p>قائمة مشتركة لكل المشرفين، وتشمل الطلاب في جميع الصفوف والحلقات.</p>
+              <p>يسجّل المشرف اسم الطالب وصفه ورمزه، ثم يدخل الطالب بالرمز فقط.</p>
             </div>
             <button class="button button-primary" id="openStudentModal" type="button">
               <svg><use href="#icon-plus"></use></svg>
@@ -452,7 +464,7 @@
             <div class="students-toolbar">
               <label class="search-field" for="studentSearch">
                 <svg><use href="#icon-search"></use></svg>
-                <input id="studentSearch" type="search" placeholder="ابحث بالاسم أو الصف أو الحلقة..." autocomplete="off" />
+                <input id="studentSearch" type="search" placeholder="ابحث بالاسم أو الصف..." autocomplete="off" />
               </label>
               <div class="student-total"><span id="studentListCount">٠</span> طالب مسجل</div>
             </div>
@@ -462,9 +474,8 @@
                   <tr>
                     <th>الطالب</th>
                     <th>الصف</th>
-                    <th>الحلقة</th>
                     <th>رمز الدخول</th>
-                    <th>حالة اليوم</th>
+                    <th>حالة الأسبوع</th>
                     <th><span class="sr-only">الإجراءات</span></th>
                   </tr>
                 </thead>
@@ -483,8 +494,8 @@
           <div class="section-intro">
             <div>
               <span class="section-label">إدارة الحسابات</span>
-              <h2>مشرفو بَيّنات</h2>
-              <p>لكل مشرف اسم ورمز دخول مستقل، والجميع يشاهدون قائمة الطلاب والسؤال والنتائج نفسها.</p>
+              <h2>مشرفو فريق زكاء</h2>
+              <p>لكل مشرف اسم ورمز دخول مستقل، والجميع يشاهدون الطلاب والأسئلة والنتائج نفسها.</p>
             </div>
             <button class="button button-primary" id="openSupervisorModal" type="button">
               <svg><use href="#icon-plus"></use></svg>
@@ -526,7 +537,7 @@
             <div>
               <span class="section-label">نتائج التحدّي</span>
               <h2>لوحة المتصدرين</h2>
-              <p>الترتيب يعتمد على صحة الإجابة، ثم سرعة الحل.</p>
+              <p>ترتيب تراكمي لكل أسئلة الأسبوع، ولا يُصفّر إلا بإعادة التعيين.</p>
             </div>
             <div class="leaderboard-actions">
               <div class="score-legend">
@@ -544,7 +555,7 @@
             <div class="panel-heading">
               <div>
                 <span class="section-label">الترتيب الكامل</span>
-                <h3>نتائج سؤال اليوم</h3>
+                <h3>نتائج أسئلة الأسبوع</h3>
               </div>
                 <span class="updating-badge"><i></i> يتحدّث تلقائيًا</span>
             </div>
@@ -554,8 +565,9 @@
                   <tr>
                     <th>الترتيب</th>
                     <th>الطالب</th>
-                    <th>الإجابة</th>
-                    <th>الوقت</th>
+                    <th>الإجابات</th>
+                    <th>الصحيحة</th>
+                    <th>قيد التصحيح</th>
                     <th>النقاط</th>
                   </tr>
                 </thead>
@@ -573,12 +585,28 @@
         <section id="recordsView" class="view-panel" data-admin-view="records">
           <div class="section-intro">
             <div>
-              <span class="section-label">متابعة سؤال اليوم</span>
+              <span class="section-label">متابعة الأسبوع</span>
               <h2>سجل الأجوبة والمشاركين</h2>
-              <p>اعرف من دخل، ومن أجاب، ونص الإجابة ووقت إرسالها.</p>
+              <p>صحّح الإجابات المقالية وتابع جميع الإجابات والمشاركين.</p>
             </div>
             <span class="updating-badge"><i></i> يتحدّث تلقائيًا</span>
           </div>
+
+          <article class="panel grading-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="section-label">التصحيح اليدوي</span>
+                <h3>إجابات مقالية بانتظارك</h3>
+              </div>
+              <span class="record-count" id="pendingGradingCount">٠</span>
+            </div>
+            <div class="grading-queue" id="gradingQueue"></div>
+            <div class="empty-state compact" id="gradingQueueEmpty">
+              <span>✓</span>
+              <h3>لا توجد إجابات معلّقة</h3>
+              <p>ستظهر الإجابات المقالية هنا لتصحيحها يدويًا.</p>
+            </div>
+          </article>
 
           <div class="records-grid">
             <article class="panel records-panel">
@@ -596,7 +624,7 @@
                       <th>الطالب</th>
                       <th>الجولة</th>
                       <th>الصف</th>
-                      <th>الحلقة</th>
+                      <th>السؤال</th>
                       <th>الإجابة</th>
                       <th>النتيجة</th>
                       <th>الوقت</th>
@@ -627,7 +655,6 @@
                     <tr>
                       <th>الطالب</th>
                       <th>الصف</th>
-                      <th>الحلقة</th>
                       <th>الحالة</th>
                       <th>آخر دخول</th>
                     </tr>
@@ -649,10 +676,10 @@
     <div id="studentApp" class="student-app" hidden>
       <header class="student-header">
         <div class="brand">
-          <img src="./logo.svg" alt="" />
+          <img src="./zakaa-logo.jpg" alt="شعار فريق زكاء" />
           <div>
-            <strong>بَيّنات</strong>
-            <span>سؤال اليوم</span>
+            <strong>فريق زكاء</strong>
+            <span>السؤال الأسبوعي</span>
           </div>
         </div>
         <button class="button button-secondary" id="exitStudentView" type="button">
@@ -668,7 +695,7 @@
           </div>
           <div class="student-card access-card">
             <span class="student-kicker">مرحبًا بك 👋</span>
-            <h1 id="accessTitle">جاهز لسؤال اليوم؟</h1>
+            <h1 id="accessTitle">جاهز لأسئلة الأسبوع؟</h1>
             <p id="accessDescription">أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.</p>
             <form id="studentAccessForm" novalidate>
               <label for="studentPin">رمز الدخول</label>
@@ -759,7 +786,7 @@
               <div class="panel-heading">
                 <div>
                   <span class="section-label">لوحة المتصدرين</span>
-                  <h3>أبطال سؤال اليوم</h3>
+                  <h3>أبطال الأسبوع</h3>
                 </div>
                 <span class="updating-badge"><i></i> نتائج الرابط</span>
               </div>
@@ -780,7 +807,7 @@
         <div class="auth-lock" aria-hidden="true">🔐</div>
         <span class="section-label">لوحة المشرف</span>
         <h2 id="adminAuthTitle">دخول المشرف</h2>
-        <p id="adminAuthDescription">أدخل اسمك ورمزك للمتابعة إلى إدارة سؤال اليوم.</p>
+        <p id="adminAuthDescription">أدخل اسمك ورمزك لإدارة السؤال الأسبوعي.</p>
         <div class="field-group">
           <label class="field-label" id="adminDisplayNameLabel" for="adminDisplayName">اسم المشرف</label>
           <input
@@ -845,7 +872,7 @@
         <div class="modal-header">
           <div>
             <span class="section-label" id="supervisorModalLabel">مشرف جديد</span>
-            <h2 id="supervisorModalTitle">إضافة مشرف إلى بَيّنات</h2>
+            <h2 id="supervisorModalTitle">إضافة مشرف إلى فريق زكاء</h2>
           </div>
           <button class="modal-close" type="button" data-close-dialog="supervisorModal" aria-label="إغلاق">×</button>
         </div>
@@ -912,15 +939,9 @@
           <label class="field-label" for="studentName">اسم الطالب</label>
           <input id="studentName" name="name" type="text" maxlength="60" autocomplete="name" placeholder="مثال: سارة القحطاني" required />
         </div>
-        <div class="form-row">
-          <div class="field-group">
-            <label class="field-label" for="studentClass">الصف</label>
-            <select id="studentClass" name="className" required></select>
-          </div>
-          <div class="field-group">
-            <label class="field-label" for="studentHalaqa">الحلقة</label>
-            <select id="studentHalaqa" name="halaqa" required></select>
-          </div>
+        <div class="field-group">
+          <label class="field-label" for="studentClass">الصف</label>
+          <select id="studentClass" name="className" required></select>
         </div>
         <div class="field-group">
             <label class="field-label" for="newStudentPin">رمز الدخول</label>
@@ -953,14 +974,14 @@
         <div class="modal-header">
           <div>
             <span class="section-label">جاهز للمشاركة</span>
-            <h2>رابط سؤال اليوم</h2>
+            <h2>رابط السؤال الأسبوعي</h2>
           </div>
           <button class="modal-close" type="button" data-close-dialog="shareModal" aria-label="إغلاق">×</button>
         </div>
         <div class="share-success-icon">
           <svg><use href="#icon-share"></use></svg>
         </div>
-        <p>أرسل هذا الرابط إلى طلابك. سيدخل كل طالب باسمه ورمزه المكوّن من ٤ أرقام.</p>
+        <p>أرسل هذا الرابط إلى طلابك. يدخل كل طالب برمزه المكوّن من ٤ أرقام فقط، ويتذكره جهازه.</p>
         <label class="field-label" for="shareLinkInput">رابط الطلاب</label>
         <div class="copy-field">
           <input id="shareLinkInput" type="text" readonly />
@@ -981,6 +1002,6 @@
       <span id="toastMessage">تم الحفظ بنجاح</span>
     </div>
 
-    <script type="module" src="./app.js?v=9"></script>
+    <script type="module" src="./app.js?v=10"></script>
   </body>
 </html>

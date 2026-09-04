@@ -55,7 +55,7 @@ export function createNetlifyApiHandler({
       return jsonError(
         500,
         "SERVICE_CONFIGURATION_ERROR",
-        "إعداد بَيّنات غير مكتمل. راجع متغيرات بيئة Netlify."
+        "إعداد السؤال الأسبوعي غير مكتمل. راجع متغيرات بيئة Netlify."
       );
     }
 
@@ -103,34 +103,34 @@ export function createNetlifyApiHandler({
         return jsonError(
           500,
           "DATABASE_STATE_INVALID",
-          "حالة بَيّنات المحفوظة غير صالحة. أوقفنا الكتابة لحماية البيانات."
+          "حالة السؤال الأسبوعي المحفوظة غير صالحة. أوقفنا الكتابة لحماية البيانات."
         );
       }
       if (error instanceof DatabaseConfigurationError) {
         return jsonError(
           500,
           "DATABASE_CONFIGURATION_ERROR",
-          "قاعدة بيانات بَيّنات غير مهيأة. تحقّق من ربط Database وتطبيق الترحيلات."
+          "قاعدة بيانات السؤال الأسبوعي غير مهيأة. تحقّق من ربط Database وتطبيق الترحيلات."
         );
       }
       if (error instanceof DatabaseBusyError) {
         return jsonError(
           503,
           "DATABASE_BUSY",
-          "قاعدة بيانات بَيّنات مشغولة الآن. حاول مرة أخرى بعد قليل."
+          "قاعدة بيانات السؤال الأسبوعي مشغولة الآن. حاول مرة أخرى بعد قليل."
         );
       }
       if (error instanceof DatabaseUnavailableError) {
         return jsonError(
           503,
           "DATABASE_UNAVAILABLE",
-          "تعذّر الوصول إلى قاعدة بيانات بَيّنات. حاول مرة أخرى بعد قليل."
+          "تعذّر الوصول إلى قاعدة بيانات السؤال الأسبوعي. حاول مرة أخرى بعد قليل."
         );
       }
       return jsonError(
         500,
         "SERVICE_CONFIGURATION_ERROR",
-        "تعذّر تشغيل خدمة بَيّنات. راجع إعدادات Netlify."
+        "تعذّر تشغيل خدمة السؤال الأسبوعي. راجع إعدادات Netlify."
       );
     } finally {
       if (typeof database?.pool?.end === "function") {

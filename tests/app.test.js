@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   buildLeaderboard,
@@ -30,12 +31,10 @@ test("reuses create idempotency keys until payload change or success", () => {
   const firstPayload = {
     name: "سارة القحطاني",
     className: "أولى ثانوي",
-    halaqa: "زكاء",
     pin: "1234",
   };
   const equivalentPayload = {
     pin: "1234",
-    halaqa: "زكاء",
     className: "أولى ثانوي",
     name: "سارة القحطاني",
   };
@@ -88,7 +87,7 @@ test("persists publish and reset attempts across a failed request and reload", (
   };
   const publishRequest = {
     expectedCurrentQuizId: "quiz-current",
-    question: { type: "boolean", prompt: "هل الأرض كروية؟" },
+    questions: [{ type: "boolean", prompt: "هل الأرض كروية؟" }],
   };
   const resetRequest = {
     quizId: "quiz-current",
@@ -140,7 +139,6 @@ test("rebuilds a failed publish with its persisted expected quiz after reload", 
       id: "student-one",
       name: "سارة القحطاني",
       className: "أولى ثانوي",
-      halaqa: "زكاء",
       pin: "1234",
     },
   ];
@@ -179,14 +177,14 @@ test("rebuilds a failed publish with its persisted expected quiz after reload", 
   );
 });
 
-test("validates student class and halaqa selections and supports PIN-free edits", () => {
+test("validates supervisor-managed student details and supports PIN-free edits", () => {
   const existing = [
-    { id: "one", name: "سارة", className: "أولى ثانوي", halaqa: "زكاء", pin: "4821" },
+    { id: "one", name: "سارة", className: "أولى ثانوي", pin: "4821" },
   ];
 
   assert.deepEqual(
     validateStudentInput(
-      { name: "عمر الحربي", className: "ثاني ثانوي", halaqa: "سواعد", pin: "٧٣٥٠" },
+      { name: "عمر الحربي", className: "ثاني ثانوي", pin: "٧٣٥٠" },
       existing
     ),
     {
@@ -194,28 +192,27 @@ test("validates student class and halaqa selections and supports PIN-free edits"
       value: {
         name: "عمر الحربي",
         className: "ثاني ثانوي",
-        halaqa: "سواعد",
         pin: "7350",
       },
     }
   );
   assert.equal(
     validateStudentInput(
-      { name: "نورة", className: "أولى ثانوي", halaqa: "زكاء", pin: "٤٨٢١" },
+      { name: "نورة", className: "أولى ثانوي", pin: "٤٨٢١" },
       existing
     ).error,
     "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا."
   );
   assert.equal(
     validateStudentInput(
-      { name: "جود", className: "ثالث ثانوي", halaqa: "زكاء", pin: "12" },
+      { name: "جود", className: "ثالث ثانوي", pin: "12" },
       existing
     ).valid,
     false
   );
   assert.equal(
     validateStudentInput(
-      { name: "سارة القحطاني", className: "ثالث ثانوي", halaqa: "سواعد", pin: "" },
+      { name: "سارة القحطاني", className: "ثالث ثانوي", pin: "" },
       existing,
       { pinRequired: false, excludeId: "one" }
     ).valid,
@@ -223,27 +220,25 @@ test("validates student class and halaqa selections and supports PIN-free edits"
   );
   assert.equal(
     validateStudentInput(
-      { name: "نورة", className: "أولى ثانوي", halaqa: "", pin: "1234" },
+      { name: "نورة", className: "", pin: "1234" },
       existing
     ).error,
-    "اختر حلقة الطالب."
+    "اختر صف الطالب."
   );
 });
 
-test("compares short Arabic answers after harmless spelling normalization", () => {
+test("normalizes Arabic text but leaves short answers for manual grading", () => {
   const question = {
     type: "short",
     prompt: "ما عاصمة المملكة؟",
-    correctAnswer: "الرِّياض | مدينة الرياض",
   };
 
   assert.equal(normalizeAnswer("  الرِّياض  "), "الرياض");
-  assert.equal(isAnswerCorrect(question, "الرياض"), true);
-  assert.equal(isAnswerCorrect(question, "مدينة الرِّياض"), true);
+  assert.equal(isAnswerCorrect(question, "الرياض"), false);
   assert.equal(isAnswerCorrect(question, "جدة"), false);
 });
 
-test("validates all supported daily question types", () => {
+test("validates objective questions and accepts manually graded short questions", () => {
   assert.equal(
     validateQuestion({
       type: "multiple",
@@ -276,9 +271,8 @@ test("validates all supported daily question types", () => {
       type: "short",
       prompt: "اكتب عاصمة المملكة",
       options: [],
-      correctAnswer: "",
     }).valid,
-    false
+    true
   );
 });
 
@@ -303,7 +297,7 @@ test("awards accuracy, speed, and podium points transparently", () => {
   });
 });
 
-test("ranks correct students by speed ahead of incorrect attempts", () => {
+test("builds a cumulative leaderboard across questions while pending grades add no points", () => {
   const students = [
     { id: "a", name: "أمل", className: "٢ / أ" },
     { id: "b", name: "بدر", className: "٢ / أ" },
@@ -315,6 +309,7 @@ test("ranks correct students by speed ahead of incorrect attempts", () => {
       studentId: "a",
       questionId: "q1",
       isCorrect: true,
+      gradingStatus: "graded",
       elapsedMs: 2_000,
       submittedAt: "2026-07-30T12:00:00.000Z",
     },
@@ -323,6 +318,7 @@ test("ranks correct students by speed ahead of incorrect attempts", () => {
       studentId: "c",
       questionId: "q1",
       isCorrect: false,
+      gradingStatus: "graded",
       elapsedMs: 300,
       submittedAt: "2026-07-30T12:00:01.000Z",
     },
@@ -331,18 +327,43 @@ test("ranks correct students by speed ahead of incorrect attempts", () => {
       studentId: "b",
       questionId: "q1",
       isCorrect: true,
+      gradingStatus: "graded",
       elapsedMs: 1_000,
       submittedAt: "2026-07-30T12:00:02.000Z",
     },
+    {
+      id: "second-correct",
+      studentId: "a",
+      questionId: "q2",
+      isCorrect: true,
+      gradingStatus: "graded",
+      elapsedMs: 1_000,
+      submittedAt: "2026-07-30T12:01:00.000Z",
+    },
+    {
+      id: "pending-manual",
+      studentId: "b",
+      questionId: "q2",
+      isCorrect: null,
+      gradingStatus: "pending",
+      elapsedMs: 900,
+      submittedAt: "2026-07-30T12:01:01.000Z",
+    },
   ];
 
-  const leaderboard = buildLeaderboard(students, submissions, "q1");
+  const leaderboard = buildLeaderboard(students, submissions);
   assert.deepEqual(
-    leaderboard.map((entry) => [entry.rank, entry.studentId, entry.total]),
+    leaderboard.map((entry) => [
+      entry.rank,
+      entry.student.id,
+      entry.total,
+      entry.answeredCount,
+      entry.pendingCount,
+    ]),
     [
-      [1, "b", 188],
-      [2, "a", 176],
-      [3, "c", 0],
+      [1, "a", 364, 2, 0],
+      [2, "b", 188, 2, 1],
+      [3, "c", 0, 1, 0],
     ]
   );
 });
@@ -363,14 +384,12 @@ function createPopulatedState() {
       id: "student-sarah",
       name: "سارة القحطاني",
       className: "أولى ثانوي",
-      halaqa: "زكاء",
       pin: "4821",
     },
     {
       id: "student-yousef",
       name: "يوسف الدوسري",
       className: "ثاني ثانوي",
-      halaqa: "سواعد",
       pin: "2904",
     },
   ];
@@ -395,9 +414,9 @@ test("creates a Unicode-safe share link payload without exposing raw PIN fields"
   assert.equal(payload.question.prompt, "أيّ كوكب يُعرف بالكوكب الأحمر؟");
   assert.equal(payload.students.every((student) => !Object.hasOwn(student, "pin")), true);
   assert.equal(payload.students.every((student) => Boolean(student.pinHash)), true);
-  assert.deepEqual(
-    [...new Set(payload.students.map((student) => student.halaqa))].sort(),
-    ["زكاء", "سواعد"].sort()
+  assert.equal(
+    payload.students.every((student) => !Object.hasOwn(student, "halaqa")),
+    true
   );
 
   const encoded = encodeSharePayload(payload);
@@ -432,6 +451,46 @@ test("starts with a clean classroom and an unpublished question draft", () => {
   assert.equal(state.participationRecords.length, 0);
   assert.equal(state.currentRound, 1);
   assert.equal(state.expectedCurrentQuizId, null);
+  assert.equal(state.version, 3);
+  assert.equal(state.questions.length, 0);
+  assert.equal(state.leaderboard.length, 0);
   assert.equal(state.currentQuestion.published, false);
   assert.equal(state.currentQuestion.id, "question-draft");
+});
+
+test("ships the Zakaa weekly brand and PIN-only student form", async () => {
+  const [adminHtml, studentHtml, studentScript, buildScript, logo] =
+    await Promise.all([
+    readFile(new URL("../index.html", import.meta.url), "utf8"),
+    readFile(new URL("../student.html", import.meta.url), "utf8"),
+    readFile(new URL("../student.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/build-netlify.js", import.meta.url), "utf8"),
+    readFile(new URL("../zakaa-logo.jpg", import.meta.url)),
+    ]);
+
+  assert.match(adminHtml, /<title>السؤال الأسبوعي لفريق زكاء<\/title>/);
+  assert.match(studentHtml, /<title>السؤال الأسبوعي لفريق زكاء<\/title>/);
+  assert.match(adminHtml, /src="\.\/zakaa-logo\.jpg"/);
+  assert.match(studentHtml, /src="\.\/zakaa-logo\.jpg"/);
+  assert.match(buildScript, /"zakaa-logo\.jpg"/);
+  assert.ok(logo.length > 10_000);
+  assert.doesNotMatch(adminHtml, /studentHalaqa|name="halaqa"|سواعد/);
+  assert.doesNotMatch(
+    studentHtml,
+    /studentFullName|studentClassName|studentHalaqa|name="halaqa"|سواعد/
+  );
+  assert.equal(
+    (studentHtml.match(/<input\b/g) || []).length,
+    1,
+    "The student access page should expose only its PIN input."
+  );
+  assert.match(studentScript, /"X-Start-Question": "1"/);
+  assert.ok(
+    (
+      studentScript.match(
+        /requestStudentSession\(\{ startQuestion: true \}\)/g
+      ) || []
+    ).length >= 2,
+    "Resumed and subsequent questions should start server-side timing when shown."
+  );
 });

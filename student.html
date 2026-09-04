@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="بوابة الطالب لسؤال اليوم في بَيّنات." />
+    <meta name="description" content="بوابة الطالب في السؤال الأسبوعي لفريق زكاء." />
     <meta name="theme-color" content="#f8f8fd" />
-    <title>بَيّنات | بوابة الطالب</title>
-    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <title>السؤال الأسبوعي لفريق زكاء</title>
+    <link rel="icon" type="image/jpeg" href="./zakaa-logo.jpg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Kufi+Arabic:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=6" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
   </head>
   <body class="student-mode">
     <svg class="icon-sprite" aria-hidden="true">
@@ -42,33 +42,41 @@
     <div class="student-app">
       <header class="student-header">
         <div class="brand">
-          <img src="./logo.svg" alt="" />
+          <img src="./zakaa-logo.jpg" alt="شعار فريق زكاء" />
           <div>
-            <strong>بَيّنات</strong>
-            <span>سؤال اليوم</span>
+            <strong>السؤال الأسبوعي</strong>
+            <span>لفريق زكاء</span>
           </div>
         </div>
-        <span class="student-portal-badge">
+        <button class="student-portal-badge" id="forgetStudentButton" type="button" hidden>
           <svg><use href="#icon-link"></use></svg>
-          رابط الطالب
-        </span>
+          تغيير الطالب / نسيان هذا الجهاز
+        </button>
       </header>
 
       <main class="student-main">
-        <section class="student-screen access-screen active" id="loadingScreen">
+        <section
+          class="student-screen access-screen active"
+          id="loadingScreen"
+          aria-labelledby="loadingTitle"
+        >
           <div class="student-card access-card student-state-card">
             <span class="state-spinner" aria-hidden="true"></span>
-            <span class="student-kicker">بَيّنات</span>
-            <h1>نجهّز سؤال اليوم...</h1>
-            <p>لحظات ويظهر لك التحدّي.</p>
+            <span class="student-kicker">السؤال الأسبوعي لفريق زكاء</span>
+            <h1 id="loadingTitle">نجهّز أسئلتك...</h1>
+            <p>لحظات وتظهر لك الأسئلة المتاحة.</p>
           </div>
         </section>
 
-        <section class="student-screen access-screen" id="errorScreen">
+        <section
+          class="student-screen access-screen"
+          id="errorScreen"
+          aria-labelledby="errorTitle"
+        >
           <div class="student-card access-card student-state-card">
-            <span class="state-symbol state-symbol-error">!</span>
-            <span class="student-kicker">تعذّر فتح السؤال</span>
-            <h1 id="errorTitle">رابط السؤال غير صالح</h1>
+            <span class="state-symbol state-symbol-error" aria-hidden="true">!</span>
+            <span class="student-kicker">السؤال الأسبوعي لفريق زكاء</span>
+            <h1 id="errorTitle">رابط السؤال الأسبوعي غير صالح</h1>
             <p id="errorMessage">اطلب من المشرف إرسال رابط جديد، ثم حاول مرة أخرى.</p>
             <button class="button button-secondary button-wide" id="retryButton" type="button">
               المحاولة مرة أخرى
@@ -76,43 +84,23 @@
           </div>
         </section>
 
-        <section class="student-screen access-screen" id="studentAccessScreen">
+        <section
+          class="student-screen access-screen"
+          id="studentAccessScreen"
+          aria-labelledby="accessTitle"
+        >
           <div class="access-decoration" aria-hidden="true">
             <span>؟</span><i></i><b>✦</b>
           </div>
           <div class="student-card access-card">
-            <span class="student-kicker">مرحبًا بك 👋</span>
-            <h1>جاهز لسؤال اليوم؟</h1>
-            <p>اكتب اسمك، ثم اختر صفك وحلقتك وأدخل رمزك المكوّن من ٤ أرقام.</p>
+            <span class="student-kicker">السؤال الأسبوعي لفريق زكاء</span>
+            <h1 id="accessTitle">أدخل رمزك للبدء</h1>
+            <p>استخدم رمز الطالب المكوّن من ٤ أرقام. سيتعرّف النظام على بياناتك تلقائيًا.</p>
             <div class="question-ready-chip">
               <span></span>
-              <b id="accessQuestionType">سؤال اليوم متاح</b>
+              <b id="accessQuestionType">الأسئلة الأسبوعية متاحة</b>
             </div>
             <form id="studentAccessForm" novalidate>
-              <label for="studentFullName">اسم الطالب</label>
-              <input
-                id="studentFullName"
-                name="studentName"
-                type="text"
-                maxlength="60"
-                autocomplete="name"
-                placeholder="مثال: سارة القحطاني"
-                aria-describedby="pinError"
-              />
-              <div class="student-access-selects">
-                <div>
-                  <label for="studentClassName">الصف</label>
-                  <select id="studentClassName" name="studentClassName" aria-describedby="pinError">
-                    <option value="">اختر الصف</option>
-                  </select>
-                </div>
-                <div>
-                  <label for="studentHalaqa">الحلقة</label>
-                  <select id="studentHalaqa" name="studentHalaqa" aria-describedby="pinError">
-                    <option value="">اختر الحلقة</option>
-                  </select>
-                </div>
-              </div>
               <label for="studentPin">رمز الدخول</label>
               <input
                 id="studentPin"
@@ -127,19 +115,23 @@
               />
               <p class="form-error" id="pinError" role="alert"></p>
               <button class="button button-primary button-wide" id="startChallengeButton" type="submit">
-                ابدأ التحدّي
+                الدخول إلى الأسئلة
                 <svg><use href="#icon-arrow"></use></svg>
               </button>
             </form>
           </div>
-          <div class="access-features" aria-label="مميزات التحدي">
-            <span>⚡ نقاط للسرعة</span>
-            <span>🏆 ترتيب مشترك</span>
-            <span>🎯 محاولة واحدة</span>
+          <div class="access-features" aria-label="مميزات السؤال الأسبوعي">
+            <span>🧭 أسئلة مرتّبة</span>
+            <span>🏆 نقاط تراكمية</span>
+            <span>🎯 محاولة واحدة لكل سؤال</span>
           </div>
         </section>
 
-        <section class="student-screen quiz-screen" id="studentQuizScreen">
+        <section
+          class="student-screen quiz-screen"
+          id="studentQuizScreen"
+          aria-labelledby="studentQuestionPrompt"
+        >
           <div class="quiz-topline">
             <div>
               <span class="student-kicker" id="studentGreeting">أهلًا</span>
@@ -150,11 +142,22 @@
               <span id="studentTimer">٠٠:٠٠٫٠</span>
             </div>
           </div>
-          <div class="quiz-progress"><i></i><span>سؤال واحد</span></div>
+          <div
+            class="quiz-progress"
+            id="quizProgress"
+            role="progressbar"
+            aria-label="تقدّم الإجابة"
+            aria-valuemin="0"
+            aria-valuemax="1"
+            aria-valuenow="0"
+          >
+            <i id="quizProgressBar"></i>
+            <span id="quizProgressText">لم تتم الإجابة بعد</span>
+          </div>
           <form class="student-card quiz-card" id="studentAnswerForm">
             <div class="quiz-question-meta">
               <span id="studentQuestionType">اختيار متعدد</span>
-              <span>١ من ١</span>
+              <span id="studentQuestionPosition">السؤال ١ من ١</span>
             </div>
             <h1 id="studentQuestionPrompt">—</h1>
             <div class="student-answer-editor" id="studentAnswerEditor"></div>
@@ -164,20 +167,24 @@
               <svg><use href="#icon-arrow"></use></svg>
             </button>
           </form>
-          <p class="single-attempt-note">لا تتسرّع كثيرًا — الدقّة أولًا ثم السرعة ✦</p>
+          <p class="single-attempt-note">يمكن إرسال إجابة واحدة فقط لكل سؤال — الدقّة أولًا ✦</p>
         </section>
 
-        <section class="student-screen result-screen" id="studentResultScreen">
+        <section
+          class="student-screen result-screen"
+          id="studentResultScreen"
+          aria-labelledby="resultTitle"
+        >
           <div class="result-hero">
-            <div class="confetti" aria-hidden="true">
+            <div class="confetti" id="resultConfetti" aria-hidden="true">
               <i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
             <div class="result-icon" id="resultIcon">
               <svg><use href="#icon-check"></use></svg>
             </div>
-            <span class="student-kicker" id="resultKicker">إجابة صحيحة!</span>
-            <h1 id="resultTitle">أبدعت!</h1>
-            <p id="resultMessage">سرعتك رفعتك إلى مقدمة المتصدرين.</p>
+            <span class="student-kicker" id="resultKicker" aria-live="polite">تم استلام الإجابة</span>
+            <h1 id="resultTitle">أحسنت!</h1>
+            <p id="resultMessage">تم تحديث تقدّمك ونقاطك.</p>
           </div>
 
           <div class="result-layout">
@@ -193,6 +200,8 @@
                 <div><span>صحة الإجابة</span><b id="accuracyPoints">+١٠٠</b></div>
                 <div><span>سرعة الحل</span><b id="speedPoints">+٦٠</b></div>
                 <div><span>مكافأة الترتيب</span><b id="placePoints">+٣٠</b></div>
+                <div><span>التقدّم</span><b id="resultProgress">٠ من ٠</b></div>
+                <div><span>بانتظار التصحيح</span><b id="pendingCount">٠</b></div>
               </div>
             </article>
 
@@ -200,7 +209,7 @@
               <div class="panel-heading">
                 <div>
                   <span class="section-label">لوحة المتصدرين</span>
-                  <h3>أبطال سؤال اليوم</h3>
+                  <h3>متصدرو السؤال الأسبوعي</h3>
                 </div>
                 <span class="updating-badge"><i></i> تتحدّث للجميع</span>
               </div>
@@ -209,8 +218,12 @@
           </div>
 
           <div class="result-actions">
+            <button class="button button-primary" id="nextQuestionButton" type="button" hidden>
+              السؤال التالي
+              <svg><use href="#icon-arrow"></use></svg>
+            </button>
             <button class="button button-secondary" id="refreshLeaderboard" type="button">
-              تحديث المتصدرين
+              تحديث النتائج
             </button>
           </div>
         </section>
@@ -222,6 +235,6 @@
       <span id="toastMessage">تم تحديث الترتيب</span>
     </div>
 
-    <script type="module" src="./student.js?v=6"></script>
+    <script type="module" src="./student.js?v=8"></script>
   </body>
 </html>

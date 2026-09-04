@@ -17,13 +17,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   DEFAULT_CLASS_OPTIONS,
-  DEFAULT_HALAQA_OPTIONS,
-  buildLeaderboard,
-  isAnswerCorrect,
   normalizeAnswer,
   normalizeDigits,
-  validateQuestion,
-  validateStudentInput,
 } from "./app.js";
 
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -34,14 +29,17 @@ const MAX_SUPERVISORS = 20;
 const ACCESS_WINDOW_MS = 10 * 60 * 1000;
 const SUPERVISOR_SESSION_MS = 12 * 60 * 60 * 1000;
 const SUPERVISOR_ATTEMPTS_LIMIT = 10;
+const STUDENT_ATTEMPTS_LIMIT = 30;
 const ACCESS_CHALLENGE_MS = 2 * 60 * 1000;
 const MAX_RATE_LIMIT_KEYS = 2_000;
 const MAX_CONSUMED_PROOFS = 10_000;
 const MAX_RESET_REQUESTS = 32;
+const MAX_QUESTIONS = 100;
 const QUIZ_RETENTION_MS = 31 * 24 * 60 * 60 * 1000;
 const QUIZ_CREATION_WINDOW_MS = 60 * 60 * 1000;
 const QUIZ_CREATION_IP_LIMIT = 5;
 const QUIZ_CREATION_GLOBAL_LIMIT = 30;
+const PLACE_BONUSES = [30, 20, 10];
 const PUBLIC_FILES = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
@@ -50,7 +48,7 @@ const PUBLIC_FILES = new Map([
   ["/student.js", "student.js"],
   ["/pow-worker.js", "pow-worker.js"],
   ["/styles.css", "styles.css"],
-  ["/logo.svg", "logo.svg"],
+  ["/zakaa-logo.jpg", "zakaa-logo.jpg"],
 ]);
 
 const MIME_TYPES = {
@@ -58,6 +56,8 @@ const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
   ".png": "image/png",
@@ -79,14 +79,21 @@ function isRecord(value) {
 function createSecurityState() {
   return {
     supervisorAttempts: {},
+    studentAttempts: {},
     quizCreations: { byIp: {}, global: [] },
   };
 }
 
 function validateSecurityState(security) {
+  let migrated = false;
+  if (isRecord(security) && !Object.hasOwn(security, "studentAttempts")) {
+    security.studentAttempts = {};
+    migrated = true;
+  }
   if (
     !isRecord(security) ||
     !isRecord(security.supervisorAttempts) ||
+    !isRecord(security.studentAttempts) ||
     !isRecord(security.quizCreations) ||
     !isRecord(security.quizCreations.byIp) ||
     !Array.isArray(security.quizCreations.global)
@@ -95,12 +102,12 @@ function validateSecurityState(security) {
   }
   if (
     Object.keys(security.supervisorAttempts).length > MAX_RATE_LIMIT_KEYS ||
+    Object.keys(security.studentAttempts).length > MAX_RATE_LIMIT_KEYS ||
     Object.keys(security.quizCreations.byIp).length > MAX_RATE_LIMIT_KEYS
   ) {
     throw new Error("سجل حماية الطلبات في ملف بَيّنات أكبر من الحد المسموح.");
   }
 
-  let migrated = false;
   const now = Date.now();
   for (const [key, state] of Object.entries(security.supervisorAttempts)) {
     if (
@@ -135,6 +142,46 @@ function validateSecurityState(security) {
     }
     if (!failures.length && !Object.keys(reservations).length) {
       delete security.supervisorAttempts[key];
+      migrated = true;
+    } else {
+      state.failures = failures;
+      state.reservations = reservations;
+    }
+  }
+
+  for (const [key, state] of Object.entries(security.studentAttempts)) {
+    if (
+      !/^[a-f0-9]{64}$/.test(key) ||
+      !isRecord(state) ||
+      !Array.isArray(state.failures) ||
+      !isRecord(state.reservations) ||
+      state.failures.length > STUDENT_ATTEMPTS_LIMIT ||
+      Object.keys(state.reservations).length > STUDENT_ATTEMPTS_LIMIT ||
+      !state.failures.every(Number.isFinite) ||
+      !Object.entries(state.reservations).every(
+        ([reservationId, timestamp]) =>
+          /^[A-Za-z0-9_-]{8,80}$/.test(reservationId) &&
+          Number.isFinite(timestamp)
+      )
+    ) {
+      throw new Error("سجل حماية دخول الطلاب في ملف البيانات غير صالح.");
+    }
+    const failures = state.failures.filter(
+      (timestamp) => now - timestamp < ACCESS_WINDOW_MS
+    );
+    const reservations = Object.fromEntries(
+      Object.entries(state.reservations).filter(
+        ([, timestamp]) => now - timestamp < ACCESS_WINDOW_MS
+      )
+    );
+    if (
+      failures.length !== state.failures.length ||
+      Object.keys(reservations).length !== Object.keys(state.reservations).length
+    ) {
+      migrated = true;
+    }
+    if (!failures.length && !Object.keys(reservations).length) {
+      delete security.studentAttempts[key];
       migrated = true;
     } else {
       state.failures = failures;
@@ -178,10 +225,207 @@ function validateSecurityState(security) {
   return migrated;
 }
 
+function validateQuestionContract(question) {
+  if (!isRecord(question) || String(question.prompt || "").trim().length < 5) {
+    return { valid: false, error: "اكتب سؤالًا واضحًا لا يقل عن ٥ أحرف." };
+  }
+  if (!["multiple", "boolean", "short"].includes(question.type)) {
+    return { valid: false, error: "اختر نوعًا صحيحًا للسؤال." };
+  }
+  const options = Array.isArray(question.options)
+    ? question.options.map((option) => String(option).trim()).filter(Boolean)
+    : [];
+  if (question.type === "short") return { valid: true };
+  const correctAnswer = String(question.correctAnswer || "").trim();
+  if (!correctAnswer) {
+    return { valid: false, error: "حدّد الإجابة الصحيحة قبل الحفظ." };
+  }
+  if (question.type === "multiple") {
+    if (options.length < 2) {
+      return { valid: false, error: "أضف خيارين على الأقل." };
+    }
+    if (new Set(options.map(normalizeAnswer)).size !== options.length) {
+      return { valid: false, error: "لا يمكن تكرار الخيار نفسه أكثر من مرة." };
+    }
+    if (
+      !options.some(
+        (option) => normalizeAnswer(option) === normalizeAnswer(correctAnswer)
+      )
+    ) {
+      return { valid: false, error: "حدّد الإجابة الصحيحة من الخيارات." };
+    }
+  }
+  if (
+    question.type === "boolean" &&
+    !["صح", "خطأ"].some(
+      (option) => normalizeAnswer(option) === normalizeAnswer(correctAnswer)
+    )
+  ) {
+    return { valid: false, error: "حدّد صح أو خطأ بوصفها الإجابة الصحيحة." };
+  }
+  return { valid: true };
+}
+
+function isValidCreationRequest(request) {
+  return (
+    isRecord(request) &&
+    typeof request.keyHash === "string" &&
+    request.keyHash.length > 0 &&
+    typeof request.requestHash === "string" &&
+    request.requestHash.length > 0
+  );
+}
+
+function questionStartKey(round, studentId, questionId) {
+  return `${round}:${studentId}:${questionId}`;
+}
+
+function isStoredQuestion(question) {
+  return (
+    isRecord(question) &&
+    typeof question.id === "string" &&
+    /^[A-Za-z0-9_-]{3,100}$/.test(question.id) &&
+    validateQuestionContract(question).valid &&
+    Array.isArray(question.options) &&
+    Number.isFinite(new Date(question.createdAt).getTime()) &&
+    (question.creationRequest === undefined ||
+      isValidCreationRequest(question.creationRequest)) &&
+    (question.type !== "short" || !Object.hasOwn(question, "correctAnswer"))
+  );
+}
+
+function isStoredStudent(student) {
+  return (
+    isRecord(student) &&
+    typeof student.id === "string" &&
+    /^[A-Za-z0-9_-]{3,80}$/.test(student.id) &&
+    typeof student.name === "string" &&
+    student.name.trim().length >= 2 &&
+    typeof student.className === "string" &&
+    Boolean(student.className.trim()) &&
+    !Object.hasOwn(student, "halaqa") &&
+    Number.isInteger(student.revision) &&
+    student.revision >= 1 &&
+    typeof student.identityLookup === "string" &&
+    (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
+    typeof student.pinSalt === "string" &&
+    typeof student.pinHash === "string" &&
+    (student.creationRequest === undefined ||
+      isValidCreationRequest(student.creationRequest))
+  );
+}
+
+function isValidGradeHistory(history) {
+  return (
+    Array.isArray(history) &&
+    history.every(
+      (entry) =>
+        isRecord(entry) &&
+        Number.isInteger(entry.gradeRevision) &&
+        entry.gradeRevision >= 1 &&
+        typeof entry.isCorrect === "boolean" &&
+        typeof entry.gradedBy === "string" &&
+        entry.gradedBy.length > 0 &&
+        Number.isFinite(new Date(entry.gradedAt).getTime()) &&
+        (entry.creationRequest === undefined ||
+          isValidCreationRequest(entry.creationRequest))
+    )
+  );
+}
+
+function migrateGradingRecord(record, question, defaultRound) {
+  let migrated = false;
+  if (!Number.isInteger(record.round) || record.round < 1) {
+    record.round = defaultRound;
+    migrated = true;
+  }
+  if (!Array.isArray(record.gradeHistory)) {
+    record.gradeHistory = [];
+    migrated = true;
+  }
+  const legacyGrade = typeof record.isCorrect === "boolean";
+  const shouldBeGraded =
+    question.type !== "short" ||
+    record.gradingStatus === "graded" ||
+    legacyGrade;
+  const expectedStatus = shouldBeGraded ? "graded" : "pending";
+  if (record.gradingStatus !== expectedStatus) {
+    record.gradingStatus = expectedStatus;
+    migrated = true;
+  }
+  if (shouldBeGraded) {
+    if (typeof record.gradedBy !== "string" || !record.gradedBy) {
+      record.gradedBy = question.type === "short" ? "legacy" : "automatic";
+      migrated = true;
+    }
+    if (!Number.isFinite(new Date(record.gradedAt).getTime())) {
+      record.gradedAt = record.submittedAt;
+      migrated = true;
+    }
+    if (!Number.isInteger(record.gradeRevision) || record.gradeRevision < 1) {
+      record.gradeRevision = 1;
+      migrated = true;
+    }
+  } else {
+    if (record.isCorrect !== null) {
+      record.isCorrect = null;
+      migrated = true;
+    }
+    if (record.gradedBy !== null) {
+      record.gradedBy = null;
+      migrated = true;
+    }
+    if (record.gradedAt !== null) {
+      record.gradedAt = null;
+      migrated = true;
+    }
+    if (record.gradeRevision !== 0) {
+      record.gradeRevision = 0;
+      migrated = true;
+    }
+  }
+  return migrated;
+}
+
+function isStoredSubmission(record, questions, { activeRound = null } = {}) {
+  const question = questions.find((item) => item.id === record?.questionId);
+  const validGrade =
+    record?.gradingStatus === "pending"
+      ? question?.type === "short" &&
+        record.isCorrect === null &&
+        record.gradedBy === null &&
+        record.gradedAt === null &&
+        record.gradeRevision === 0
+      : record?.gradingStatus === "graded" &&
+        typeof record.isCorrect === "boolean" &&
+        typeof record.gradedBy === "string" &&
+        record.gradedBy.length > 0 &&
+        Number.isFinite(new Date(record.gradedAt).getTime()) &&
+        Number.isInteger(record.gradeRevision) &&
+        record.gradeRevision >= 1;
+  return (
+    isRecord(record) &&
+    typeof record.id === "string" &&
+    typeof record.studentId === "string" &&
+    Boolean(question) &&
+    typeof record.answer === "string" &&
+    record.answer.length > 0 &&
+    record.answer.length <= 500 &&
+    Number.isFinite(record.elapsedMs) &&
+    record.elapsedMs >= 0 &&
+    Number.isFinite(new Date(record.submittedAt).getTime()) &&
+    Number.isInteger(record.round) &&
+    record.round >= 1 &&
+    (activeRound === null || record.round === activeRound) &&
+    validGrade &&
+    isValidGradeHistory(record.gradeHistory)
+  );
+}
+
 export function validateStoredData(parsed, initialSetupKey) {
   const storedVersion = parsed?.version;
   if (
-    ![1, 2].includes(storedVersion) ||
+    ![1, 2, 3].includes(storedVersion) ||
     typeof parsed.secret !== "string" ||
     parsed.secret.length < 20 ||
     !isRecord(parsed.quizzes)
@@ -190,41 +434,18 @@ export function validateStoredData(parsed, initialSetupKey) {
   }
 
   let migrated = false;
-  const migrateStudent = (student) => {
-    if (
-      !isRecord(student) ||
-      typeof student.name !== "string" ||
-      typeof student.className !== "string"
-    ) {
-      return;
-    }
-    if (typeof student.halaqa !== "string" || !student.halaqa.trim()) {
-      student.halaqa = "غير محدد";
-      migrated = true;
-    }
-    if (!Number.isInteger(student.revision) || student.revision < 1) {
-      student.revision = 1;
-      migrated = true;
-    }
-    const expectedIdentityLookup = studentIdentityLookup(
-      parsed.secret,
-      student.name,
-      student.className,
-      student.halaqa
-    );
-    if (student.identityLookup !== expectedIdentityLookup) {
-      student.identityLookup = expectedIdentityLookup;
-      migrated = true;
-    }
-  };
   const validSupervisorCredential = (credential) =>
     isRecord(credential) &&
     typeof credential.salt === "string" &&
     typeof credential.hash === "string" &&
     Number.isFinite(new Date(credential.createdAt).getTime());
+
   if (storedVersion === 1) {
     const legacyCredential = parsed.adminCredential ?? null;
-    if (legacyCredential !== null && !validSupervisorCredential(legacyCredential)) {
+    if (
+      legacyCredential !== null &&
+      !validSupervisorCredential(legacyCredential)
+    ) {
       throw new Error("بيانات دخول المشرف في ملف بَيّنات غير صالحة.");
     }
     parsed.supervisors = legacyCredential
@@ -246,6 +467,7 @@ export function validateStoredData(parsed, initialSetupKey) {
     delete parsed.adminCredential;
     migrated = true;
   }
+
   const validSupervisors =
     parsed.supervisors.length <= MAX_SUPERVISORS &&
     parsed.supervisors.every(
@@ -261,11 +483,14 @@ export function validateStoredData(parsed, initialSetupKey) {
     new Set(parsed.supervisors.map((supervisor) => supervisor.id)).size ===
       parsed.supervisors.length &&
     new Set(
-      parsed.supervisors.map((supervisor) => normalizeAnswer(supervisor.displayName))
+      parsed.supervisors.map((supervisor) =>
+        normalizeAnswer(supervisor.displayName)
+      )
     ).size === parsed.supervisors.length;
   if (!validSupervisors) {
     throw new Error("قائمة المشرفين في ملف بَيّنات غير صالحة.");
   }
+
   if (parsed.supervisors.length > 0) {
     if (parsed.setupKey !== null) {
       parsed.setupKey = null;
@@ -275,10 +500,10 @@ export function validateStoredData(parsed, initialSetupKey) {
     parsed.setupKey = initialSetupKey;
     migrated = true;
   } else if (typeof parsed.setupKey !== "string" || parsed.setupKey.length < 8) {
-    parsed.setupKey =
-      initialSetupKey || randomBytes(9).toString("base64url");
+    parsed.setupKey = initialSetupKey || randomBytes(9).toString("base64url");
     migrated = true;
   }
+
   if (!isRecord(parsed.consumedProofs)) {
     parsed.consumedProofs = {};
     migrated = true;
@@ -303,184 +528,249 @@ export function validateStoredData(parsed, initialSetupKey) {
   } else if (validateSecurityState(parsed.security)) {
     migrated = true;
   }
+
+  const migrateStudent = (student) => {
+    if (
+      !isRecord(student) ||
+      typeof student.name !== "string" ||
+      typeof student.className !== "string"
+    ) {
+      return;
+    }
+    if (Object.hasOwn(student, "halaqa")) {
+      delete student.halaqa;
+      migrated = true;
+    }
+    if (!Number.isInteger(student.revision) || student.revision < 1) {
+      student.revision = 1;
+      migrated = true;
+    }
+    const expectedIdentityLookup = studentIdentityLookup(
+      parsed.secret,
+      student.name,
+      student.className
+    );
+    if (student.identityLookup !== expectedIdentityLookup) {
+      student.identityLookup = expectedIdentityLookup;
+      migrated = true;
+    }
+  };
+
   let latestQuizRoster = [];
   let latestQuizTime = -Infinity;
   for (const [quizId, quiz] of Object.entries(parsed.quizzes)) {
-    const validQuiz =
-      isRecord(quiz) &&
-      quiz.id === quizId &&
-      validateQuestion(quiz.question).valid &&
-      Array.isArray(quiz.students) &&
-      Array.isArray(quiz.submissions) &&
-      isRecord(quiz.sessions) &&
-      typeof quiz.adminTokenHash === "string" &&
-      Number.isFinite(new Date(quiz.createdAt).getTime());
-    if (validQuiz) {
-      for (const student of quiz.students) {
-        migrateStudent(student);
-      }
-      if (!isRecord(quiz.starts)) {
-        quiz.starts = {};
+    if (!isRecord(quiz) || quiz.id !== quizId) {
+      throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
+    }
+    if (!Array.isArray(quiz.questions) && isRecord(quiz.question)) {
+      quiz.questions = [quiz.question];
+      delete quiz.question;
+      migrated = true;
+    } else if (Object.hasOwn(quiz, "question")) {
+      delete quiz.question;
+      migrated = true;
+    }
+    if (
+      !Array.isArray(quiz.questions) ||
+      quiz.questions.length === 0 ||
+      quiz.questions.length > MAX_QUESTIONS
+    ) {
+      throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
+    }
+    for (const question of quiz.questions) {
+      if (
+        question?.type === "short" &&
+        Object.hasOwn(question, "correctAnswer")
+      ) {
+        delete question.correctAnswer;
         migrated = true;
-      }
-      if (!isRecord(quiz.participants)) {
-        quiz.participants = {};
-        for (const [studentId, startedAt] of Object.entries(quiz.starts)) {
-          const startedTime = Number(startedAt);
-          if (Number.isFinite(startedTime)) {
-            const timestamp = new Date(startedTime).toISOString();
-            quiz.participants[studentId] = {
-              studentId,
-              firstAccessedAt: timestamp,
-              lastAccessedAt: timestamp,
-              sessionCount: 1,
-            };
-          }
-        }
-        for (const submission of quiz.submissions) {
-          if (!quiz.participants[submission.studentId]) {
-            quiz.participants[submission.studentId] = {
-              studentId: submission.studentId,
-              firstAccessedAt: submission.submittedAt,
-              lastAccessedAt: submission.submittedAt,
-              sessionCount: 1,
-            };
-          }
-        }
-        migrated = true;
-      }
-      if (!Number.isInteger(quiz.round) || quiz.round < 1) {
-        quiz.round = 1;
-        migrated = true;
-      }
-      for (const session of Object.values(quiz.sessions)) {
-        const sessionStudent = quiz.students.find(
-          (student) => student.id === session?.studentId
-        );
-        if (
-          sessionStudent &&
-          (!Number.isInteger(session.studentRevision) ||
-            session.studentRevision < 1)
-        ) {
-          session.studentRevision = sessionStudent.revision;
-          migrated = true;
-        }
-        if (!Number.isInteger(session.round) || session.round < 1) {
-          session.round = quiz.round;
-          migrated = true;
-        }
-      }
-      if (!Array.isArray(quiz.answerRecords)) {
-        quiz.answerRecords = quiz.submissions.map((submission) => ({
-          ...structuredClone(submission),
-          round: 1,
-        }));
-        migrated = true;
-      }
-      if (!Array.isArray(quiz.participationRecords)) {
-        quiz.participationRecords = Object.values(quiz.participants).map(
-          (participant) => ({
-            studentId: participant.studentId,
-            accessedAt: participant.firstAccessedAt,
-            round: 1,
-          })
-        );
-        migrated = true;
-      }
-      if (!Array.isArray(quiz.resetRequests)) {
-        quiz.resetRequests = [];
-        migrated = true;
-      }
-      const quizTime = new Date(quiz.updatedAt || quiz.createdAt).getTime();
-      if (Number.isFinite(quizTime) && quizTime >= latestQuizTime) {
-        latestQuizTime = quizTime;
-        latestQuizRoster = structuredClone(quiz.students);
       }
     }
+    if (
+      !quiz.questions.every(isStoredQuestion) ||
+      new Set(quiz.questions.map((question) => question.id)).size !==
+        quiz.questions.length ||
+      !Array.isArray(quiz.students) ||
+      !Array.isArray(quiz.submissions) ||
+      !isRecord(quiz.sessions) ||
+      typeof quiz.adminTokenHash !== "string" ||
+      !Number.isFinite(new Date(quiz.createdAt).getTime())
+    ) {
+      throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
+    }
+
+    for (const student of quiz.students) migrateStudent(student);
+    if (!Number.isInteger(quiz.round) || quiz.round < 1) {
+      quiz.round = 1;
+      migrated = true;
+    }
+    if (!isRecord(quiz.starts)) {
+      quiz.starts = {};
+      migrated = true;
+    }
+    if (!isRecord(quiz.participants)) {
+      quiz.participants = {};
+      for (const [studentId, startedAt] of Object.entries(quiz.starts)) {
+        if (
+          quiz.students.some((student) => student.id === studentId) &&
+          Number.isFinite(Number(startedAt))
+        ) {
+          const timestamp = new Date(Number(startedAt)).toISOString();
+          quiz.participants[studentId] = {
+            studentId,
+            firstAccessedAt: timestamp,
+            lastAccessedAt: timestamp,
+            sessionCount: 1,
+          };
+        }
+      }
+      for (const submission of quiz.submissions) {
+        if (!quiz.participants[submission.studentId]) {
+          quiz.participants[submission.studentId] = {
+            studentId: submission.studentId,
+            firstAccessedAt: submission.submittedAt,
+            lastAccessedAt: submission.submittedAt,
+            sessionCount: 1,
+          };
+        }
+      }
+      migrated = true;
+    }
+
+    const migratedStarts = {};
+    for (const [key, startedAt] of Object.entries(quiz.starts)) {
+      const legacyStudent = quiz.students.find((student) => student.id === key);
+      const nextKey = legacyStudent
+        ? questionStartKey(quiz.round, legacyStudent.id, quiz.questions[0].id)
+        : key;
+      migratedStarts[nextKey] = startedAt;
+      if (nextKey !== key) migrated = true;
+    }
+    quiz.starts = migratedStarts;
+
+    for (const session of Object.values(quiz.sessions)) {
+      const sessionStudent = quiz.students.find(
+        (student) => student.id === session?.studentId
+      );
+      if (
+        sessionStudent &&
+        (!Number.isInteger(session.studentRevision) ||
+          session.studentRevision < 1)
+      ) {
+        session.studentRevision = sessionStudent.revision;
+        migrated = true;
+      }
+      if (!Number.isInteger(session.round) || session.round < 1) {
+        session.round = quiz.round;
+        migrated = true;
+      }
+    }
+
+    for (const submission of quiz.submissions) {
+      if (
+        !submission.questionId &&
+        quiz.questions.length === 1
+      ) {
+        submission.questionId = quiz.questions[0].id;
+        migrated = true;
+      }
+      const question = quiz.questions.find(
+        (item) => item.id === submission.questionId
+      );
+      if (question && migrateGradingRecord(submission, question, quiz.round)) {
+        migrated = true;
+      }
+    }
+    if (!Array.isArray(quiz.answerRecords)) {
+      quiz.answerRecords = quiz.submissions.map((submission) => ({
+        ...structuredClone(submission),
+        round: 1,
+      }));
+      migrated = true;
+    }
+    for (const record of quiz.answerRecords) {
+      if (!record.questionId && quiz.questions.length === 1) {
+        record.questionId = quiz.questions[0].id;
+        migrated = true;
+      }
+      const question = quiz.questions.find(
+        (item) => item.id === record.questionId
+      );
+      if (question && migrateGradingRecord(record, question, 1)) {
+        migrated = true;
+      }
+    }
+    if (!Array.isArray(quiz.participationRecords)) {
+      quiz.participationRecords = Object.values(quiz.participants).map(
+        (participant) => ({
+          studentId: participant.studentId,
+          accessedAt: participant.firstAccessedAt,
+          round: 1,
+        })
+      );
+      migrated = true;
+    }
+    if (!Array.isArray(quiz.resetRequests)) {
+      quiz.resetRequests = [];
+      migrated = true;
+    }
+
     const validStudents =
-      validQuiz &&
-      quiz.students.every(
-        (student) =>
-          typeof student?.id === "string" &&
-          typeof student.name === "string" &&
-          typeof student.className === "string" &&
-          typeof student.halaqa === "string" &&
-          Number.isInteger(student.revision) &&
-          student.revision >= 1 &&
-          typeof student.identityLookup === "string" &&
-          (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
-          typeof student.pinSalt === "string" &&
-          typeof student.pinHash === "string"
-      );
+      quiz.students.length <= MAX_STUDENTS &&
+      quiz.students.every(isStoredStudent) &&
+      new Set(quiz.students.map((student) => student.id)).size ===
+        quiz.students.length;
     const validSubmissions =
-      validQuiz &&
-      quiz.submissions.every(
-        (submission) =>
-          typeof submission?.id === "string" &&
-          typeof submission.studentId === "string" &&
-          submission.questionId === quiz.question.id &&
-          typeof submission.answer === "string" &&
-          typeof submission.isCorrect === "boolean" &&
-          Number.isFinite(submission.elapsedMs) &&
-          Number.isFinite(new Date(submission.submittedAt).getTime())
-      );
-    const validSessions =
-      validQuiz &&
-      Object.values(quiz.sessions).every(
-        (session) =>
-          typeof session?.tokenHash === "string" &&
-          typeof session.studentId === "string" &&
-          Number.isInteger(session.studentRevision) &&
-          session.studentRevision >= 1 &&
-          Number.isInteger(session.round) &&
-          session.round >= 1 &&
-          Number.isFinite(new Date(session.createdAt).getTime())
-      );
-    const validParticipants =
-      validQuiz &&
-      Object.entries(quiz.participants).every(
-        ([studentId, participant]) =>
-          participant?.studentId === studentId &&
-          Number.isFinite(new Date(participant.firstAccessedAt).getTime()) &&
-          Number.isFinite(new Date(participant.lastAccessedAt).getTime()) &&
-          Number.isInteger(participant.sessionCount) &&
-          participant.sessionCount >= 1
-      );
-    const validRound = validQuiz && Number.isInteger(quiz.round) && quiz.round >= 1;
-    const validAnswerRecords =
-      validQuiz &&
-      quiz.answerRecords.every(
-        (record) =>
-          typeof record?.id === "string" &&
-          typeof record.studentId === "string" &&
-          record.questionId === quiz.question.id &&
-          typeof record.answer === "string" &&
-          typeof record.isCorrect === "boolean" &&
-          Number.isFinite(record.elapsedMs) &&
-          Number.isFinite(new Date(record.submittedAt).getTime()) &&
-          Number.isInteger(record.round) &&
-          record.round >= 1
-      );
-    const validParticipationRecords =
-      validQuiz &&
-      quiz.participationRecords.every(
-        (record) =>
-          typeof record?.studentId === "string" &&
-          Number.isFinite(new Date(record.accessedAt).getTime()) &&
-          Number.isInteger(record.round) &&
-          record.round >= 1
-      );
+      quiz.submissions.every((submission) =>
+        isStoredSubmission(submission, quiz.questions, {
+          activeRound: quiz.round,
+        })
+      ) &&
+      new Set(quiz.submissions.map((submission) => submission.id)).size ===
+        quiz.submissions.length &&
+      new Set(
+        quiz.submissions.map(
+          (submission) =>
+            `${submission.studentId}\u0000${submission.questionId}`
+        )
+      ).size === quiz.submissions.length;
+    const validSessions = Object.values(quiz.sessions).every(
+      (session) =>
+        typeof session?.tokenHash === "string" &&
+        typeof session.studentId === "string" &&
+        Number.isInteger(session.studentRevision) &&
+        session.studentRevision >= 1 &&
+        Number.isInteger(session.round) &&
+        session.round >= 1 &&
+        Number.isFinite(new Date(session.createdAt).getTime())
+    );
+    const validStarts = Object.values(quiz.starts).every(
+      (startedAt) => Number.isFinite(Number(startedAt))
+    );
+    const validParticipants = Object.entries(quiz.participants).every(
+      ([studentId, participant]) =>
+        participant?.studentId === studentId &&
+        Number.isFinite(new Date(participant.firstAccessedAt).getTime()) &&
+        Number.isFinite(new Date(participant.lastAccessedAt).getTime()) &&
+        Number.isInteger(participant.sessionCount) &&
+        participant.sessionCount >= 1
+    );
+    const validAnswerRecords = quiz.answerRecords.every((record) =>
+      isStoredSubmission(record, quiz.questions)
+    );
+    const validParticipationRecords = quiz.participationRecords.every(
+      (record) =>
+        typeof record?.studentId === "string" &&
+        Number.isFinite(new Date(record.accessedAt).getTime()) &&
+        Number.isInteger(record.round) &&
+        record.round >= 1
+    );
     const validResetRequests =
-      validQuiz &&
       quiz.resetRequests.length <= MAX_RESET_REQUESTS &&
       quiz.resetRequests.every(
         (record) =>
           isRecord(record) &&
-          isRecord(record.creationRequest) &&
-          typeof record.creationRequest.keyHash === "string" &&
-          record.creationRequest.keyHash.length > 0 &&
-          typeof record.creationRequest.requestHash === "string" &&
-          record.creationRequest.requestHash.length > 0 &&
+          isValidCreationRequest(record.creationRequest) &&
           isRecord(record.response) &&
           record.response.ok === true &&
           Number.isInteger(record.response.round) &&
@@ -497,27 +787,15 @@ export function validateStoredData(parsed, initialSetupKey) {
           record.response.recordsPreserved.participations >= 0 &&
           Number.isFinite(new Date(record.completedAt).getTime())
       );
-    const uniqueStudents =
-      validStudents &&
-      new Set(quiz.students.map((student) => student.id)).size === quiz.students.length;
-    const uniqueSubmissions =
-      validSubmissions &&
-      new Set(quiz.submissions.map((submission) => submission.id)).size ===
-        quiz.submissions.length &&
-      new Set(quiz.submissions.map((submission) => submission.studentId)).size ===
-        quiz.submissions.length;
     if (
-      !validQuiz ||
       !validStudents ||
       !validSubmissions ||
       !validSessions ||
+      !validStarts ||
       !validParticipants ||
-      !validRound ||
       !validAnswerRecords ||
       !validParticipationRecords ||
-      !validResetRequests ||
-      !uniqueStudents ||
-      !uniqueSubmissions
+      !validResetRequests
     ) {
       throw new Error("ملف بيانات بَيّنات غير مكتمل أو تالف؛ تم إيقاف الخادم لحمايته.");
     }
@@ -530,14 +808,19 @@ export function validateStoredData(parsed, initialSetupKey) {
     } else if (!Number.isFinite(new Date(quiz.expiresAt).getTime())) {
       throw new Error("تاريخ انتهاء غرفة في ملف بَيّنات غير صالح.");
     }
+
+    const quizTime = new Date(quiz.updatedAt || quiz.createdAt).getTime();
+    if (Number.isFinite(quizTime) && quizTime >= latestQuizTime) {
+      latestQuizTime = quizTime;
+      latestQuizRoster = structuredClone(quiz.students);
+    }
   }
 
   const now = Date.now();
   const activeCandidates = Object.values(parsed.quizzes)
     .filter(
       (quiz) =>
-        new Date(quiz.expiresAt).getTime() > now &&
-        !quiz.supersededBy
+        new Date(quiz.expiresAt).getTime() > now && !quiz.supersededBy
     )
     .sort(
       (first, second) =>
@@ -555,7 +838,7 @@ export function validateStoredData(parsed, initialSetupKey) {
     (typeof parsed.activeQuizId !== "string" ||
       !parsed.quizzes[parsed.activeQuizId])
   ) {
-    throw new Error("مرجع سؤال اليوم النشط في ملف بَيّنات غير صالح.");
+    throw new Error("مرجع السؤال الأسبوعي النشط في ملف البيانات غير صالح.");
   }
   if (
     parsed.activeQuizId &&
@@ -568,34 +851,31 @@ export function validateStoredData(parsed, initialSetupKey) {
   if (!Array.isArray(parsed.students)) {
     parsed.students = latestQuizRoster;
     migrated = true;
-  } else {
-    for (const student of parsed.students) migrateStudent(student);
   }
+  for (const student of parsed.students) migrateStudent(student);
+  const rosterLookups = parsed.students
+    .map((student) => student.pinLookup)
+    .filter((lookup) => typeof lookup === "string");
   const validRoster =
     parsed.students.length <= MAX_STUDENTS &&
-    parsed.students.every(
-      (student) =>
-        typeof student?.id === "string" &&
-        typeof student.name === "string" &&
-        typeof student.className === "string" &&
-        typeof student.halaqa === "string" &&
-        Number.isInteger(student.revision) &&
-        student.revision >= 1 &&
-        typeof student.identityLookup === "string" &&
-        (student.pinLookup === undefined || typeof student.pinLookup === "string") &&
-        typeof student.pinSalt === "string" &&
-        typeof student.pinHash === "string"
-    ) &&
-    new Set(parsed.students.map((student) => student.id)).size === parsed.students.length;
+    parsed.students.every(isStoredStudent) &&
+    new Set(parsed.students.map((student) => student.id)).size ===
+      parsed.students.length &&
+    new Set(rosterLookups).size === rosterLookups.length;
   if (!validRoster) {
     throw new Error("قائمة الطلاب المشتركة في ملف بَيّنات غير صالحة.");
+  }
+
+  if (parsed.version !== 3) {
+    parsed.version = 3;
+    migrated = true;
   }
   return { data: parsed, migrated };
 }
 
 export function createInitialData(initialSetupKey = "") {
   return {
-    version: 2,
+    version: 3,
     secret: randomBytes(32).toString("base64url"),
     supervisors: [],
     setupKey: initialSetupKey || randomBytes(9).toString("base64url"),
@@ -833,8 +1113,21 @@ function findIdempotentResource(resources, idempotency) {
   return existing;
 }
 
-function pinLookup(secret, quizId, pin) {
-  return createHmac("sha256", secret).update(`${quizId}:${normalizeDigits(pin)}`).digest("hex");
+function pinLookup(secret, pinOrScope, legacyPin) {
+  const scope = legacyPin === undefined ? "roster" : pinOrScope;
+  const pin = legacyPin === undefined ? pinOrScope : legacyPin;
+  return createHmac("sha256", secret)
+    .update(`${scope}:${normalizeDigits(pin)}`)
+    .digest("hex");
+}
+
+function possiblePinLookups(data, pin) {
+  return new Set([
+    pinLookup(data.secret, pin),
+    ...Object.keys(data.quizzes || {}).map((quizId) =>
+      pinLookup(data.secret, quizId, pin)
+    ),
+  ]);
 }
 
 function hashPin(pin, salt = randomBytes(16).toString("base64url")) {
@@ -917,18 +1210,18 @@ function verifySupervisorToken(token, secret) {
   return safeEqual(signature, expected) ? supervisorId : null;
 }
 
-function canonicalStudentIdentity(name, className, halaqa) {
-  return `${normalizeAnswer(name)}|${normalizeAnswer(className)}|${normalizeAnswer(halaqa)}`;
+function canonicalStudentIdentity(name, className) {
+  return `${normalizeAnswer(name)}|${normalizeAnswer(className)}`;
 }
 
-function studentIdentityLookup(secret, name, className, halaqa) {
+function studentIdentityLookup(secret, name, className) {
   return createHmac("sha256", secret)
-    .update(`student:${canonicalStudentIdentity(name, className, halaqa)}`)
+    .update(`student:${canonicalStudentIdentity(name, className)}`)
     .digest("base64url");
 }
 
-function canonicalAccessCredential(name, className, halaqa, pin) {
-  return `${canonicalStudentIdentity(name, className, halaqa)}|${normalizeDigits(pin)}`;
+function canonicalAccessCredential(pin) {
+  return normalizeDigits(pin);
 }
 
 function issueAccessChallenge(secret, quizId, credential, difficultyBits) {
@@ -1042,7 +1335,6 @@ function publicStudent(student) {
     id: student.id,
     name: student.name,
     className: student.className,
-    halaqa: student.halaqa,
   };
 }
 
@@ -1054,39 +1346,23 @@ function publicSupervisor(supervisor) {
   };
 }
 
-function publicQuestion(quiz) {
-  const { type, prompt, options, createdAt } = quiz.question;
-  return { id: quiz.question.id, type, prompt, options, createdAt };
+function publicQuestion(question) {
+  const { id, type, prompt, options, createdAt } = question;
+  return { id, type, prompt, options, createdAt };
 }
 
-function publicQuestionSummary(quiz) {
-  return { type: quiz.question.type };
+function publicQuestionSummary(question) {
+  return { id: question.id, type: question.type };
 }
 
 function quizCreationPayload(quiz, adminToken) {
   return {
     quizId: quiz.id,
-    questionId: quiz.question.id,
+    questionId: quiz.questions[0].id,
     adminToken,
     studentPath: `/student.html?q=${encodeURIComponent(quiz.id)}`,
+    quiz: serializeAdminQuiz(quiz),
   };
-}
-
-function publicAccessOptions(quiz) {
-  const byClass = new Map(
-    DEFAULT_CLASS_OPTIONS.map((className) => [
-      className,
-      new Set(DEFAULT_HALAQA_OPTIONS),
-    ])
-  );
-  for (const student of quiz.students) {
-    if (!byClass.has(student.className)) byClass.set(student.className, new Set());
-    byClass.get(student.className).add(student.halaqa);
-  }
-  return [...byClass.entries()].map(([className, halaqas]) => ({
-    className,
-    halaqas: [...halaqas].sort((first, second) => first.localeCompare(second, "ar")),
-  }));
 }
 
 function serializeParticipants(quiz) {
@@ -1098,72 +1374,304 @@ function serializeParticipants(quiz) {
   }));
 }
 
-function acceptedAnswer(question) {
-  return String(question.correctAnswer || "").split("|")[0].trim();
+function calculateSubmissionScore(submission, speedPlace) {
+  if (
+    submission.gradingStatus !== "graded" ||
+    submission.isCorrect !== true
+  ) {
+    return {
+      accuracyPoints: 0,
+      speedPoints: 0,
+      placePoints: 0,
+      total: 0,
+    };
+  }
+  const elapsedMs = Math.max(0, Number(submission.elapsedMs) || 0);
+  const speedPoints = Math.max(
+    0,
+    60 - Math.floor((elapsedMs / 1_000) * 2)
+  );
+  const placePoints = PLACE_BONUSES[speedPlace - 1] || 0;
+  return {
+    accuracyPoints: 100,
+    speedPoints,
+    placePoints,
+    total: 100 + speedPoints + placePoints,
+  };
+}
+
+function isObjectiveAnswerCorrect(question, answer) {
+  return (
+    question.type !== "short" &&
+    normalizeAnswer(answer) === normalizeAnswer(question.correctAnswer)
+  );
+}
+
+function compareIds(first, second) {
+  return first < second ? -1 : first > second ? 1 : 0;
 }
 
 function serializeLeaderboard(quiz) {
-  return buildLeaderboard(quiz.students, quiz.submissions, quiz.question.id).map((entry) => ({
-    id: entry.id,
-    rank: entry.rank,
-    student: publicStudent(entry.student),
-    isCorrect: entry.isCorrect,
-    elapsedMs: entry.elapsedMs,
-    submittedAt: entry.submittedAt,
-    accuracyPoints: entry.accuracyPoints,
-    speedPoints: entry.speedPoints,
-    placePoints: entry.placePoints,
-    total: entry.total,
-  }));
+  const speedPlaces = new Map();
+  for (const question of quiz.questions) {
+    quiz.submissions
+      .filter(
+        (submission) =>
+          submission.questionId === question.id &&
+          submission.gradingStatus === "graded" &&
+          submission.isCorrect === true
+      )
+      .slice()
+      .sort(
+        (first, second) =>
+          first.elapsedMs - second.elapsedMs ||
+          compareIds(first.studentId, second.studentId) ||
+          compareIds(first.id, second.id)
+      )
+      .forEach((submission, index) => {
+        speedPlaces.set(submission.id, index + 1);
+      });
+  }
+
+  const aggregateByStudent = new Map();
+  for (const submission of quiz.submissions) {
+    const student = quiz.students.find(
+      (item) => item.id === submission.studentId
+    ) || {
+      id: submission.studentId,
+      name: "طالب",
+      className: "—",
+    };
+    const aggregate = aggregateByStudent.get(submission.studentId) || {
+      id: submission.studentId,
+      student: publicStudent(student),
+      accuracyPoints: 0,
+      speedPoints: 0,
+      placePoints: 0,
+      total: 0,
+      correctCount: 0,
+      answeredCount: 0,
+      pendingCount: 0,
+      elapsedMs: 0,
+    };
+    const score = calculateSubmissionScore(
+      submission,
+      speedPlaces.get(submission.id) || 0
+    );
+    aggregate.accuracyPoints += score.accuracyPoints;
+    aggregate.speedPoints += score.speedPoints;
+    aggregate.placePoints += score.placePoints;
+    aggregate.total += score.total;
+    aggregate.correctCount += Number(
+      submission.gradingStatus === "graded" && submission.isCorrect === true
+    );
+    aggregate.answeredCount += 1;
+    aggregate.pendingCount += Number(submission.gradingStatus === "pending");
+    aggregate.elapsedMs += Math.max(0, Number(submission.elapsedMs) || 0);
+    aggregateByStudent.set(submission.studentId, aggregate);
+  }
+
+  return [...aggregateByStudent.values()]
+    .sort(
+      (first, second) =>
+        second.total - first.total ||
+        second.correctCount - first.correctCount ||
+        first.elapsedMs - second.elapsedMs ||
+        compareIds(first.student.id, second.student.id)
+    )
+    .map((entry, index) => ({ ...entry, rank: index + 1 }));
+}
+
+function serializeAdminQuestion(question) {
+  const { creationRequest, ...serialized } = question;
+  return structuredClone(serialized);
+}
+
+function serializeAdminSubmission(submission) {
+  return {
+    ...structuredClone(submission),
+    gradeHistory: submission.gradeHistory.map(
+      ({ creationRequest, ...grade }) => structuredClone(grade)
+    ),
+  };
 }
 
 function serializeAdminQuiz(quiz) {
   return {
     id: quiz.id,
-    question: quiz.question,
+    questions: quiz.questions.map(serializeAdminQuestion),
+    questionCount: quiz.questions.length,
     students: quiz.students.map(publicStudent),
-    submissions: quiz.submissions,
+    submissions: quiz.submissions.map(serializeAdminSubmission),
     participants: serializeParticipants(quiz),
-    answerRecords: quiz.answerRecords,
-    participationRecords: quiz.participationRecords,
+    answerRecords: quiz.answerRecords.map(serializeAdminSubmission),
+    participationRecords: structuredClone(quiz.participationRecords),
     round: quiz.round,
     leaderboard: serializeLeaderboard(quiz),
+    studentPath: `/student.html?q=${encodeURIComponent(quiz.id)}`,
+    createdAt: quiz.createdAt,
+    expiresAt: quiz.expiresAt,
     updatedAt: quiz.updatedAt,
+  };
+}
+
+function nextUnansweredQuestion(quiz, studentId) {
+  const answered = new Set(
+    quiz.submissions
+      .filter((submission) => submission.studentId === studentId)
+      .map((submission) => submission.questionId)
+  );
+  return quiz.questions.find((question) => !answered.has(question.id)) || null;
+}
+
+function ensureNextQuestionStart(quiz, studentId, now = Date.now()) {
+  quiz.starts ||= {};
+  const question = nextUnansweredQuestion(quiz, studentId);
+  if (!question) return null;
+  const key = questionStartKey(quiz.round, studentId, question.id);
+  if (!Number.isFinite(Number(quiz.starts[key]))) {
+    quiz.starts[key] = now;
+  }
+  return question;
+}
+
+function studentProgress(quiz, studentId) {
+  const submissions = quiz.submissions.filter(
+    (submission) => submission.studentId === studentId
+  );
+  const answeredQuestionIds = new Set(
+    submissions.map((submission) => submission.questionId)
+  );
+  const answeredCount = answeredQuestionIds.size;
+  const pendingCount = submissions.filter(
+    (submission) => submission.gradingStatus === "pending"
+  ).length;
+  return {
+    answeredCount,
+    totalQuestions: quiz.questions.length,
+    remainingCount: Math.max(0, quiz.questions.length - answeredCount),
+    pendingCount,
+  };
+}
+
+function publicQuizMetadata(quiz) {
+  return {
+    id: quiz.id,
+    round: quiz.round,
+    questions: quiz.questions.map(publicQuestionSummary),
+    questionCount: quiz.questions.length,
+    participantCount: Math.max(
+      serializeParticipants(quiz).length,
+      new Set(quiz.submissions.map((submission) => submission.studentId)).size
+    ),
+    updatedAt: quiz.updatedAt,
+  };
+}
+
+function serializeStudentSession(quiz, student) {
+  const question = nextUnansweredQuestion(quiz, student.id);
+  const progress = studentProgress(quiz, student.id);
+  const completed = progress.remainingCount === 0;
+  const pending = progress.pendingCount > 0;
+  return {
+    student: publicStudent(student),
+    quiz: publicQuizMetadata(quiz),
+    question: question ? publicQuestion(question) : null,
+    progress,
+    completed,
+    pending,
+    status: !completed ? "in_progress" : pending ? "pending" : "complete",
+    leaderboard: serializeLeaderboard(quiz),
+  };
+}
+
+function serializeStudentSubmission(submission) {
+  return {
+    id: submission.id,
+    questionId: submission.questionId,
+    answer: submission.answer,
+    gradingStatus: submission.gradingStatus,
+    isCorrect: submission.isCorrect,
+    elapsedMs: submission.elapsedMs,
+    submittedAt: submission.submittedAt,
+    gradedBy: submission.gradedBy,
+    gradedAt: submission.gradedAt,
+    gradeRevision: submission.gradeRevision,
   };
 }
 
 function serializeResult(quiz, submission) {
   const leaderboard = serializeLeaderboard(quiz);
-  const entry = leaderboard.find((item) => item.id === submission.id);
+  const entry =
+    leaderboard.find((item) => item.student.id === submission.studentId) ||
+    null;
+  const nextQuestion = nextUnansweredQuestion(quiz, submission.studentId);
+  const progress = studentProgress(quiz, submission.studentId);
+  const completed = progress.remainingCount === 0;
+  const pending = progress.pendingCount > 0;
   return {
+    submission: serializeStudentSubmission(submission),
     entry,
     participantCount: Math.max(serializeParticipants(quiz).length, leaderboard.length),
-    suggestedAnswer: submission.isCorrect ? null : acceptedAnswer(quiz.question),
     leaderboard,
+    nextQuestion: nextQuestion ? publicQuestion(nextQuestion) : null,
+    progress,
+    completed,
+    pending,
+    status: !completed ? "in_progress" : pending ? "pending" : "complete",
   };
 }
 
-function sanitizeQuestion(question, quizId) {
+function sanitizeQuestion(
+  question,
+  { id, creationRequest = null } = {}
+) {
   const cleaned = {
-    id: `question-${quizId}`,
+    id,
     type: String(question?.type || ""),
     prompt: String(question?.prompt || "").trim(),
     options: Array.isArray(question?.options)
       ? question.options.map((option) => String(option).trim()).filter(Boolean)
       : [],
-    correctAnswer: String(question?.correctAnswer || "").trim(),
     createdAt: new Date().toISOString(),
+    ...(creationRequest ? { creationRequest } : {}),
   };
-  if (cleaned.type === "boolean") cleaned.options = ["صح", "خطأ"];
-  if (cleaned.type === "short") cleaned.options = [];
-  const validation = validateQuestion(cleaned);
+  if (cleaned.type === "short") {
+    cleaned.options = [];
+  } else {
+    cleaned.correctAnswer = String(question?.correctAnswer || "").trim();
+    if (cleaned.type === "boolean") cleaned.options = ["صح", "خطأ"];
+  }
+  const validation = validateQuestionContract(cleaned);
   if (!validation.valid) {
     throw new HttpError(400, validation.error, "INVALID_QUESTION");
   }
   return cleaned;
 }
 
-function sanitizeStudentInputs(students, secret, quizId) {
+function validateStudentInputValue(student, { pinRequired = true } = {}) {
+  const name = String(student?.name || "").trim();
+  const className = String(student?.className || "").trim();
+  const pin = normalizeDigits(student?.pin || "").trim();
+  if (name.length < 2) {
+    return { valid: false, error: "اكتب اسم الطالب كاملًا." };
+  }
+  if (!className) {
+    return { valid: false, error: "اختر صف الطالب." };
+  }
+  if (pinRequired && !/^\d{4}$/.test(pin)) {
+    return { valid: false, error: "يجب أن يتكوّن رمز الدخول من ٤ أرقام." };
+  }
+  if (!pinRequired && pin && !/^\d{4}$/.test(pin)) {
+    return {
+      valid: false,
+      error: "رمز الدخول الجديد يجب أن يتكوّن من ٤ أرقام.",
+    };
+  }
+  return { valid: true, value: { name, className, pin } };
+}
+
+function sanitizeStudentInputs(students, secret) {
   if (!Array.isArray(students) || students.length === 0) {
     throw new HttpError(400, "أضف طالبًا واحدًا على الأقل قبل نشر السؤال.", "EMPTY_ROSTER");
   }
@@ -1173,10 +1681,7 @@ function sanitizeStudentInputs(students, secret, quizId) {
 
   const accepted = [];
   for (const student of students) {
-    const validation = validateStudentInput(
-      { ...student, halaqa: student?.halaqa || "غير محدد" },
-      accepted
-    );
+    const validation = validateStudentInputValue(student);
     if (!validation.valid) {
       throw new HttpError(400, validation.error, "INVALID_STUDENT");
     }
@@ -1187,12 +1692,11 @@ function sanitizeStudentInputs(students, secret, quizId) {
     if (accepted.some((item) => item.id === id)) {
       throw new HttpError(400, "معرّف الطالب مكرر.", "INVALID_STUDENT");
     }
-    const lookup = pinLookup(secret, quizId, validation.value.pin);
+    const lookup = pinLookup(secret, validation.value.pin);
     const identityLookup = studentIdentityLookup(
       secret,
       validation.value.name,
-      validation.value.className,
-      validation.value.halaqa
+      validation.value.className
     );
     if (accepted.some((item) => item.pinLookup === lookup)) {
       throw new HttpError(
@@ -1205,7 +1709,6 @@ function sanitizeStudentInputs(students, secret, quizId) {
       id,
       name: validation.value.name,
       className: validation.value.className,
-      halaqa: validation.value.halaqa,
       revision: 1,
       pin: validation.value.pin,
       pinLookup: lookup,
@@ -1227,12 +1730,9 @@ async function hashStudentInputs(students) {
   return secured;
 }
 
-function requireConfiguredStudentSelections(className, halaqa) {
+function requireConfiguredStudentSelection(className) {
   if (!DEFAULT_CLASS_OPTIONS.includes(className)) {
     throw new HttpError(400, "اختر صفًا من القائمة المعتمدة.", "INVALID_STUDENT_CLASS");
-  }
-  if (!DEFAULT_HALAQA_OPTIONS.includes(halaqa)) {
-    throw new HttpError(400, "اختر حلقة من القائمة المعتمدة.", "INVALID_STUDENT_HALAQA");
   }
 }
 
@@ -1240,12 +1740,12 @@ function requireQuiz(store, quizId) {
   const quiz = store.read((data) => data.quizzes[quizId]);
   if (!quiz) throw new HttpError(404, "رابط السؤال غير صالح أو انتهى.", "QUIZ_NOT_FOUND");
   if (quiz.expiresAt && new Date(quiz.expiresAt).getTime() <= Date.now()) {
-    throw new HttpError(410, "انتهت صلاحية سؤال اليوم. اطلب رابطًا جديدًا.", "QUIZ_EXPIRED");
+    throw new HttpError(410, "انتهت صلاحية رابط الأسئلة الأسبوعية. اطلب رابطًا جديدًا.", "QUIZ_EXPIRED");
   }
   if (store.data.activeQuizId !== quiz.id) {
     throw new HttpError(
       410,
-      "استُبدل هذا الرابط بسؤال يوم جديد. اطلب الرابط الأحدث من المشرف.",
+      "استُبدل هذا الرابط بأسبوع جديد. اطلب الرابط الأحدث من المشرف.",
       "QUIZ_SUPERSEDED"
     );
   }
@@ -1253,19 +1753,7 @@ function requireQuiz(store, quizId) {
 }
 
 function requireAdmin(request, quiz, store) {
-  const token = request.headers["x-admin-token"];
-  if (token && safeEqual(hashToken(token), quiz.adminTokenHash)) return;
-  const supervisorId = verifySupervisorToken(
-    request.headers["x-supervisor-token"],
-    store.data.secret
-  );
-  if (
-    supervisorId &&
-    store.data.supervisors.some((supervisor) => supervisor.id === supervisorId)
-  ) {
-    return;
-  }
-  throw new HttpError(401, "انتهت صلاحية جلسة المشرف.", "ADMIN_UNAUTHORIZED");
+  return requireSupervisor(request, store);
 }
 
 function requireSupervisor(request, store) {
@@ -1309,28 +1797,13 @@ function readSupervisorPassword(body) {
 }
 
 function readStudentAccessInput(body) {
-  const name = String(body?.name || "").trim();
-  const className = String(body?.className || "").trim();
-  const halaqa = String(body?.halaqa || "").trim();
   const pin = normalizeDigits(body?.pin || "").trim();
-  if (normalizeAnswer(name).length < 2) {
-    throw new HttpError(400, "اكتب اسم الطالب كما سجّله المشرف.", "INVALID_STUDENT_NAME");
-  }
-  if (!normalizeAnswer(className)) {
-    throw new HttpError(400, "اختر صف الطالب.", "INVALID_STUDENT_CLASS");
-  }
-  if (!normalizeAnswer(halaqa)) {
-    throw new HttpError(400, "اختر حلقة الطالب.", "INVALID_STUDENT_HALAQA");
-  }
   if (!/^\d{4}$/.test(pin)) {
     throw new HttpError(400, "أدخل رمزًا صحيحًا من ٤ أرقام.", "INVALID_PIN");
   }
   return {
-    name,
-    className,
-    halaqa,
     pin,
-    credential: canonicalAccessCredential(name, className, halaqa, pin),
+    credential: canonicalAccessCredential(pin),
   };
 }
 
@@ -1511,6 +1984,78 @@ function createSupervisorLimiter(store, trustProxy) {
   };
 }
 
+function createStudentLimiter(store, trustProxy) {
+  const keyFor = (request, quizId) =>
+    rateLimitKey(
+      store,
+      request,
+      trustProxy,
+      `student-login:${quizId}`
+    );
+  const currentAttempts = (data, key, now) => {
+    const stored = data.security.studentAttempts[key] || {
+      failures: [],
+      reservations: {},
+    };
+    return {
+      failures: stored.failures.filter(
+        (timestamp) => now - timestamp < ACCESS_WINDOW_MS
+      ),
+      reservations: Object.fromEntries(
+        Object.entries(stored.reservations).filter(
+          ([, timestamp]) => now - timestamp < ACCESS_WINDOW_MS
+        )
+      ),
+    };
+  };
+  const saveState = (data, key, state) => {
+    if (!state.failures.length && !Object.keys(state.reservations).length) {
+      delete data.security.studentAttempts[key];
+      return;
+    }
+    data.security.studentAttempts[key] = state;
+    limitRecordSize(data.security.studentAttempts, (entry) =>
+      Math.max(
+        0,
+        ...entry.failures,
+        ...Object.values(entry.reservations)
+      )
+    );
+  };
+  return {
+    async tryReserve(request, quizId) {
+      const key = keyFor(request, quizId);
+      const now = Date.now();
+      const reservationId = randomBytes(9).toString("base64url");
+      return store.update((data) => {
+        const state = currentAttempts(data, key, now);
+        if (
+          state.failures.length + Object.keys(state.reservations).length >=
+          STUDENT_ATTEMPTS_LIMIT
+        ) {
+          saveState(data, key, state);
+          return null;
+        }
+        state.reservations[reservationId] = now;
+        saveState(data, key, state);
+        return reservationId;
+      });
+    },
+    async finish(request, quizId, reservationId, failed) {
+      const key = keyFor(request, quizId);
+      const now = Date.now();
+      await store.update((data) => {
+        const state = currentAttempts(data, key, now);
+        delete state.reservations[reservationId];
+        if (failed && state.failures.length < STUDENT_ATTEMPTS_LIMIT) {
+          state.failures.push(now);
+        }
+        saveState(data, key, state);
+      });
+    },
+  };
+}
+
 async function serveStatic(request, response, pathname) {
   const publicFile = PUBLIC_FILES.get(pathname);
   if (!publicFile) throw new HttpError(404, "الصفحة غير موجودة.", "NOT_FOUND");
@@ -1566,6 +2111,7 @@ export async function createBaynatServer({
     .digest("base64url");
   const recordQuizCreation = createQuizCreationLimiter(store, trustProxy);
   const supervisorLimiter = createSupervisorLimiter(store, trustProxy);
+  const studentLimiter = createStudentLimiter(store, trustProxy);
 
   const handler = async (request, response) => {
     try {
@@ -1926,14 +2472,11 @@ export async function createBaynatServer({
             currentSupervisor.id,
             body
           );
-          const validation = validateStudentInput(body);
+          const validation = validateStudentInputValue(body);
           if (!validation.valid) {
             throw new HttpError(400, validation.error, "INVALID_STUDENT");
           }
-          requireConfiguredStudentSelections(
-            validation.value.className,
-            validation.value.halaqa
-          );
+          requireConfiguredStudentSelection(validation.value.className);
           const id =
             typeof body.id === "string" && /^[a-zA-Z0-9_-]{3,80}$/.test(body.id)
               ? body.id
@@ -1942,24 +2485,26 @@ export async function createBaynatServer({
             id,
             name: validation.value.name,
             className: validation.value.className,
-            halaqa: validation.value.halaqa,
             revision: 1,
             identityLookup: studentIdentityLookup(
               store.data.secret,
               validation.value.name,
-              validation.value.className,
-              validation.value.halaqa
+              validation.value.className
             ),
-            pinLookup: pinLookup(store.data.secret, "roster", validation.value.pin),
+            pinLookup: pinLookup(store.data.secret, validation.value.pin),
             ...(await hashPin(validation.value.pin)),
             ...(idempotency ? { creationRequest: idempotency } : {}),
           };
           const committedStudent = await store.update((data) => {
+            const requestedPinLookups = possiblePinLookups(
+              data,
+              validation.value.pin
+            );
             const duplicateId = data.students.some(
               (existing) => existing.id === student.id
             );
             const duplicatePin = data.students.some(
-              (existing) => existing.pinLookup === student.pinLookup
+              (existing) => requestedPinLookups.has(existing.pinLookup)
             );
             const replayedStudent = findIdempotentResource(
               data.students,
@@ -2007,36 +2552,26 @@ export async function createBaynatServer({
             throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
           }
           const body = await readJsonBody(request);
-          const validation = validateStudentInput(
+          const validation = validateStudentInputValue(
             {
               name: body.name,
               className: body.className,
-              halaqa: body.halaqa,
               pin: body.pin || "",
             },
-            [],
             { pinRequired: false }
           );
           if (!validation.valid) {
             throw new HttpError(400, validation.error, "INVALID_STUDENT");
           }
-          requireConfiguredStudentSelections(
-            validation.value.className,
-            validation.value.halaqa
-          );
+          requireConfiguredStudentSelection(validation.value.className);
           const identityLookup = studentIdentityLookup(
             store.data.secret,
             validation.value.name,
-            validation.value.className,
-            validation.value.halaqa
+            validation.value.className
           );
           const updatedPinFields = validation.value.pin
             ? {
-                pinLookup: pinLookup(
-                  store.data.secret,
-                  "roster",
-                  validation.value.pin
-                ),
+                pinLookup: pinLookup(store.data.secret, validation.value.pin),
                 ...(await hashPin(validation.value.pin)),
               }
             : null;
@@ -2046,12 +2581,15 @@ export async function createBaynatServer({
             if (rosterIndex === -1) {
               throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
             }
+            const requestedPinLookups = validation.value.pin
+              ? possiblePinLookups(data, validation.value.pin)
+              : null;
             const duplicatePin = Boolean(
               updatedPinFields &&
                 data.students.some(
                   (student) =>
                     student.id !== studentId &&
-                    student.pinLookup === updatedPinFields.pinLookup
+                    requestedPinLookups.has(student.pinLookup)
                 )
             );
             if (duplicatePin) {
@@ -2065,7 +2603,6 @@ export async function createBaynatServer({
               ...data.students[rosterIndex],
               name: validation.value.name,
               className: validation.value.className,
-              halaqa: validation.value.halaqa,
               revision: data.students[rosterIndex].revision + 1,
               identityLookup,
               ...(updatedPinFields || {}),
@@ -2084,12 +2621,16 @@ export async function createBaynatServer({
                     ([, session]) => session.studentId !== studentId
                   )
                 );
+                quiz.starts = Object.fromEntries(
+                  Object.entries(quiz.starts).filter(
+                    ([key]) => key.split(":")[1] !== studentId
+                  )
+                );
                 if (
                   !quiz.submissions.some(
                     (submission) => submission.studentId === studentId
                   )
                 ) {
-                  delete quiz.starts[studentId];
                   delete quiz.participants[studentId];
                 }
                 quiz.updatedAt = new Date().toISOString();
@@ -2121,7 +2662,11 @@ export async function createBaynatServer({
                   ([, session]) => session.studentId !== studentId
                 )
               );
-              delete quiz.starts[studentId];
+              quiz.starts = Object.fromEntries(
+                Object.entries(quiz.starts).filter(
+                  ([key]) => key.split(":")[1] !== studentId
+                )
+              );
               delete quiz.participants[studentId];
               quiz.updatedAt = new Date().toISOString();
             }
@@ -2165,17 +2710,31 @@ export async function createBaynatServer({
               .update(`idempotent-quiz-admin:${idempotency.keyHash}`)
               .digest("base64url")
           : randomBytes(32).toString("base64url");
-        const question = sanitizeQuestion(body.question, quizId);
+        if (
+          body.questions !== undefined &&
+          (!Array.isArray(body.questions) || body.questions.length !== 1)
+        ) {
+          throw new HttpError(
+            400,
+            "ابدأ الاختبار الأسبوعي بسؤال واحد.",
+            "INVALID_QUESTION"
+          );
+        }
+        const firstQuestion =
+          body.questions?.[0] ?? body.firstQuestion ?? body.question;
+        const question = sanitizeQuestion(firstQuestion, {
+          id: `question-${quizId}`,
+        });
         const studentInputs =
           store.data.students.length === 0
-            ? sanitizeStudentInputs(body.students, store.data.secret, quizId)
+            ? sanitizeStudentInputs(body.students, store.data.secret)
             : null;
         const applyQuizCreationLimit = recordQuizCreation(request, true);
         const bootstrapStudents = studentInputs ? await hashStudentInputs(studentInputs) : null;
         const createdAt = new Date();
         const quiz = {
           id: quizId,
-          question,
+          questions: [question],
           students: [],
           submissions: [],
           sessions: {},
@@ -2211,12 +2770,20 @@ export async function createBaynatServer({
             }
           }
           const authoritativeActiveQuizId = data.activeQuizId || null;
-          if (authoritativeActiveQuizId !== expectedCurrentQuizId) {
+          if (authoritativeActiveQuizId) {
             throw new HttpError(
               409,
-              "نشر مشرف آخر سؤالًا جديدًا من هذه المساحة. حدّث الصفحة قبل إعادة النشر.",
-              "QUIZ_PUBLISH_CONFLICT",
+              "يوجد رابط أسبوعي نشط بالفعل. أضف السؤال إلى الرابط نفسه.",
+              "WEEK_ALREADY_ACTIVE",
               { currentQuizId: authoritativeActiveQuizId }
+            );
+          }
+          if (expectedCurrentQuizId !== null) {
+            throw new HttpError(
+              409,
+              "تغيّر رابط مساحة العمل. حدّث الصفحة قبل إعادة النشر.",
+              "QUIZ_PUBLISH_CONFLICT",
+              { currentQuizId: null }
             );
           }
           applyQuizCreationLimit(data);
@@ -2231,11 +2798,6 @@ export async function createBaynatServer({
             );
           }
           quiz.students = structuredClone(data.students);
-          if (authoritativeActiveQuizId) {
-            const previousQuiz = data.quizzes[authoritativeActiveQuizId];
-            previousQuiz.supersededAt = createdAt.toISOString();
-            previousQuiz.supersededBy = quiz.id;
-          }
           data.quizzes[quizId] = quiz;
           data.activeQuizId = quiz.id;
           return quizCreationPayload(quiz, adminToken);
@@ -2246,6 +2808,78 @@ export async function createBaynatServer({
           creationPayload,
           securityHeaders()
         );
+        return;
+      }
+
+      const appendQuestionMatch = pathname.match(
+        /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/questions$/
+      );
+      if (appendQuestionMatch && request.method === "POST") {
+        const quiz = requireQuiz(store, appendQuestionMatch[1]);
+        requireAdmin(request, quiz, store);
+        if (request.headers["sec-fetch-site"] === "cross-site") {
+          throw new HttpError(
+            403,
+            "الطلب غير مسموح من موقع آخر.",
+            "CROSS_SITE_REQUEST"
+          );
+        }
+        const body = await readJsonBody(request);
+        const idempotency = readIdempotencyRequest(
+          request,
+          store.data.secret,
+          "quiz-question-create",
+          quiz.id,
+          body
+        );
+        if (!idempotency) {
+          throw new HttpError(
+            400,
+            "مفتاح إعادة المحاولة مطلوب لإضافة السؤال.",
+            "IDEMPOTENCY_KEY_REQUIRED"
+          );
+        }
+        const question = sanitizeQuestion(body.question ?? body, {
+          id: `question-${randomBytes(8).toString("base64url")}`,
+          creationRequest: idempotency,
+        });
+        const appended = await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          if (!draftQuiz || data.activeQuizId !== quiz.id) {
+            throw new HttpError(
+              410,
+              "استُبدل هذا الاختبار الأسبوعي. استخدم الرابط النشط.",
+              "QUIZ_SUPERSEDED"
+            );
+          }
+          const replayedQuestion = findIdempotentResource(
+            draftQuiz.questions,
+            idempotency
+          );
+          if (replayedQuestion) {
+            return {
+              questionId: replayedQuestion.id,
+              quiz: serializeAdminQuiz(draftQuiz),
+            };
+          }
+          if (draftQuiz.questions.length >= MAX_QUESTIONS) {
+            throw new HttpError(
+              400,
+              `الحد الأعلى هو ${MAX_QUESTIONS} سؤالًا.`,
+              "QUESTION_LIMIT"
+            );
+          }
+          draftQuiz.questions.push(question);
+          draftQuiz.updatedAt = new Date().toISOString();
+          draftQuiz.expiresAt = new Date(
+            Date.now() + QUIZ_RETENTION_MS
+          ).toISOString();
+          return {
+            questionId: question.id,
+            quiz: serializeAdminQuiz(draftQuiz),
+          };
+        });
+        json(response, 201, appended, securityHeaders());
         return;
       }
 
@@ -2304,7 +2938,7 @@ export async function createBaynatServer({
           if (data.activeQuizId !== quiz.id) {
             throw new HttpError(
               410,
-              "استُبدل هذا الرابط بسؤال يوم جديد. اطلب الرابط الأحدث من المشرف.",
+              "استُبدل هذا الرابط بأسبوع جديد. اطلب الرابط الأحدث من المشرف.",
               "QUIZ_SUPERSEDED"
             );
           }
@@ -2314,6 +2948,17 @@ export async function createBaynatServer({
               "تغيّرت جولة السؤال قبل اكتمال الطلب. حدّث النتائج ثم حاول مجددًا.",
               "QUIZ_ROUND_CONFLICT",
               { currentRound: draftQuiz.round }
+            );
+          }
+          const pendingGrades = draftQuiz.submissions.filter(
+            (submission) => submission.gradingStatus === "pending"
+          ).length;
+          if (pendingGrades > 0) {
+            throw new HttpError(
+              409,
+              `صحّح ${pendingGrades} من الإجابات المقالية قبل إعادة تعيين المتصدرين.`,
+              "PENDING_GRADES",
+              { pendingGrades }
             );
           }
           const result = {
@@ -2335,6 +2980,9 @@ export async function createBaynatServer({
           draftQuiz.round = result.round;
           const completedAt = new Date().toISOString();
           draftQuiz.updatedAt = completedAt;
+          draftQuiz.expiresAt = new Date(
+            Date.now() + QUIZ_RETENTION_MS
+          ).toISOString();
           draftQuiz.resetRequests.push({
             creationRequest: idempotency,
             response: structuredClone(result),
@@ -2361,22 +3009,25 @@ export async function createBaynatServer({
         const quiz = requireQuiz(store, studentAdminMatch[1]);
         requireAdmin(request, quiz, store);
         const body = await readJsonBody(request);
-        const validation = validateStudentInput(body, quiz.students);
+        const validation = validateStudentInputValue(body);
         if (!validation.valid) {
           throw new HttpError(400, validation.error, "INVALID_STUDENT");
         }
-        requireConfiguredStudentSelections(
-          validation.value.className,
-          validation.value.halaqa
-        );
-        const lookup = pinLookup(store.data.secret, quiz.id, validation.value.pin);
+        requireConfiguredStudentSelection(validation.value.className);
+        const lookup = pinLookup(store.data.secret, validation.value.pin);
         const identityLookup = studentIdentityLookup(
           store.data.secret,
           validation.value.name,
-          validation.value.className,
-          validation.value.halaqa
+          validation.value.className
         );
-        if (quiz.students.some((student) => student.pinLookup === lookup)) {
+        if (
+          store.data.students.some((student) =>
+            possiblePinLookups(
+              store.data,
+              validation.value.pin
+            ).has(student.pinLookup)
+          )
+        ) {
           throw new HttpError(
             409,
             "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا.",
@@ -2390,19 +3041,21 @@ export async function createBaynatServer({
               : `student-${randomBytes(7).toString("base64url")}`,
           name: validation.value.name,
           className: validation.value.className,
-          halaqa: validation.value.halaqa,
           revision: 1,
           pinLookup: lookup,
           identityLookup,
           ...(await hashPin(validation.value.pin)),
         };
         await store.update((data) => {
-          const draftQuiz = data.quizzes[quiz.id];
+          const requestedPinLookups = possiblePinLookups(
+            data,
+            validation.value.pin
+          );
           if (
-            draftQuiz.students.some(
+            data.students.some(
               (existing) =>
                 existing.id === student.id ||
-                existing.pinLookup === student.pinLookup
+                requestedPinLookups.has(existing.pinLookup)
             )
           ) {
             throw new HttpError(
@@ -2411,8 +3064,17 @@ export async function createBaynatServer({
               "DUPLICATE_STUDENT"
             );
           }
-          draftQuiz.students.push(student);
-          draftQuiz.updatedAt = new Date().toISOString();
+          data.students.push(student);
+          for (const draftQuiz of Object.values(data.quizzes)) {
+            if (
+              !draftQuiz.students.some(
+                (existing) => existing.id === student.id
+              )
+            ) {
+              draftQuiz.students.push(structuredClone(student));
+              draftQuiz.updatedAt = new Date().toISOString();
+            }
+          }
         });
         json(response, 201, { student: publicStudent(student) }, securityHeaders());
         return;
@@ -2426,19 +3088,29 @@ export async function createBaynatServer({
           throw new HttpError(404, "الطالب غير موجود.", "STUDENT_NOT_FOUND");
         }
         await store.update((data) => {
-          const draftQuiz = data.quizzes[quiz.id];
-          draftQuiz.students = draftQuiz.students.filter((student) => student.id !== studentId);
-          draftQuiz.submissions = draftQuiz.submissions.filter(
-            (submission) => submission.studentId !== studentId
+          data.students = data.students.filter(
+            (student) => student.id !== studentId
           );
-          draftQuiz.sessions = Object.fromEntries(
-            Object.entries(draftQuiz.sessions).filter(
-              ([, session]) => session.studentId !== studentId
-            )
-          );
-          if (draftQuiz.starts) delete draftQuiz.starts[studentId];
-          if (draftQuiz.participants) delete draftQuiz.participants[studentId];
-          draftQuiz.updatedAt = new Date().toISOString();
+          for (const draftQuiz of Object.values(data.quizzes)) {
+            draftQuiz.students = draftQuiz.students.filter(
+              (student) => student.id !== studentId
+            );
+            draftQuiz.submissions = draftQuiz.submissions.filter(
+              (submission) => submission.studentId !== studentId
+            );
+            draftQuiz.sessions = Object.fromEntries(
+              Object.entries(draftQuiz.sessions).filter(
+                ([, session]) => session.studentId !== studentId
+              )
+            );
+            draftQuiz.starts = Object.fromEntries(
+              Object.entries(draftQuiz.starts).filter(
+                ([key]) => key.split(":")[1] !== studentId
+              )
+            );
+            delete draftQuiz.participants[studentId];
+            draftQuiz.updatedAt = new Date().toISOString();
+          }
         });
         json(response, 200, { ok: true }, securityHeaders());
         return;
@@ -2469,7 +3141,7 @@ export async function createBaynatServer({
 
       const accessMatch = pathname.match(/^\/api\/quizzes\/([A-Za-z0-9_-]+)\/access$/);
       if (accessMatch && request.method === "POST") {
-        let quiz = requireQuiz(store, accessMatch[1]);
+        const quiz = requireQuiz(store, accessMatch[1]);
         const body = await readJsonBody(request);
         const input = readStudentAccessInput(body);
         const proof = verifyAccessProof({
@@ -2488,108 +3160,233 @@ export async function createBaynatServer({
           );
         }
         await consumeProof(store, proof);
-        const identityLookup = studentIdentityLookup(
-          store.data.secret,
-          input.name,
-          input.className,
-          input.halaqa
+        const reservationId = await studentLimiter.tryReserve(
+          request,
+          quiz.id
         );
-        const candidates = quiz.students.filter(
-          (item) => item.identityLookup === identityLookup
-        );
-        let student = null;
-        for (const candidate of candidates) {
-          if (await verifyPin(input.pin, candidate)) {
-            student = candidate;
-            break;
-          }
-        }
-        if (!student) {
+        if (!reservationId) {
           throw new HttpError(
-            401,
-            "الاسم أو الصف أو الحلقة أو الرمز غير صحيح. تأكد منها أو راجع المشرف.",
-            "PIN_REJECTED"
+            429,
+            "تكررت محاولات الدخول غير الصحيحة. انتظر قليلًا ثم حاول مجددًا.",
+            "STUDENT_ACCESS_LIMIT"
           );
         }
-        const token = randomBytes(32).toString("base64url");
-        const expectedStudentRevision = student.revision;
-        const expectedRound = quiz.round;
-        const accessResult = await store.update((data) => {
+        let reservationFinished = false;
+        try {
+          const lookupCandidates = new Set([
+            pinLookup(store.data.secret, input.pin),
+            ...Object.keys(store.data.quizzes).map((storedQuizId) =>
+              pinLookup(store.data.secret, storedQuizId, input.pin)
+            ),
+          ]);
+          const candidates = store.data.students.filter(
+            (student) =>
+              lookupCandidates.has(student.pinLookup) ||
+              student.pinLookup === undefined
+          );
+          const matchingStudents = [];
+          for (const candidate of candidates) {
+            if (await verifyPin(input.pin, candidate)) {
+              matchingStudents.push(candidate);
+            }
+          }
+          const rosterStudent =
+            matchingStudents.length === 1 ? matchingStudents[0] : null;
+          if (!rosterStudent) {
+            const timingStudent = store.data.students[0];
+            if (timingStudent && !candidates.includes(timingStudent)) {
+              await verifyPin(input.pin, timingStudent);
+            }
+            await studentLimiter.finish(
+              request,
+              quiz.id,
+              reservationId,
+              true
+            );
+            reservationFinished = true;
+            throw new HttpError(
+              401,
+              "رمز الدخول غير صحيح. تحقق منه أو راجع المشرف.",
+              "PIN_REJECTED"
+            );
+          }
+          const student = quiz.students.find(
+            (item) => item.id === rosterStudent.id
+          );
+          if (!student) {
+            await studentLimiter.finish(
+              request,
+              quiz.id,
+              reservationId,
+              true
+            );
+            reservationFinished = true;
+            throw new HttpError(
+              401,
+              "رمز الدخول غير صحيح. تحقق منه أو راجع المشرف.",
+              "PIN_REJECTED"
+            );
+          }
+          const token = randomBytes(32).toString("base64url");
+          const expectedStudentRevision = student.revision;
+          const expectedPinLookup = rosterStudent.pinLookup;
+          const expectedRound = quiz.round;
+          const normalizedPinLookup = pinLookup(
+            store.data.secret,
+            input.pin
+          );
+          const accessState = await store.update((data) => {
+            const draftQuiz = data.quizzes[quiz.id];
+            const draftRosterStudent = data.students.find(
+              (item) => item.id === student.id
+            );
+            const draftStudent = draftQuiz.students.find(
+              (item) => item.id === student.id
+            );
+            if (
+              data.activeQuizId !== quiz.id ||
+              !draftRosterStudent ||
+              !draftStudent ||
+              draftStudent.revision !== expectedStudentRevision ||
+              draftRosterStudent.revision !== expectedStudentRevision ||
+              draftRosterStudent.pinLookup !== expectedPinLookup
+            ) {
+              throw new HttpError(
+                409,
+                "تغيّرت بيانات الطالب أثناء الدخول. تحقق من البيانات وحاول مجددًا.",
+                "STUDENT_CHANGED_RETRY"
+              );
+            }
+            if (
+              data.students.some(
+                (item) =>
+                  item.id !== student.id &&
+                  item.pinLookup === normalizedPinLookup
+              )
+            ) {
+              throw new HttpError(
+                409,
+                "رمز الدخول متكرر بين طالبين. اطلب من المشرف تغيير أحد الرمزين.",
+                "AMBIGUOUS_PIN"
+              );
+            }
+            if (draftQuiz.round !== expectedRound) {
+              throw new HttpError(
+                409,
+                "أعاد المشرف ترتيب السؤال. ابدأ الدخول من جديد.",
+                "QUIZ_RESET_RETRY"
+              );
+            }
+            draftRosterStudent.pinLookup = normalizedPinLookup;
+            for (const storedQuiz of Object.values(data.quizzes)) {
+              const storedStudent = storedQuiz.students.find(
+                (item) => item.id === student.id
+              );
+              if (storedStudent) storedStudent.pinLookup = normalizedPinLookup;
+            }
+            draftQuiz.starts ||= {};
+            draftQuiz.participants ||= {};
+            ensureNextQuestionStart(draftQuiz, student.id);
+            const accessedAt = new Date().toISOString();
+            const previousParticipant = draftQuiz.participants[student.id];
+            draftQuiz.participationRecords.push({
+                studentId: student.id,
+              accessedAt,
+              round: draftQuiz.round,
+            });
+            draftQuiz.participants[student.id] = previousParticipant
+              ? {
+                  ...previousParticipant,
+                  lastAccessedAt: accessedAt,
+                  sessionCount: previousParticipant.sessionCount + 1,
+                }
+              : {
+                  studentId: student.id,
+                  firstAccessedAt: accessedAt,
+                  lastAccessedAt: accessedAt,
+                  sessionCount: 1,
+                };
+            draftQuiz.sessions[hashToken(token)] = {
+              tokenHash: hashToken(token),
+              studentId: student.id,
+              studentRevision: draftStudent.revision,
+              round: draftQuiz.round,
+              createdAt: new Date().toISOString(),
+            };
+            const studentSessions = Object.values(draftQuiz.sessions)
+              .filter((session) => session.studentId === student.id)
+              .sort(
+                (first, second) =>
+                  new Date(second.createdAt).getTime() -
+                  new Date(first.createdAt).getTime()
+              );
+            for (const expiredSession of studentSessions.slice(5)) {
+              delete draftQuiz.sessions[expiredSession.tokenHash];
+            }
+            draftQuiz.updatedAt = new Date().toISOString();
+            return serializeStudentSession(draftQuiz, draftStudent);
+          });
+          await studentLimiter.finish(
+            request,
+            quiz.id,
+            reservationId,
+            false
+          );
+          reservationFinished = true;
+          json(
+            response,
+            200,
+            {
+              token,
+              ...accessState,
+            },
+            securityHeaders()
+          );
+          return;
+        } catch (error) {
+          if (!reservationFinished) {
+            await studentLimiter.finish(
+              request,
+              quiz.id,
+              reservationId,
+              false
+            );
+          }
+          throw error;
+        }
+      }
+
+      const studentSessionMatch = pathname.match(
+        /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/session$/
+      );
+      if (studentSessionMatch && request.method === "GET") {
+        const quiz = requireQuiz(store, studentSessionMatch[1]);
+        const { student, session } = requireStudent(request, quiz);
+        const sessionState = await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
-          const draftStudent = draftQuiz.students.find(
+          const draftSession = draftQuiz?.sessions?.[session.tokenHash];
+          const draftStudent = draftQuiz?.students?.find(
             (item) => item.id === student.id
           );
           if (
+            data.activeQuizId !== quiz.id ||
+            !draftSession ||
             !draftStudent ||
-            draftStudent.revision !== expectedStudentRevision ||
-            draftStudent.identityLookup !== identityLookup
+            draftSession.studentRevision !== draftStudent.revision ||
+            draftSession.round !== draftQuiz.round
           ) {
             throw new HttpError(
-              409,
-              "تغيّرت بيانات الطالب أثناء الدخول. تحقق من البيانات وحاول مجددًا.",
-              "STUDENT_CHANGED_RETRY"
+              401,
+              "أعد إدخال رمز الطالب للمتابعة.",
+              "STUDENT_UNAUTHORIZED"
             );
           }
-          if (draftQuiz.round !== expectedRound) {
-            throw new HttpError(
-              409,
-              "أعاد المشرف ترتيب السؤال. ابدأ الدخول من جديد.",
-              "QUIZ_RESET_RETRY"
-            );
+          if (request.headers["x-start-question"] === "1") {
+            ensureNextQuestionStart(draftQuiz, draftStudent.id);
           }
-          draftQuiz.starts ||= {};
-          draftQuiz.participants ||= {};
-          const startedAt = draftQuiz.starts[student.id] || Date.now();
-          draftQuiz.starts[student.id] ||= startedAt;
-          const accessedAt = new Date().toISOString();
-          const previousParticipant = draftQuiz.participants[student.id];
-          draftQuiz.participationRecords.push({
-            studentId: student.id,
-            accessedAt,
-            round: draftQuiz.round,
-          });
-          draftQuiz.participants[student.id] = previousParticipant
-            ? {
-                ...previousParticipant,
-                lastAccessedAt: accessedAt,
-                sessionCount: previousParticipant.sessionCount + 1,
-              }
-            : {
-                studentId: student.id,
-                firstAccessedAt: accessedAt,
-                lastAccessedAt: accessedAt,
-                sessionCount: 1,
-              };
-          draftQuiz.sessions = Object.fromEntries(
-            Object.entries(draftQuiz.sessions).filter(
-              ([, session]) => session.studentId !== student.id
-            )
-          );
-          draftQuiz.sessions[hashToken(token)] = {
-            tokenHash: hashToken(token),
-            studentId: student.id,
-            studentRevision: draftStudent.revision,
-            round: draftQuiz.round,
-            createdAt: new Date().toISOString(),
-            startedAt: draftQuiz.starts[student.id],
-          };
-          draftQuiz.updatedAt = new Date().toISOString();
-          const existing = draftQuiz.submissions.find(
-            (submission) => submission.studentId === student.id
-          );
-          return existing ? serializeResult(draftQuiz, existing) : null;
+          return serializeStudentSession(draftQuiz, draftStudent);
         });
-        json(
-          response,
-          200,
-          {
-            token,
-            student: publicStudent(student),
-            question: publicQuestion(quiz),
-            result: accessResult,
-          },
-          securityHeaders()
-        );
+        json(response, 200, sessionState, securityHeaders());
         return;
       }
 
@@ -2597,9 +3394,17 @@ export async function createBaynatServer({
         /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/submissions$/
       );
       if (submissionMatch && request.method === "POST") {
-        let quiz = requireQuiz(store, submissionMatch[1]);
+        const quiz = requireQuiz(store, submissionMatch[1]);
         const { student, session } = requireStudent(request, quiz);
         const body = await readJsonBody(request);
+        const questionId = String(body.questionId || "");
+        if (!/^[A-Za-z0-9_-]{3,100}$/.test(questionId)) {
+          throw new HttpError(
+            400,
+            "معرّف السؤال مطلوب لإرسال الإجابة.",
+            "QUESTION_ID_REQUIRED"
+          );
+        }
         const answer = String(body.answer || "").trim();
         if (!answer || answer.length > 500) {
           throw new HttpError(400, "اكتب إجابة صالحة قبل الإرسال.", "INVALID_ANSWER");
@@ -2607,11 +3412,12 @@ export async function createBaynatServer({
 
         const result = await store.update((data) => {
           const draftQuiz = data.quizzes[quiz.id];
-          const draftSession = draftQuiz.sessions[session.tokenHash];
-          const draftStudent = draftQuiz.students.find(
+          const draftSession = draftQuiz?.sessions?.[session.tokenHash];
+          const draftStudent = draftQuiz?.students?.find(
             (item) => item.id === student.id
           );
           if (
+            data.activeQuizId !== quiz.id ||
             !draftSession ||
             !draftStudent ||
             draftSession.studentRevision !== draftStudent.revision ||
@@ -2624,27 +3430,70 @@ export async function createBaynatServer({
             );
           }
           const existing = draftQuiz.submissions.find(
-            (item) => item.studentId === student.id
+            (item) =>
+              item.studentId === student.id &&
+              item.questionId === questionId
           );
           if (existing) return serializeResult(draftQuiz, existing);
-          const startedAt =
-            Number(draftSession.startedAt) ||
-            new Date(draftSession.createdAt).getTime();
+          const question = draftQuiz.questions.find(
+            (item) => item.id === questionId
+          );
+          if (!question) {
+            throw new HttpError(
+              404,
+              "السؤال المطلوب غير موجود في هذا الاختبار.",
+              "QUESTION_NOT_FOUND"
+            );
+          }
+          const expectedQuestion = nextUnansweredQuestion(
+            draftQuiz,
+            student.id
+          );
+          if (!expectedQuestion || expectedQuestion.id !== question.id) {
+            throw new HttpError(
+              409,
+              "أرسل إجابة السؤال التالي بالترتيب.",
+              "QUESTION_OUT_OF_ORDER"
+            );
+          }
+          const now = Date.now();
+          const startKey = questionStartKey(
+            draftQuiz.round,
+            student.id,
+            question.id
+          );
+          const startedAt = Number(draftQuiz.starts[startKey]);
+          if (!Number.isFinite(startedAt)) {
+            draftQuiz.starts[startKey] = now;
+          }
+          const submittedAt = new Date(now).toISOString();
+          const objective = question.type !== "short";
           const created = {
             id: `submission-${randomBytes(8).toString("base64url")}`,
             studentId: student.id,
-            questionId: draftQuiz.question.id,
+            questionId: question.id,
             answer,
-            isCorrect: isAnswerCorrect(draftQuiz.question, answer),
-            elapsedMs: Math.max(0, Date.now() - startedAt),
-            submittedAt: new Date().toISOString(),
+            gradingStatus: objective ? "graded" : "pending",
+            isCorrect: objective
+              ? isObjectiveAnswerCorrect(question, answer)
+              : null,
+            elapsedMs: Math.max(
+              0,
+              now -
+                (Number.isFinite(startedAt)
+                  ? startedAt
+                  : draftQuiz.starts[startKey])
+            ),
+            submittedAt,
+            gradedBy: objective ? "automatic" : null,
+            gradedAt: objective ? submittedAt : null,
+            gradeRevision: objective ? 1 : 0,
+            gradeHistory: [],
+            round: draftQuiz.round,
           };
           draftQuiz.submissions.push(created);
-          draftQuiz.answerRecords.push({
-            ...structuredClone(created),
-            round: draftQuiz.round,
-          });
-          draftQuiz.updatedAt = new Date().toISOString();
+          draftQuiz.answerRecords.push(structuredClone(created));
+          draftQuiz.updatedAt = submittedAt;
           return serializeResult(draftQuiz, created);
         });
         json(
@@ -2653,6 +3502,119 @@ export async function createBaynatServer({
           { result },
           securityHeaders()
         );
+        return;
+      }
+
+      const gradeSubmissionMatch = pathname.match(
+        /^\/api\/quizzes\/([A-Za-z0-9_-]+)\/submissions\/([A-Za-z0-9_-]+)\/grade$/
+      );
+      if (gradeSubmissionMatch && request.method === "PATCH") {
+        const quiz = requireQuiz(store, gradeSubmissionMatch[1]);
+        const supervisor = requireSupervisor(request, store);
+        if (request.headers["sec-fetch-site"] === "cross-site") {
+          throw new HttpError(
+            403,
+            "الطلب غير مسموح من موقع آخر.",
+            "CROSS_SITE_REQUEST"
+          );
+        }
+        const body = await readJsonBody(request);
+        if (typeof body.isCorrect !== "boolean") {
+          throw new HttpError(
+            400,
+            "حدّد ما إذا كانت الإجابة صحيحة.",
+            "INVALID_GRADE"
+          );
+        }
+        const submissionId = gradeSubmissionMatch[2];
+        const idempotency = readIdempotencyRequest(
+          request,
+          store.data.secret,
+          "submission-grade",
+          `${supervisor.id}:${submissionId}`,
+          body
+        );
+        const graded = await store.update((data) => {
+          const draftQuiz = data.quizzes[quiz.id];
+          if (!draftQuiz || data.activeQuizId !== quiz.id) {
+            throw new HttpError(
+              410,
+              "استُبدل هذا الاختبار الأسبوعي. استخدم الرابط النشط.",
+              "QUIZ_SUPERSEDED"
+            );
+          }
+          if (
+            !data.supervisors.some(
+              (candidate) => candidate.id === supervisor.id
+            )
+          ) {
+            throw new HttpError(
+              401,
+              "سجّل دخول المشرف للمتابعة.",
+              "SUPERVISOR_UNAUTHORIZED"
+            );
+          }
+          const submission = draftQuiz.submissions.find(
+            (item) => item.id === submissionId
+          );
+          if (!submission) {
+            throw new HttpError(
+              404,
+              "الإجابة المطلوب تقييمها غير موجودة.",
+              "SUBMISSION_NOT_FOUND"
+            );
+          }
+          const question = draftQuiz.questions.find(
+            (item) => item.id === submission.questionId
+          );
+          if (question?.type !== "short") {
+            throw new HttpError(
+              409,
+              "تُقيّم الإجابات الموضوعية تلقائيًا.",
+              "SUBMISSION_NOT_MANUAL"
+            );
+          }
+          const replayedGrade = findIdempotentResource(
+            submission.gradeHistory,
+            idempotency
+          );
+          if (!replayedGrade) {
+            const gradedAt = new Date().toISOString();
+            submission.gradingStatus = "graded";
+            submission.isCorrect = body.isCorrect;
+            submission.gradedBy = supervisor.id;
+            submission.gradedAt = gradedAt;
+            submission.gradeRevision += 1;
+            const gradeRecord = {
+              gradeRevision: submission.gradeRevision,
+              isCorrect: submission.isCorrect,
+              gradedBy: supervisor.id,
+              gradedAt,
+              ...(idempotency ? { creationRequest: idempotency } : {}),
+            };
+            submission.gradeHistory.push(gradeRecord);
+            const answerRecord = draftQuiz.answerRecords.find(
+              (record) =>
+                record.id === submission.id &&
+                record.round === submission.round
+            );
+            if (!answerRecord) {
+              throw new Error("تعذّر العثور على سجل الإجابة الدائم.");
+            }
+            answerRecord.gradingStatus = submission.gradingStatus;
+            answerRecord.isCorrect = submission.isCorrect;
+            answerRecord.gradedBy = submission.gradedBy;
+            answerRecord.gradedAt = submission.gradedAt;
+            answerRecord.gradeRevision = submission.gradeRevision;
+            answerRecord.gradeHistory.push(structuredClone(gradeRecord));
+            draftQuiz.updatedAt = gradedAt;
+          }
+          return {
+            submission: serializeAdminSubmission(submission),
+            quiz: serializeAdminQuiz(draftQuiz),
+          };
+        });
+        json(response, 200, graded, securityHeaders());
         return;
       }
 
@@ -2688,15 +3650,7 @@ export async function createBaynatServer({
           response,
           200,
           {
-            quiz: {
-              id: quiz.id,
-              question: publicQuestionSummary(quiz),
-              accessOptions: publicAccessOptions(quiz),
-              participantCount: Math.max(
-                serializeParticipants(quiz).length,
-                quiz.submissions.length
-              ),
-            },
+            quiz: publicQuizMetadata(quiz),
           },
           securityHeaders()
         );

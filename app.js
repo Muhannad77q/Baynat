@@ -35,10 +35,6 @@ export const DEFAULT_CLASS_OPTIONS = Object.freeze([
   "ثاني ثانوي",
   "ثالث ثانوي",
 ]);
-export const DEFAULT_HALAQA_OPTIONS = Object.freeze([
-  "زكاء",
-  "سواعد",
-]);
 
 function canonicalRequestJson(value) {
   if (Array.isArray(value)) {
@@ -173,7 +169,7 @@ export function createQuizPublishRequest(state, pendingAttempt = null) {
       state.expectedCurrentQuizId ??
       state.currentQuestion.remote?.quizId ??
       null,
-    question: structuredClone(state.currentQuestion),
+    questions: [structuredClone(state.currentQuestion)],
     students: structuredClone(state.students),
   };
   const pendingRequest = pendingAttempt?.payload;
@@ -181,8 +177,8 @@ export function createQuizPublishRequest(state, pendingAttempt = null) {
     pendingRequest &&
     pendingRequest.expectedCurrentQuizId ===
       currentRequest.expectedCurrentQuizId &&
-    canonicalRequestJson(pendingRequest.question) ===
-      canonicalRequestJson(currentRequest.question)
+    canonicalRequestJson(pendingRequest.questions) ===
+      canonicalRequestJson(currentRequest.questions)
   ) {
     return structuredClone(pendingRequest);
   }
@@ -220,16 +216,17 @@ export function normalizeAnswer(value = "") {
 }
 
 export function isAnswerCorrect(question, answer) {
-  if (!question || answer === null || answer === undefined) return false;
-  const normalizedAnswer = normalizeAnswer(answer);
-  const acceptedAnswers =
-    question.type === "short"
-      ? String(question.correctAnswer || "").split("|")
-      : [String(question.correctAnswer || "")];
-  return acceptedAnswers
-    .map(normalizeAnswer)
-    .filter(Boolean)
-    .some((acceptedAnswer) => normalizedAnswer === acceptedAnswer);
+  if (
+    !question ||
+    question.type === "short" ||
+    answer === null ||
+    answer === undefined
+  ) {
+    return false;
+  }
+  return (
+    normalizeAnswer(answer) === normalizeAnswer(question.correctAnswer || "")
+  );
 }
 
 export function validateStudentInput(
@@ -239,7 +236,6 @@ export function validateStudentInput(
 ) {
   const name = String(student?.name || "").trim();
   const className = String(student?.className || "").trim();
-  const halaqa = String(student?.halaqa || "").trim();
   const pin = normalizeDigits(student?.pin || "").trim();
 
   if (name.length < 2) {
@@ -247,9 +243,6 @@ export function validateStudentInput(
   }
   if (!className) {
     return { valid: false, error: "اختر صف الطالب." };
-  }
-  if (!halaqa) {
-    return { valid: false, error: "اختر حلقة الطالب." };
   }
   if (pinRequired && !/^\d{4}$/.test(pin)) {
     return { valid: false, error: "يجب أن يتكوّن رمز الدخول من ٤ أرقام." };
@@ -266,7 +259,7 @@ export function validateStudentInput(
     return { valid: false, error: "رمز الدخول مستخدم لطالب آخر. اختر رمزًا مختلفًا." };
   }
 
-  return { valid: true, value: { name, className, halaqa, pin } };
+  return { valid: true, value: { name, className, pin } };
 }
 
 export function validateQuestion(question) {
@@ -292,11 +285,8 @@ export function validateQuestion(question) {
   }
 
   if (
-    !String(question.correctAnswer || "").trim() ||
-    (question.type === "short" &&
-      !String(question.correctAnswer)
-        .split("|")
-        .some((answer) => normalizeAnswer(answer)))
+    question.type !== "short" &&
+    !String(question.correctAnswer || "").trim()
   ) {
     return { valid: false, error: "حدّد الإجابة الصحيحة قبل الحفظ." };
   }
@@ -320,50 +310,73 @@ export function calculateScore({ isCorrect, elapsedMs = 0, speedPlace = 0 }) {
   };
 }
 
-export function buildLeaderboard(students = [], submissions = [], questionId) {
-  const relevant = submissions.filter((submission) => submission.questionId === questionId);
-  const firstByStudent = new Map();
-
-  relevant
-    .slice()
-    .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime())
-    .forEach((submission) => {
-      if (!firstByStudent.has(submission.studentId)) {
-        firstByStudent.set(submission.studentId, submission);
-      }
-    });
-
-  const unique = [...firstByStudent.values()];
-  const correctBySpeed = unique
-    .filter((submission) => submission.isCorrect)
-    .slice()
-    .sort(
-      (a, b) =>
-        a.elapsedMs - b.elapsedMs ||
-        new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
-    );
-  const speedPlaces = new Map(correctBySpeed.map((submission, index) => [submission.id, index + 1]));
-
-  return unique
-    .map((submission) => {
-      const student = students.find((item) => item.id === submission.studentId) || {
-        id: submission.studentId,
-        name: "طالب",
-        className: "—",
-      };
-      const score = calculateScore({
-        isCorrect: submission.isCorrect,
-        elapsedMs: submission.elapsedMs,
-        speedPlace: speedPlaces.get(submission.id) || 0,
+export function buildLeaderboard(students = [], submissions = []) {
+  const speedPlaces = new Map();
+  const questionIds = [...new Set(submissions.map((item) => item.questionId))];
+  for (const questionId of questionIds) {
+    submissions
+      .filter(
+        (submission) =>
+          submission.questionId === questionId &&
+          submission.gradingStatus !== "pending" &&
+          submission.isCorrect === true
+      )
+      .slice()
+      .sort(
+        (first, second) =>
+          first.elapsedMs - second.elapsedMs ||
+          String(first.studentId).localeCompare(String(second.studentId))
+      )
+      .forEach((submission, index) => {
+        speedPlaces.set(submission.id, index + 1);
       });
-      return { ...submission, ...score, student };
-    })
+  }
+
+  const byStudent = new Map();
+  for (const submission of submissions) {
+    const student = students.find((item) => item.id === submission.studentId) || {
+      id: submission.studentId,
+      name: "طالب",
+      className: "—",
+    };
+    const entry = byStudent.get(submission.studentId) || {
+      id: submission.studentId,
+      student,
+      accuracyPoints: 0,
+      speedPoints: 0,
+      placePoints: 0,
+      total: 0,
+      correctCount: 0,
+      answeredCount: 0,
+      pendingCount: 0,
+      elapsedMs: 0,
+    };
+    const score = calculateScore({
+      isCorrect:
+        submission.gradingStatus !== "pending" && submission.isCorrect === true,
+      elapsedMs: submission.elapsedMs,
+      speedPlace: speedPlaces.get(submission.id) || 0,
+    });
+    entry.accuracyPoints += score.accuracyPoints;
+    entry.speedPoints += score.speedPoints;
+    entry.placePoints += score.placePoints;
+    entry.total += score.total;
+    entry.correctCount += Number(
+      submission.gradingStatus !== "pending" && submission.isCorrect === true
+    );
+    entry.answeredCount += 1;
+    entry.pendingCount += Number(submission.gradingStatus === "pending");
+    entry.elapsedMs += Math.max(0, Number(submission.elapsedMs) || 0);
+    byStudent.set(submission.studentId, entry);
+  }
+
+  return [...byStudent.values()]
     .sort(
       (a, b) =>
         b.total - a.total ||
-        Number(b.isCorrect) - Number(a.isCorrect) ||
+        b.correctCount - a.correctCount ||
         a.elapsedMs - b.elapsedMs ||
-        new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
+        String(a.student.id).localeCompare(String(b.student.id))
     )
     .map((entry, index) => ({ ...entry, rank: index + 1 }));
 }
@@ -415,7 +428,6 @@ export function decodeSharePayload(encoded) {
           typeof student.id === "string" &&
           typeof student.name === "string" &&
           typeof student.className === "string" &&
-          typeof student.halaqa === "string" &&
           typeof student.pinHash === "string"
       );
     const validSubmissions =
@@ -444,11 +456,10 @@ export function createSharePayload(state) {
   return {
     version: 1,
     question: state.currentQuestion,
-    students: state.students.map(({ id, name, className, halaqa, pin, pinHash }) => ({
+    students: state.students.map(({ id, name, className, pin, pinHash }) => ({
       id,
       name,
       className,
-      halaqa,
       pinHash: pinHash || hashPin(state.currentQuestion.id, pin),
     })),
     submissions: state.submissions
@@ -466,18 +477,20 @@ export function createSharePayload(state) {
 
 export function createInitialState(now = Date.now()) {
   return {
-    version: 2,
+    version: 3,
     currentQuestion: {
       id: "question-draft",
       type: "multiple",
-      prompt: "ما السؤال الذي تريد طرحه اليوم؟",
-      options: ["الخيار الأول", "الخيار الثاني"],
-      correctAnswer: "الخيار الأول",
+      prompt: "",
+      options: ["", "", "", ""],
+      correctAnswer: "",
       createdAt: new Date(now).toISOString(),
       published: false,
     },
+    questions: [],
     students: [],
     submissions: [],
+    leaderboard: [],
     participants: [],
     answerRecords: [],
     participationRecords: [],
@@ -540,13 +553,32 @@ function loadAdminState() {
       stored?.version === 2 &&
       stored.currentQuestion?.id &&
       Array.isArray(stored.students) &&
+      Array.isArray(stored.submissions)
+    ) {
+      stored.version = 3;
+      stored.questions = stored.currentQuestion.published
+        ? [stored.currentQuestion]
+        : [];
+      stored.leaderboard = [];
+    }
+    if (
+      stored?.version === 3 &&
+      stored.currentQuestion?.id &&
+      Array.isArray(stored.students) &&
       Array.isArray(stored.submissions) &&
       !isLegacyDemoState(stored)
     ) {
-      stored.students = stored.students.map((student) => ({
-        ...student,
-        halaqa: student.halaqa || "غير محدد",
-      }));
+      stored.students = stored.students.map(
+        ({ halaqa: _legacyHalaqa, pin: _legacyPin, ...student }) => student
+      );
+      stored.questions = Array.isArray(stored.questions)
+        ? stored.questions
+        : stored.currentQuestion.published
+          ? [stored.currentQuestion]
+          : [];
+      stored.leaderboard = Array.isArray(stored.leaderboard)
+        ? stored.leaderboard
+        : [];
       stored.participants = Array.isArray(stored.participants) ? stored.participants : [];
       stored.answerRecords = Array.isArray(stored.answerRecords)
         ? stored.answerRecords
@@ -582,10 +614,12 @@ function loadAdminState() {
 
 function createStateFromSharedPayload(payload) {
   const imported = {
-    version: 2,
+    version: 3,
     currentQuestion: payload.question,
+    questions: [payload.question],
     students: payload.students,
     submissions: payload.submissions,
+    leaderboard: buildLeaderboard(payload.students, payload.submissions),
   };
   sharedStorageKey = `baynat.shared-progress.${payload.question.id}`;
 
@@ -609,7 +643,14 @@ function persistState() {
       localStorage.setItem(sharedStorageKey, JSON.stringify(localOnly));
       return;
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const safeState = structuredClone(state);
+    safeState.students = safeState.students.map(
+      ({ pin: _rawPin, ...student }) => student
+    );
+    if (safeState.currentQuestion?.remote) {
+      delete safeState.currentQuestion.remote.adminToken;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeState));
   } catch {
     showToast("تعذّر الحفظ على هذا الجهاز. حاول مرة أخرى.", true);
   }
@@ -652,6 +693,9 @@ function cacheRefs() {
     builderPreviewOptions: document.querySelector("#builderPreviewOptions"),
     questionFormError: document.querySelector("#questionFormError"),
     resetQuestionButton: document.querySelector("#resetQuestionButton"),
+    publishedQuestionCount: document.querySelector("#publishedQuestionCount"),
+    publishedQuestionList: document.querySelector("#publishedQuestionList"),
+    publishedQuestionsEmpty: document.querySelector("#publishedQuestionsEmpty"),
     openStudentModal: document.querySelector("#openStudentModal"),
     studentModal: document.querySelector("#studentModal"),
     studentForm: document.querySelector("#studentForm"),
@@ -659,7 +703,6 @@ function cacheRefs() {
     studentModalTitle: document.querySelector("#studentModalTitle"),
     studentName: document.querySelector("#studentName"),
     studentClass: document.querySelector("#studentClass"),
-    studentHalaqa: document.querySelector("#studentHalaqa"),
     newStudentPin: document.querySelector("#newStudentPin"),
     studentPinHelp: document.querySelector("#studentPinHelp"),
     saveStudentButtonText: document.querySelector("#saveStudentButtonText"),
@@ -694,6 +737,9 @@ function cacheRefs() {
     answerRecordCount: document.querySelector("#answerRecordCount"),
     answerRecordsBody: document.querySelector("#answerRecordsBody"),
     answerRecordsEmpty: document.querySelector("#answerRecordsEmpty"),
+    pendingGradingCount: document.querySelector("#pendingGradingCount"),
+    gradingQueue: document.querySelector("#gradingQueue"),
+    gradingQueueEmpty: document.querySelector("#gradingQueueEmpty"),
     participantRecordCount: document.querySelector("#participantRecordCount"),
     participantRecordsBody: document.querySelector("#participantRecordsBody"),
     participantRecordsEmpty: document.querySelector("#participantRecordsEmpty"),
@@ -800,6 +846,7 @@ function bindEvents() {
   );
   refs.logoutSupervisorButton.addEventListener("click", logoutSupervisor);
   refs.resetLeaderboardButton.addEventListener("click", resetLeaderboard);
+  refs.gradingQueue.addEventListener("click", handleGradeAction);
   refs.adminAuthForm.addEventListener("submit", submitSupervisorAccess);
   [
     refs.adminDisplayName,
@@ -892,7 +939,7 @@ function applySupervisorProfile(supervisor) {
   ) {
     refs.pageTitle.textContent = currentSupervisor
       ? `أهلًا ${displayName} 👋`
-      : "أهلًا بك في بَيّنات";
+      : "أهلًا بك في فريق زكاء";
   }
 }
 
@@ -913,18 +960,17 @@ function switchAdminView(viewName) {
       "لوحة المشرف",
       currentSupervisor
         ? `أهلًا ${currentSupervisor.displayName} 👋`
-        : "أهلًا بك في بَيّنات",
+        : "أهلًا بك في فريق زكاء",
     ],
-    question: ["سؤال اليوم", "أنشئ تحدّيًا جديدًا"],
+    question: ["أسئلة الأسبوع", "أضف سؤالًا جديدًا"],
     students: ["إدارة الطلاب", "الطلاب المشتركون"],
-    supervisors: ["إدارة الحسابات", "مشرفو بَيّنات"],
-    leaderboard: ["نتائج اليوم", "لوحة المتصدرين"],
-    records: ["سجل اليوم", "الأجوبة والمشاركون"],
+    supervisors: ["إدارة الحسابات", "مشرفو فريق زكاء"],
+    leaderboard: ["نتائج الأسبوع", "لوحة المتصدرين"],
+    records: ["سجل الأسبوع", "الأجوبة والمشاركون"],
   };
   const [kicker, title] = labels[viewName] || labels.dashboard;
   refs.pageKicker.textContent = kicker;
   refs.pageTitle.textContent = title;
-  if (viewName === "question") hydrateQuestionEditor(state.currentQuestion);
   if (viewName === "students") renderStudents();
   if (viewName === "supervisors") renderSupervisors();
   if (viewName === "leaderboard") renderAdminLeaderboard();
@@ -948,7 +994,7 @@ function showStudentApp(screen = "access") {
   refs.pinHint.hidden = sharedMode;
   refs.studentAccessForm.hidden = invalidSharedLink;
   refs.accessFeatures.hidden = invalidSharedLink;
-  refs.accessTitle.textContent = invalidSharedLink ? "رابط السؤال غير صالح" : "جاهز لسؤال اليوم؟";
+  refs.accessTitle.textContent = invalidSharedLink ? "رابط السؤال غير صالح" : "جاهز لأسئلة الأسبوع؟";
   refs.accessDescription.textContent = invalidSharedLink
     ? "اطلب من المشرف إرسال رابط جديد، ثم حاول مرة أخرى."
     : "أدخل رمزك المكوّن من ٤ أرقام، واستعدّ لجمع النقاط.";
@@ -973,6 +1019,7 @@ function showStudentScreen(screenName) {
 function renderAll() {
   renderDate();
   renderDashboard();
+  renderPublishedQuestions();
   renderStudents();
   renderSupervisors();
   renderAdminLeaderboard();
@@ -988,10 +1035,16 @@ function renderDate() {
 }
 
 function renderDashboard() {
-  const question = state.currentQuestion;
-  const submissions = state.submissions.filter((item) => item.questionId === question.id);
-  const leaderboard = buildLeaderboard(state.students, state.submissions, question.id);
-  const correct = submissions.filter((item) => item.isCorrect);
+  const question = state.questions?.at(-1) || state.currentQuestion;
+  const submissions = state.submissions;
+  const leaderboard =
+    state.leaderboard?.length
+      ? state.leaderboard
+      : buildLeaderboard(state.students, submissions);
+  const graded = submissions.filter(
+    (item) => item.gradingStatus !== "pending"
+  );
+  const correct = graded.filter((item) => item.isCorrect);
   const average = submissions.length
     ? submissions.reduce((sum, item) => sum + item.elapsedMs, 0) / submissions.length
     : 0;
@@ -1000,21 +1053,22 @@ function renderDashboard() {
   refs.studentMetric.textContent = formatNumber(state.students.length);
   refs.answeredMetric.textContent = formatNumber(submissions.length);
   refs.answeredPercent.textContent = submissions.length
-    ? `${formatNumber(Math.round((submissions.length / Math.max(1, state.students.length)) * 100))}٪ من الفصل`
+    ? `${formatNumber(new Set(submissions.map((item) => item.studentId)).size)} طلاب شاركوا`
     : "بانتظار الإجابات";
   refs.speedMetric.textContent = submissions.length ? formatSeconds(average) : "—";
-  refs.correctMetric.textContent = submissions.length
-    ? `${formatNumber(Math.round((correct.length / submissions.length) * 100))}٪`
+  refs.correctMetric.textContent = graded.length
+    ? `${formatNumber(Math.round((correct.length / graded.length) * 100))}٪`
     : "٠٪";
-  refs.dashboardStatusLabel.textContent = question.published
-    ? "منشور الآن"
+  refs.dashboardStatusLabel.textContent = state.questions?.length
+    ? `${formatNumber(state.questions.length)} أسئلة منشورة`
     : "جاهز للإعداد";
-  refs.dashboardWelcomeTitle.innerHTML = question.published
-    ? "سؤال اليوم جاهز<br />لبداية التحدّي!"
-    : "ابدأ بإضافة الطلاب<br />ثم أنشئ سؤال اليوم";
+  refs.dashboardWelcomeTitle.innerHTML = state.questions?.length
+    ? "أسئلة الأسبوع جاهزة<br />والترتيب تراكمي!"
+    : "ابدأ بإضافة الطلاب<br />ثم أنشئ أسئلة الأسبوع";
 
   refs.dashboardQuestionType.textContent = QUESTION_TYPES[question.type];
-  refs.dashboardQuestionPrompt.textContent = question.prompt;
+  refs.dashboardQuestionPrompt.textContent =
+    question.prompt || "لم يُنشر سؤال بعد";
   renderDashboardOptions(question);
   renderDashboardLeaders(leaderboard);
   renderActivity(submissions);
@@ -1023,8 +1077,11 @@ function renderDashboard() {
 function renderDashboardOptions(question) {
   const options = questionOptions(question);
   if (question.type === "short") {
-    const item = createElement("div", "mini-option correct");
-    item.append(createElement("span", "", "✓"), createElement("span", "", `الإجابة: ${question.correctAnswer}`));
+    const item = createElement("div", "mini-option");
+    item.append(
+      createElement("span", "", "✎"),
+      createElement("span", "", "إجابة مقالية بتصحيح يدوي")
+    );
     refs.dashboardQuestionOptions.replaceChildren(item);
     return;
   }
@@ -1039,6 +1096,36 @@ function renderDashboardOptions(question) {
         createElement("span", "", isAnswerCorrect(question, option) ? "✓" : String.fromCharCode(65 + index)),
         createElement("span", "", option)
       );
+      return item;
+    })
+  );
+}
+
+function renderPublishedQuestions() {
+  const questions = Array.isArray(state.questions) ? state.questions : [];
+  refs.publishedQuestionCount.textContent = formatNumber(questions.length);
+  refs.publishedQuestionsEmpty.hidden = questions.length > 0;
+  refs.publishedQuestionList.hidden = questions.length === 0;
+  refs.publishedQuestionList.replaceChildren(
+    ...questions.map((question, index) => {
+      const item = createElement("article", "published-question-item");
+      const number = createElement(
+        "span",
+        "published-question-number",
+        formatNumber(index + 1)
+      );
+      const copy = createElement("div", "published-question-copy");
+      copy.append(
+        createElement("strong", "", question.prompt),
+        createElement(
+          "span",
+          "",
+          question.type === "short"
+            ? `${QUESTION_TYPES[question.type]} · تصحيح يدوي`
+            : `${QUESTION_TYPES[question.type]} · تصحيح تلقائي`
+        )
+      );
+      item.append(number, copy, createElement("span", "published-badge", "منشور"));
       return item;
     })
   );
@@ -1090,14 +1177,23 @@ function renderActivity(submissions) {
       const student = state.students.find((item) => item.id === submission.studentId) || { name: "طالب" };
       const row = createElement("div", "activity-row");
       const details = createElement("div", "activity-details");
+      const pending = submission.gradingStatus === "pending";
       details.append(
         createElement("strong", "", student.name),
-        createElement("span", "", `${submission.isCorrect ? "إجابة صحيحة" : "إجابة غير صحيحة"} · ${relativeTime(submission.submittedAt)}`)
+        createElement(
+          "span",
+          "",
+          `${pending ? "بانتظار التصحيح" : submission.isCorrect ? "إجابة صحيحة" : "إجابة غير صحيحة"} · ${relativeTime(submission.submittedAt)}`
+        )
       );
       row.append(
         avatarFor(student, index + 2),
         details,
-        createElement("span", `activity-status ${submission.isCorrect ? "correct" : "wrong"}`, submission.isCorrect ? "✓" : "×")
+        createElement(
+          "span",
+          `activity-status ${pending ? "pending" : submission.isCorrect ? "correct" : "wrong"}`,
+          pending ? "…" : submission.isCorrect ? "✓" : "×"
+        )
       );
       return row;
     })
@@ -1136,7 +1232,8 @@ function hydrateQuestionEditor(question) {
             )
           )
         : 0,
-    correctAnswer: question.type === "multiple" ? "" : question.correctAnswer,
+    correctAnswer:
+      question.type === "multiple" ? "" : question.correctAnswer || "",
   };
   refs.questionPrompt.value = editorState.prompt;
   refs.questionFormError.textContent = "";
@@ -1235,23 +1332,14 @@ function renderAnswerEditor() {
     return;
   }
 
-  const wrapper = createElement("div", "short-answer-wrap");
-  const input = document.createElement("input");
-  input.type = "text";
-  input.id = "shortCorrectAnswer";
-  input.name = "shortCorrectAnswer";
-  input.className = "short-answer-input";
-  input.maxLength = 300;
-  input.autocomplete = "off";
-  input.value = editorState.correctAnswer || "";
-  input.placeholder = "اكتب الإجابة النموذجية القصيرة";
-  input.dataset.shortAnswer = "true";
+  const wrapper = createElement("div", "manual-grading-note");
   wrapper.append(
-    input,
+    createElement("span", "", "✎"),
+    createElement("strong", "", "تصحيح يدوي من المشرف"),
     createElement(
       "p",
       "",
-      "تُصحّح تلقائيًا بعد تجاهل المسافات والتشكيل. أضف صيغًا بديلة وافصل بينها بعلامة |."
+      "ستظهر إجابة الطالب في سجل الأجوبة، ويمكنك اعتمادها صحيحة أو غير صحيحة."
     )
   );
   refs.answerEditor.replaceChildren(wrapper);
@@ -1263,8 +1351,6 @@ function handleAnswerEditorChange(event) {
   } else if (event.target.name === "correctOption") {
     editorState.correctIndex = Number(event.target.value);
   } else if (event.target.name === "booleanAnswer") {
-    editorState.correctAnswer = event.target.value;
-  } else if (event.target.matches("[data-short-answer]")) {
     editorState.correctAnswer = event.target.value;
   }
   renderQuestionEditorPreview();
@@ -1284,14 +1370,15 @@ function editorQuestion() {
   if (editorState.type === "boolean") {
     return { type: "boolean", prompt, options: ["صح", "خطأ"], correctAnswer: editorState.correctAnswer };
   }
-  return { type: "short", prompt, options: [], correctAnswer: editorState.correctAnswer.trim() };
+  return { type: "short", prompt, options: [] };
 }
 
 function renderQuestionEditorPreview() {
   const question = editorQuestion();
   refs.promptCount.textContent = formatNumber(editorState.prompt.length);
   refs.builderPreviewType.textContent = QUESTION_TYPES[question.type];
-  refs.builderPreviewPrompt.textContent = question.prompt || "اكتب سؤال اليوم ليظهر هنا...";
+  refs.builderPreviewPrompt.textContent =
+    question.prompt || "اكتب سؤال الأسبوع ليظهر هنا...";
 
   if (question.type === "short") {
     refs.builderPreviewOptions.replaceChildren(
@@ -1334,63 +1421,49 @@ async function saveQuestion(event) {
     return;
   }
 
-  const currentSubmissions = state.submissions.filter(
-    (submission) => submission.questionId === state.currentQuestion.id
-  );
-  const contentChanged = !hasSameQuestionContent(state.currentQuestion, question);
-  if (
-    contentChanged &&
-    currentSubmissions.length > 0 &&
-    !window.confirm(
-      "نشر هذا السؤال سيبدأ تحدّيًا جديدًا ويصفّر نتائج السؤال الحالي عند جميع الطلاب. هل تريد المتابعة؟"
-    )
-  ) {
-    return;
-  }
-
-  if (!contentChanged) {
-    state.currentQuestion.published = true;
-    persistState();
+  const alreadyPublished =
+    state.currentQuestion.published &&
+    state.questions.some(
+      (item) =>
+        item.id === state.currentQuestion.id &&
+        hasSameQuestionContent(item, question)
+    );
+  if (alreadyPublished) {
     try {
-      await ensureRemoteQuiz();
-      showToast("السؤال منشور ورابط الطلاب جاهز");
-      openShareModal();
+      await openShareModal();
+      showToast("السؤال منشور على رابط الأسبوع نفسه");
     } catch (error) {
       refs.questionFormError.textContent = error.message;
     }
     return;
   }
 
-  const expectedCurrentQuizId =
-    state.currentQuestion.remote?.quizId ??
-    state.expectedCurrentQuizId ??
-    null;
+  const remote = state.currentQuestion.remote || null;
   state.currentQuestion = {
     ...question,
-    options: question.type === "multiple" ? question.options.filter(Boolean) : question.options,
-    id: `question-${Date.now().toString(36)}`,
+    options:
+      question.type === "multiple"
+        ? question.options.filter(Boolean)
+        : question.options,
+    id: `question-draft-${Date.now().toString(36)}`,
     createdAt: new Date().toISOString(),
-    published: true,
-    remote: null,
+    published: false,
+    remote,
   };
-  state.submissions = [];
-  state.participants = [];
-  state.answerRecords = [];
-  state.participationRecords = [];
-  state.currentRound = 1;
-  state.expectedCurrentQuizId = expectedCurrentQuizId;
   persistState();
   refs.questionFormError.textContent = "";
-  hydrateQuestionEditor(state.currentQuestion);
-  renderAll();
-  showToast("تم حفظ السؤال، وجارٍ تجهيز رابط الطلاب...");
+  const submitButton = refs.questionForm.querySelector("[type='submit']");
+  submitButton.disabled = true;
+  showToast("جارٍ إضافة السؤال إلى أسئلة الأسبوع...");
   try {
     await ensureRemoteQuiz();
-    showToast("تم النشر وأصبح الرابط جاهزًا لأي جوال");
-    openShareModal();
+    resetQuestionEditor();
+    showToast("تم نشر السؤال وبقيت جميع النقاط محفوظة");
   } catch (error) {
     refs.questionFormError.textContent = error.message;
-    showToast("تم الحفظ، لكن تعذّر إنشاء رابط الطلاب", true);
+    showToast("تعذّر نشر السؤال؛ يمكنك إعادة المحاولة", true);
+  } finally {
+    submitButton.disabled = false;
   }
 }
 
@@ -1418,22 +1491,11 @@ function openStudentEditor(student = null) {
     ...state.students.map((item) => item.className),
     student?.className,
   ];
-  const halaqaOptions = [
-    ...DEFAULT_HALAQA_OPTIONS,
-    ...state.students.map((item) => item.halaqa),
-    student?.halaqa,
-  ];
   replaceStudentSelectOptions(
     refs.studentClass,
     classOptions,
     "اختر الصف",
     student?.className
-  );
-  replaceStudentSelectOptions(
-    refs.studentHalaqa,
-    halaqaOptions,
-    "اختر الحلقة",
-    student?.halaqa
   );
   refs.studentName.value = student?.name || "";
   refs.newStudentPin.required = !student;
@@ -1455,7 +1517,6 @@ async function saveStudent(event) {
     {
       name: refs.studentName.value,
       className: refs.studentClass.value,
-      halaqa: refs.studentHalaqa.value,
       pin: refs.newStudentPin.value,
     },
     state.students,
@@ -1536,12 +1597,10 @@ async function handleStudentTableAction(event) {
 function renderStudents() {
   const query = normalizeAnswer(refs.studentSearch?.value || "");
   const filtered = state.students.filter((student) =>
-    normalizeAnswer(`${student.name} ${student.className} ${student.halaqa}`).includes(query)
+    normalizeAnswer(`${student.name} ${student.className}`).includes(query)
   );
   const submittedIds = new Set(
-    state.submissions
-      .filter((submission) => submission.questionId === state.currentQuestion.id)
-      .map((submission) => submission.studentId)
+    state.submissions.map((submission) => submission.studentId)
   );
 
   refs.studentListCount.textContent = formatNumber(filtered.length);
@@ -1555,13 +1614,12 @@ function renderStudents() {
       const details = createElement("div");
       details.append(
         createElement("strong", "", student.name),
-        createElement("span", "", `${student.className} · ${student.halaqa}`)
+        createElement("span", "", student.className)
       );
       studentCell.append(avatarFor(student, index), details);
       studentColumn.append(studentCell);
 
       const classColumn = createElement("td", "", student.className);
-      const halaqaColumn = createElement("td", "", student.halaqa);
       const pinColumn = document.createElement("td");
       const pin = createElement("span", "pin-code");
       const visiblePin = student.pin ? toArabicDigits(student.pin) : "••••";
@@ -1574,7 +1632,7 @@ function renderStudents() {
         "span",
         `student-status ${answered ? "answered" : "waiting"}`
       );
-      status.append(createElement("i"), document.createTextNode(answered ? "أجاب اليوم" : "بانتظار الإجابة"));
+      status.append(createElement("i"), document.createTextNode(answered ? "شارك هذا الأسبوع" : "لم يشارك بعد"));
       statusColumn.append(status);
 
       const actionColumn = document.createElement("td");
@@ -1597,7 +1655,6 @@ function renderStudents() {
       row.append(
         studentColumn,
         classColumn,
-        halaqaColumn,
         pinColumn,
         statusColumn,
         actionColumn
@@ -1615,7 +1672,7 @@ function openSupervisorEditor(supervisor = null) {
   refs.supervisorModalLabel.textContent = isEditing ? "تعديل الحساب" : "مشرف جديد";
   refs.supervisorModalTitle.textContent = isEditing
     ? "تعديل اسم المشرف"
-    : "إضافة مشرف إلى بَيّنات";
+    : "إضافة مشرف إلى فريق زكاء";
   refs.supervisorName.value = supervisor?.displayName || "";
   refs.supervisorPasswordGroup.hidden = isEditing;
   refs.supervisorPasswordConfirmGroup.hidden = isEditing;
@@ -1794,11 +1851,10 @@ function renderSupervisors() {
 }
 
 function renderAdminLeaderboard() {
-  const leaderboard = buildLeaderboard(
-    state.students,
-    state.submissions,
-    state.currentQuestion.id
-  );
+  const leaderboard =
+    state.leaderboard?.length
+      ? state.leaderboard
+      : buildLeaderboard(state.students, state.submissions);
   refs.adminPodium.hidden = leaderboard.length === 0;
   refs.leaderboardEmptyState.hidden = leaderboard.length > 0;
   refs.adminLeaderboardRows.closest(".table-wrap").hidden = leaderboard.length === 0;
@@ -1841,12 +1897,17 @@ function renderAdminLeaderboard() {
       row.append(
         rankColumn,
         studentColumn,
+        createElement("td", "", formatNumber(entry.answeredCount || 0)),
         createElement(
           "td",
-          `answer-state ${entry.isCorrect ? "correct" : "wrong"}`,
-          entry.isCorrect ? "صحيحة ✓" : "غير صحيحة ×"
+          "answer-state correct",
+          `${formatNumber(entry.correctCount || 0)} ✓`
         ),
-        createElement("td", "", formatSeconds(entry.elapsedMs)),
+        createElement(
+          "td",
+          entry.pendingCount ? "answer-state pending" : "",
+          formatNumber(entry.pendingCount || 0)
+        ),
         createElement("td", "score-cell", formatNumber(entry.total))
       );
       return row;
@@ -1863,9 +1924,114 @@ function formatRecordTime(dateString) {
   }).format(date);
 }
 
+function questionForSubmission(submission) {
+  return state.questions.find(
+    (question) => question.id === submission.questionId
+  );
+}
+
+function renderGradingQueue() {
+  const pending = state.submissions
+    .filter((submission) => submission.gradingStatus === "pending")
+    .slice()
+    .sort(
+      (first, second) =>
+        new Date(first.submittedAt).getTime() -
+        new Date(second.submittedAt).getTime()
+    );
+  refs.pendingGradingCount.textContent = formatNumber(pending.length);
+  refs.gradingQueueEmpty.hidden = pending.length > 0;
+  refs.gradingQueue.hidden = pending.length === 0;
+  refs.gradingQueue.replaceChildren(
+    ...pending.map((submission, index) => {
+      const student = state.students.find(
+        (item) => item.id === submission.studentId
+      ) || { name: "طالب محذوف", className: "—" };
+      const question = questionForSubmission(submission);
+      const item = createElement("article", "grading-item");
+      const header = createElement("div", "grading-item-header");
+      const identity = createElement("div", "student-cell");
+      const identityCopy = createElement("div");
+      identityCopy.append(
+        createElement("strong", "", student.name),
+        createElement("span", "", student.className)
+      );
+      identity.append(avatarFor(student, index), identityCopy);
+      header.append(
+        identity,
+        createElement(
+          "span",
+          "grading-time",
+          formatRecordTime(submission.submittedAt)
+        )
+      );
+      const questionText = createElement(
+        "p",
+        "grading-question",
+        question?.prompt || "سؤال مقالي"
+      );
+      const answer = createElement(
+        "blockquote",
+        "grading-answer",
+        submission.answer || "—"
+      );
+      const actions = createElement("div", "grading-actions");
+      const correct = createElement("button", "button button-success-soft");
+      correct.type = "button";
+      correct.dataset.gradeSubmission = submission.id;
+      correct.dataset.gradeValue = "true";
+      correct.textContent = "اعتماد صحيحة ✓";
+      const incorrect = createElement("button", "button button-danger-soft");
+      incorrect.type = "button";
+      incorrect.dataset.gradeSubmission = submission.id;
+      incorrect.dataset.gradeValue = "false";
+      incorrect.textContent = "اعتماد غير صحيحة ×";
+      actions.append(correct, incorrect);
+      item.append(header, questionText, answer, actions);
+      return item;
+    })
+  );
+}
+
+async function handleGradeAction(event) {
+  const button = event.target.closest("[data-grade-submission]");
+  if (!button || button.disabled) return;
+  const quizId = state.currentQuestion.remote?.quizId;
+  if (!quizId) return;
+  const submissionId = button.dataset.gradeSubmission;
+  const requestBody = { isCorrect: button.dataset.gradeValue === "true" };
+  const scope = `submission-grade:${quizId}:${submissionId}`;
+  const key = createAttemptKeys.keyFor(scope, requestBody);
+  const siblings = button.parentElement.querySelectorAll("button");
+  siblings.forEach((item) => {
+    item.disabled = true;
+  });
+  try {
+    const payload = await supervisorRequest(
+      `/api/quizzes/${encodeURIComponent(quizId)}/submissions/${encodeURIComponent(submissionId)}/grade`,
+      {
+        method: "PATCH",
+        headers: { "Idempotency-Key": key },
+        body: JSON.stringify(requestBody),
+      }
+    );
+    createAttemptKeys.complete(scope, requestBody, key);
+    applySharedQuiz(payload.quiz);
+    showToast(
+      requestBody.isCorrect
+        ? "اعتمدت الإجابة صحيحة وأضيفت نقاطها"
+        : "اعتمدت الإجابة غير صحيحة"
+    );
+  } catch (error) {
+    showToast(error.message, true);
+    siblings.forEach((item) => {
+      item.disabled = false;
+    });
+  }
+}
+
 function renderRecords() {
   const submissions = (state.answerRecords || state.submissions)
-    .filter((submission) => submission.questionId === state.currentQuestion.id)
     .slice()
     .sort(
       (first, second) =>
@@ -1887,9 +2053,8 @@ function renderRecords() {
       historicalParticipantByStudent.set(record.studentId, record);
     }
   }
-  const currentSubmissions = state.submissions.filter(
-    (submission) => submission.questionId === state.currentQuestion.id
-  );
+  const currentSubmissions = state.submissions;
+  renderGradingQueue();
   refs.answerRecordCount.textContent = formatNumber(submissions.length);
   refs.answerRecordsEmpty.hidden = submissions.length > 0;
   refs.answerRecordsBody.closest(".table-wrap").hidden = submissions.length === 0;
@@ -1899,8 +2064,9 @@ function renderRecords() {
         state.students.find((item) => item.id === submission.studentId) || {
           name: "طالب محذوف",
           className: "—",
-          halaqa: "—",
         };
+      const question = questionForSubmission(submission);
+      const pending = submission.gradingStatus === "pending";
       const row = document.createElement("tr");
       const studentColumn = document.createElement("td");
       const studentCell = createElement("div", "student-cell");
@@ -1909,6 +2075,37 @@ function renderRecords() {
         createElement("strong", "", student.name)
       );
       studentColumn.append(studentCell);
+      const resultColumn = createElement(
+        "td",
+        `answer-state ${pending ? "pending" : submission.isCorrect ? "correct" : "wrong"}`
+      );
+      resultColumn.append(
+        document.createTextNode(
+          pending
+            ? "بانتظار التصحيح"
+            : submission.isCorrect
+              ? "صحيحة ✓"
+              : "غير صحيحة ×"
+        )
+      );
+      if (
+        question?.type === "short" &&
+        state.submissions.some((item) => item.id === submission.id)
+      ) {
+        const controls = createElement("div", "regrade-actions");
+        const correctButton = createElement("button", "regrade-button correct");
+        correctButton.type = "button";
+        correctButton.dataset.gradeSubmission = submission.id;
+        correctButton.dataset.gradeValue = "true";
+        correctButton.textContent = "صحيحة";
+        const incorrectButton = createElement("button", "regrade-button wrong");
+        incorrectButton.type = "button";
+        incorrectButton.dataset.gradeSubmission = submission.id;
+        incorrectButton.dataset.gradeValue = "false";
+        incorrectButton.textContent = "غير صحيحة";
+        controls.append(correctButton, incorrectButton);
+        resultColumn.append(controls);
+      }
       row.append(
         studentColumn,
         createElement(
@@ -1919,13 +2116,9 @@ function renderRecords() {
             : `الجولة ${formatNumber(submission.round || 1)}`
         ),
         createElement("td", "", student.className),
-        createElement("td", "", student.halaqa),
+        createElement("td", "answer-record-question", question?.prompt || "—"),
         createElement("td", "answer-record-text", submission.answer || "—"),
-        createElement(
-          "td",
-          `answer-state ${submission.isCorrect ? "correct" : "wrong"}`,
-          submission.isCorrect ? "صحيحة ✓" : "غير صحيحة ×"
-        ),
+        resultColumn,
         createElement("td", "", formatSeconds(submission.elapsedMs)),
         createElement("td", "", formatRecordTime(submission.submittedAt))
       );
@@ -1981,7 +2174,6 @@ function renderRecords() {
       row.append(
         studentColumn,
         createElement("td", "", student.className),
-        createElement("td", "", student.halaqa),
         statusColumn,
         createElement(
           "td",
@@ -2001,17 +2193,26 @@ function renderRecords() {
 }
 
 async function resetLeaderboard() {
+  const pendingGrades = state.submissions.filter(
+    (submission) => submission.gradingStatus === "pending"
+  ).length;
+  if (pendingGrades > 0) {
+    switchAdminView("records");
+    showToast(
+      `صحّح ${formatNumber(pendingGrades)} من الإجابات المقالية قبل إعادة التعيين`,
+      true
+    );
+    return;
+  }
   const hasResults =
-    state.submissions.some(
-      (submission) => submission.questionId === state.currentQuestion.id
-    ) || (state.participants || []).length > 0;
+    state.submissions.length > 0 || (state.participants || []).length > 0;
   if (!hasResults) {
     showToast("قائمة المتصدرين فارغة بالفعل");
     return;
   }
   if (
     !window.confirm(
-      "سيُصفّر الترتيب الحالي وسيتمكن الطلاب من الحل من جديد، مع بقاء سجل المشاركات والأجوبة محفوظًا. هل تريد المتابعة؟"
+      "سيُصفّر ترتيب الأسبوع الحالي وسيتمكن الطلاب من حل جميع الأسئلة من جديد، مع بقاء السجل محفوظًا. هل تريد المتابعة؟"
     )
   ) {
     return;
@@ -2051,6 +2252,7 @@ async function resetLeaderboard() {
       if ((state.currentRound || 1) === attemptPayload.expectedRound) {
         state.submissions = [];
         state.participants = [];
+        state.leaderboard = [];
         state.currentRound = resetResult.round;
       } else if (state.currentRound !== resetResult.round) {
         await syncAdminResults();
@@ -2058,6 +2260,7 @@ async function resetLeaderboard() {
     } else {
       state.submissions = [];
       state.participants = [];
+      state.leaderboard = [];
       state.currentRound = (state.currentRound || 1) + 1;
     }
     persistState();
@@ -2168,27 +2371,35 @@ async function refreshSupervisors() {
   renderSupervisors();
 }
 
-function applySharedQuiz(quiz) {
+function applySharedQuiz(quiz, { restartSync = true, remoteOverride = null } = {}) {
   if (!quiz) return;
-  const previousRemote = state.currentQuestion.remote;
+  const previousRemote = remoteOverride || state.currentQuestion.remote;
   const localStudentsById = new Map(
     state.students.map((student) => [student.id, student])
   );
+  const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
+  const latestQuestion =
+    questions.at(-1) ||
+    state.currentQuestion ||
+    createInitialState().currentQuestion;
   state.currentQuestion = {
-    ...quiz.question,
+    ...latestQuestion,
     published: true,
     remote: {
       quizId: quiz.id,
-      adminToken:
-        previousRemote?.quizId === quiz.id ? previousRemote.adminToken || "" : "",
-      studentPath: `/student.html?q=${encodeURIComponent(quiz.id)}`,
+      studentPath:
+        previousRemote?.studentPath ||
+        `/student.html?q=${encodeURIComponent(quiz.id)}`,
     },
   };
-  state.students = quiz.students.map((student) => {
+  state.questions = questions;
+  state.students = (quiz.students || []).map((student) => {
     const pin = localStudentsById.get(student.id)?.pin;
     return pin ? { ...student, pin } : student;
   });
   state.submissions = quiz.submissions || [];
+  state.leaderboard =
+    quiz.leaderboard || buildLeaderboard(state.students, state.submissions);
   state.participants = quiz.participants || [];
   state.answerRecords = quiz.answerRecords || quiz.submissions || [];
   state.participationRecords = quiz.participationRecords || [];
@@ -2196,7 +2407,7 @@ function applySharedQuiz(quiz) {
   state.expectedCurrentQuizId = quiz.id;
   persistState();
   renderAll();
-  startAdminSync();
+  if (restartSync) startAdminSync();
 }
 
 async function refreshSupervisorWorkspace() {
@@ -2388,10 +2599,17 @@ function logoutSupervisor() {
   saveSupervisorToken("");
   applySupervisorProfile(null);
   supervisors = [];
+  state = createInitialState();
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // In-memory clearing still protects the signed-out view.
+  }
   if (rosterSyncInterval) window.clearInterval(rosterSyncInterval);
   rosterSyncInterval = null;
   stopAdminSync();
-  renderSupervisors();
+  hydrateQuestionEditor(state.currentQuestion);
+  renderAll();
   showSupervisorModal(true, supervisorNames);
 }
 
@@ -2413,6 +2631,14 @@ async function supervisorRequest(path, options = {}) {
     if (error.code === "SUPERVISOR_UNAUTHORIZED") {
       saveSupervisorToken("");
       applySupervisorProfile(null);
+      state = createInitialState();
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // In-memory clearing still protects the signed-out view.
+      }
+      hydrateQuestionEditor(state.currentQuestion);
+      renderAll();
       showSupervisorModal(
         true,
         supervisors.map((supervisor) => supervisor.displayName)
@@ -2424,9 +2650,12 @@ async function supervisorRequest(path, options = {}) {
 
 async function refreshSupervisorRoster(pinOverrides = {}) {
   const payload = await supervisorRequest("/api/students");
-  const currentById = new Map(state.students.map((student) => [student.id, student]));
+  const currentById = new Map(
+    state.students.map((student) => [student.id, student])
+  );
   state.students = payload.students.map((student) => {
-    const knownPin = pinOverrides[student.id] || currentById.get(student.id)?.pin;
+    const knownPin =
+      pinOverrides[student.id] || currentById.get(student.id)?.pin;
     return knownPin ? { ...student, pin: knownPin } : student;
   });
   persistState();
@@ -2440,11 +2669,8 @@ async function syncSupervisorRosterSilently() {
   try {
     await refreshSupervisorRoster();
     const dashboard = await supervisorRequest("/api/admin/dashboard");
-    if (
-      dashboard.quiz &&
-      dashboard.quiz.id !== state.currentQuestion.remote?.quizId
-    ) {
-      applySharedQuiz(dashboard.quiz);
+    if (dashboard.quiz) {
+      applySharedQuiz(dashboard.quiz, { restartSync: false });
     }
   } catch {
     // Authentication errors are handled by supervisorRequest; transient polling errors stay silent.
@@ -2459,11 +2685,9 @@ function startRosterSync() {
 }
 
 function adminRequest(path, options = {}) {
-  const token = state.currentQuestion.remote?.adminToken;
   return requestJson(path, {
     ...options,
     headers: {
-      "X-Admin-Token": token || "",
       "X-Supervisor-Token": supervisorToken || "",
       ...(options.headers || {}),
     },
@@ -2471,7 +2695,59 @@ function adminRequest(path, options = {}) {
 }
 
 async function ensureRemoteQuiz() {
-  if (state.currentQuestion.remote?.quizId) return state.currentQuestion.remote;
+  const existingRemote = state.currentQuestion.remote;
+  if (
+    existingRemote?.quizId &&
+    state.currentQuestion.published &&
+    state.questions.some((question) => question.id === state.currentQuestion.id)
+  ) {
+    return existingRemote;
+  }
+  if (existingRemote?.quizId) {
+    const quizId = existingRemote.quizId;
+    const requestBody = {
+      question: {
+        type: state.currentQuestion.type,
+        prompt: state.currentQuestion.prompt,
+        options: state.currentQuestion.options,
+        ...(state.currentQuestion.type !== "short"
+          ? { correctAnswer: state.currentQuestion.correctAnswer }
+          : {}),
+      },
+    };
+    const scope = `quiz-question-create:${quizId}`;
+    const pendingAttempt = createAttemptKeys.pending(scope);
+    const appendBody =
+      pendingAttempt?.payload &&
+      canonicalRequestJson(pendingAttempt.payload) ===
+        canonicalRequestJson(requestBody)
+        ? pendingAttempt.payload
+        : requestBody;
+    const idempotencyKey = createAttemptKeys.keyFor(scope, appendBody);
+    try {
+      const payload = await supervisorRequest(
+        `/api/quizzes/${encodeURIComponent(quizId)}/questions`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify(appendBody),
+        }
+      );
+      createAttemptKeys.complete(scope, appendBody, idempotencyKey);
+      applySharedQuiz(payload.quiz, {
+        remoteOverride: existingRemote,
+      });
+      return state.currentQuestion.remote;
+    } catch (error) {
+      if (
+        ["QUIZ_SUPERSEDED", "IDEMPOTENCY_KEY_REUSED"].includes(error.code)
+      ) {
+        createAttemptKeys.forget(scope);
+      }
+      throw error;
+    }
+  }
+
   const pendingAttempt = createAttemptKeys.pending("quiz-create");
   const requestBody = createQuizPublishRequest(state, pendingAttempt);
   const idempotencyKey = createAttemptKeys.keyFor(
@@ -2486,27 +2762,32 @@ async function ensureRemoteQuiz() {
       body: JSON.stringify(requestBody),
     });
   } catch (error) {
-    if (error.code === "QUIZ_PUBLISH_CONFLICT") {
+    if (
+      ["QUIZ_PUBLISH_CONFLICT", "WEEK_ALREADY_ACTIVE"].includes(error.code)
+    ) {
       createAttemptKeys.complete("quiz-create", requestBody, idempotencyKey);
+    }
+    if (error.code === "WEEK_ALREADY_ACTIVE") {
+      const draftQuestion = { ...state.currentQuestion };
+      const dashboard = await supervisorRequest("/api/admin/dashboard");
+      if (dashboard.quiz) {
+        applySharedQuiz(dashboard.quiz);
+        state.currentQuestion = {
+          ...draftQuestion,
+          published: false,
+          remote: state.currentQuestion.remote,
+        };
+        return ensureRemoteQuiz();
+      }
     }
     throw error;
   }
-  state.currentQuestion.id = payload.questionId;
-  state.currentQuestion.remote = {
+  const remote = {
     quizId: payload.quizId,
-    adminToken: payload.adminToken,
     studentPath: payload.studentPath,
   };
-  state.submissions = [];
-  state.participants = [];
-  state.answerRecords = [];
-  state.participationRecords = [];
-  state.currentRound = 1;
-  state.expectedCurrentQuizId = payload.quizId;
-  persistState();
-  renderAll();
-  startAdminSync();
   createAttemptKeys.complete("quiz-create", requestBody, idempotencyKey);
+  applySharedQuiz(payload.quiz, { remoteOverride: remote });
   return state.currentQuestion.remote;
 }
 
@@ -2551,29 +2832,15 @@ async function syncAdminResults() {
     const payload = await adminRequest(
       `/api/quizzes/${encodeURIComponent(remote.quizId)}/admin`
     );
-    state.currentQuestion = {
-      ...payload.quiz.question,
-      published: true,
-      remote: {
+    applySharedQuiz(payload.quiz, {
+      restartSync: false,
+      remoteOverride: {
         ...remote,
         studentPath:
           remote.studentPath ||
           `/student.html?q=${encodeURIComponent(payload.quiz.id)}`,
       },
-    };
-    const localStudentsById = new Map(state.students.map((student) => [student.id, student]));
-    state.students = payload.quiz.students.map((student) => {
-      const pin = localStudentsById.get(student.id)?.pin;
-      return pin ? { ...student, pin } : student;
     });
-    state.submissions = payload.quiz.submissions;
-    state.participants = payload.quiz.participants || [];
-    state.answerRecords = payload.quiz.answerRecords || payload.quiz.submissions;
-    state.participationRecords = payload.quiz.participationRecords || [];
-    state.currentRound = payload.quiz.round || 1;
-    state.expectedCurrentQuizId = payload.quiz.id;
-    persistState();
-    renderAll();
   } catch (error) {
     if (error.code === "ADMIN_UNAUTHORIZED") {
       stopAdminSync();
@@ -2775,7 +3042,9 @@ function renderStudentResult(submission) {
     : `محاولة جميلة يا ${firstName}`;
   refs.resultMessage.textContent = submission.isCorrect
     ? "الدقّة والسرعة رفعتاك في لوحة المتصدرين."
-    : `إجابة مقترحة: «${state.currentQuestion.correctAnswer.split("|")[0].trim()}». حاول في تحدّي الغد!`;
+    : state.currentQuestion.type === "short"
+      ? "وصلت إجابتك وستظهر نقاطها بعد تصحيح المشرف."
+      : "واصل المحاولة في بقية أسئلة الأسبوع.";
   refs.studentRank.textContent = `#${toArabicDigits(entry.rank)}`;
   refs.participantCount.textContent = formatNumber(leaderboard.length);
   refs.studentPoints.textContent = formatNumber(entry.total);

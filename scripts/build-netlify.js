@@ -11,7 +11,7 @@ const publicFiles = [
   "student.js",
   "pow-worker.js",
   "styles.css",
-  "logo.svg",
+  "zakaa-logo.jpg",
 ];
 
 await rm(output, { recursive: true, force: true });
