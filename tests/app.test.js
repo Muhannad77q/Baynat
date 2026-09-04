@@ -459,13 +459,21 @@ test("starts with a clean classroom and an unpublished question draft", () => {
 });
 
 test("ships the Zakaa weekly brand and PIN-only student form", async () => {
-  const [adminHtml, studentHtml, studentScript, buildScript, logo] =
+  const [
+    adminHtml,
+    adminScript,
+    studentHtml,
+    studentScript,
+    buildScript,
+    logo,
+  ] =
     await Promise.all([
-    readFile(new URL("../index.html", import.meta.url), "utf8"),
-    readFile(new URL("../student.html", import.meta.url), "utf8"),
-    readFile(new URL("../student.js", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/build-netlify.js", import.meta.url), "utf8"),
-    readFile(new URL("../zakaa-logo.jpg", import.meta.url)),
+      readFile(new URL("../index.html", import.meta.url), "utf8"),
+      readFile(new URL("../app.js", import.meta.url), "utf8"),
+      readFile(new URL("../student.html", import.meta.url), "utf8"),
+      readFile(new URL("../student.js", import.meta.url), "utf8"),
+      readFile(new URL("../scripts/build-netlify.js", import.meta.url), "utf8"),
+      readFile(new URL("../zakaa-logo.jpg", import.meta.url)),
     ]);
 
   assert.match(adminHtml, /<title>السؤال الأسبوعي لفريق زكاء<\/title>/);
@@ -485,6 +493,10 @@ test("ships the Zakaa weekly brand and PIN-only student form", async () => {
     "The student access page should expose only its PIN input."
   );
   assert.match(studentScript, /"X-Start-Question": "1"/);
+  assert.match(
+    adminScript,
+    /answerRecordsBody\.addEventListener\("click", handleGradeAction\)/
+  );
   assert.ok(
     (
       studentScript.match(

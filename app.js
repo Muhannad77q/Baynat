@@ -847,6 +847,7 @@ function bindEvents() {
   refs.logoutSupervisorButton.addEventListener("click", logoutSupervisor);
   refs.resetLeaderboardButton.addEventListener("click", resetLeaderboard);
   refs.gradingQueue.addEventListener("click", handleGradeAction);
+  refs.answerRecordsBody.addEventListener("click", handleGradeAction);
   refs.adminAuthForm.addEventListener("submit", submitSupervisorAccess);
   [
     refs.adminDisplayName,
